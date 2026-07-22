@@ -79,7 +79,7 @@ public class SearchCatalogAgentTool implements AgentTool {
                 .flatMap(List::stream)
                 .toList();
         AgentProductListResult output = new AgentProductListResult(
-                references, result.nextOffset(), result.hasMore(), result.upstreamTruncated(), List.of());
+                references, result.nextOffset(), result.hasMore(), result.upstreamTruncated(), List.of(), null);
         return AgentToolExecutionResult.read(
                 json.write(output), "Found " + products.size() + " grounded product option(s).", artifacts);
     }

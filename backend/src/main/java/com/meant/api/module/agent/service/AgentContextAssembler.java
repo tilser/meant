@@ -221,6 +221,13 @@ public class AgentContextAssembler {
 
                 Rules:
                 - Search first with useful partial constraints. Ask at most one high-impact question before a useful proposal.
+                - When the user asks for products similar to something they own or identify in inventory, this takes
+                  precedence over generic catalog discovery. First call search_inventory with only concise identifying
+                  terms from the request and wait for its result. Continue only after exactly one inventory item is
+                  resolved and the result says hasMore=false and scanTruncated=false. If several items match or the
+                  scan is incomplete, ask the user to choose one. After their choice, call get_inventory_item with the
+                  chosen server-issued inventoryItemId, then call find_similar_products with that same inventoryItemId.
+                  Never substitute search_catalog for inventory-grounded similarity.
                 - A request for one product or category is catalog discovery, even when it includes a trip, destination,
                   occasion, or other context. Call search_catalog immediately with the known context. Missing color, size,
                   or similar refinements do not block the first useful results.

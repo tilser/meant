@@ -1,11 +1,15 @@
 package com.meant.api.module.agent.service;
 
 import com.meant.api.module.agent.constant.AgentArtifactType;
+import com.meant.api.module.agent.constant.AgentInventoryArtifactKind;
 import com.meant.api.module.agent.entity.AgentArtifactReference;
 import com.meant.api.module.agent.exception.AgentException;
 import com.meant.api.module.agent.repository.AgentArtifactReferenceRepository;
+import com.meant.api.module.agent.service.dto.AgentInventorySearchArtifact;
+import com.meant.api.module.agent.service.dto.AgentInventorySelectedItemArtifact;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
 import com.meant.api.module.agent.service.tool.AgentProductReadToolException;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +27,7 @@ public class AgentProductReadReferenceService {
     );
 
     private final AgentArtifactReferenceRepository repository;
+    private final AgentJsonSupport json;
 
     public AgentArtifactReference requireProduct(AgentToolExecutionContext context, String canonicalProductKey) {
         if (canonicalProductKey == null || canonicalProductKey.isBlank()) {
@@ -45,6 +50,42 @@ public class AgentProductReadReferenceService {
         if (reference.getArtifactType() != AgentArtifactType.INVENTORY_ITEM
                 || !inventoryItemId.equals(reference.getInventoryItemId())) {
             throw AgentException.notFound();
+        }
+        return reference;
+    }
+
+    /**
+     * Requires a server-issued inventory result that is unambiguous and complete. A user-selected
+     * item can be made unambiguous by loading it with {@code get_inventory_item} first.
+     */
+    public AgentArtifactReference requireSoleInventoryItem(
+            AgentToolExecutionContext context,
+            UUID inventoryItemId
+    ) {
+        AgentArtifactReference reference = requireInventoryItem(context, inventoryItemId);
+        List<AgentArtifactReference> resultSet = repository
+                .findByConversationIdAndMessageIdOrderByOrdinalAsc(
+                        context.conversationId(), reference.getMessageId())
+                .stream()
+                .filter(candidate -> candidate.getArtifactType() == AgentArtifactType.INVENTORY_ITEM)
+                .toList();
+        boolean exactSingleton = resultSet.size() == 1
+                && inventoryItemId.equals(resultSet.getFirst().getInventoryItemId());
+        AgentInventorySearchArtifact search = json.readArtifact(
+                        reference.getPayloadJson(), AgentInventorySearchArtifact.class)
+                .filter(candidate -> candidate.kind() == AgentInventoryArtifactKind.SEARCH_RESULT)
+                .filter(candidate -> candidate.item() != null)
+                .orElse(null);
+        boolean selectedItem = json.readArtifact(
+                        reference.getPayloadJson(), AgentInventorySelectedItemArtifact.class)
+                .filter(candidate -> candidate.kind() == AgentInventoryArtifactKind.SELECTED_ITEM)
+                .filter(candidate -> candidate.item() != null)
+                .isPresent();
+        boolean completeSearch = search != null && !search.hasMore() && !search.scanTruncated();
+        if (!exactSingleton || (!completeSearch && !selectedItem)) {
+            throw AgentProductReadToolException.invalid(
+                    "The inventory match is ambiguous. Ask the user to choose an item, then load "
+                            + "that exact item with get_inventory_item before finding similar products.");
         }
         return reference;
     }

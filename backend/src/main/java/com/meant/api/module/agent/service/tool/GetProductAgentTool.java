@@ -51,7 +51,7 @@ public class GetProductAgentTool implements AgentTool {
                 new GetUserCanonicalProductDetailQuery(
                         context.userId(), input.canonicalProductKey(), input.selectedOfferKey()));
         AgentProductListResult output = new AgentProductListResult(
-                List.of(resultService.reference(detail.product(), 1)), null, false, false, List.of());
+                List.of(resultService.reference(detail.product(), 1)), null, false, false, List.of(), null);
         return AgentToolExecutionResult.read(
                 json.write(output),
                 "Loaded current product detail and " + detail.product().offers().size() + " offer(s).",

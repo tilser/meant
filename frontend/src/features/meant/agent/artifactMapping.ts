@@ -11,6 +11,7 @@ import type {
   DiscoverChatMessage,
   FoundDiscountCode,
   ShoppingMissionRequirement,
+  SimilarityAnchor,
 } from '../chat/types'
 import { productFromCanonical } from '../product/groupedProductMapping'
 import type { AppliedCartCode, MerchantCartStateReplacement } from '../cart/types'
@@ -152,6 +153,166 @@ export function plainAgentText(value: string): string {
     .trim()
 }
 
+function normalizedResultPhrase(value: unknown, maximumLength: number): string | null {
+  if (typeof value !== 'string') return null
+  const normalized = plainAgentText(value).replace(/\s+/g, ' ').trim()
+  return normalized && normalized.length <= maximumLength ? normalized : null
+}
+
+function similarityAnchorFromValue(value: unknown): SimilarityAnchor | null {
+  if (!isRecord(value)) return null
+
+  const canonicalProductKey = normalizedResultPhrase(value.canonicalProductKey, 200)
+  const label =
+    normalizedResultPhrase(value.label, 120)
+      ?.replace(/[.:;]+$/g, '')
+      .trim() ?? null
+  const query =
+    normalizedResultPhrase(value.query, 500)
+      ?.replace(/[?!.,:;]+$/g, '')
+      .trim() ?? null
+  const inventoryItemId =
+    value.inventoryItemId === null ? null : normalizedResultPhrase(value.inventoryItemId, 200)
+  if (
+    !canonicalProductKey ||
+    !label ||
+    !query ||
+    (value.inventoryItemId !== null && !inventoryItemId)
+  ) {
+    return null
+  }
+  return { canonicalProductKey, inventoryItemId, label, query }
+}
+
+function similarityAnchorFromToolResult(contentJson: string | null): SimilarityAnchor | null {
+  if (!contentJson) return null
+  const result = parseRecord(contentJson)
+  return similarityAnchorFromValue(result?.similarityAnchor)
+}
+
+function similarityAnchorForToolResult(
+  contentJson: string | null,
+  artifacts: readonly AgentArtifactProfile[],
+): SimilarityAnchor | null {
+  const structured = similarityAnchorFromToolResult(contentJson)
+  for (const artifact of artifacts) {
+    if (artifact.type !== 'PRODUCT') continue
+    const payload = parseRecord(artifact.payloadJson)
+    const durable = similarityAnchorFromValue(payload?.similarityAnchor)
+    if (durable) return durable
+  }
+  return structured
+}
+
+function genericResultSubject(value: string): boolean {
+  return /^(?:grounded\s+)?(?:products?|options?|items?|matches|results?)$/i.test(value)
+}
+
+const KNOWN_RESULT_PLURALS: Readonly<Record<string, string>> = {
+  product: 'products',
+  item: 'items',
+  option: 'options',
+  result: 'results',
+  match: 'matches',
+  jacket: 'jackets',
+  coat: 'coats',
+  shoe: 'shoes',
+  sneaker: 'sneakers',
+  boot: 'boots',
+  shirt: 'shirts',
+  sweater: 'sweaters',
+  hoodie: 'hoodies',
+  blazer: 'blazers',
+  dress: 'dresses',
+  skirt: 'skirts',
+  pant: 'pants',
+  trouser: 'trousers',
+  bag: 'bags',
+  accessory: 'accessories',
+  apparel: 'apparel',
+  clothing: 'clothing',
+  outerwear: 'outerwear',
+}
+
+function pluralResultSubject(value: string): string {
+  const subject = value.trim()
+  const match = subject.match(/[a-z][a-z-]*$/i)
+  if (!match) return 'products'
+  const word = match[0]
+  const lowerWord = word.toLowerCase()
+  let plural = KNOWN_RESULT_PLURALS[lowerWord]
+  if (!plural) {
+    if (lowerWord.endsWith('s')) {
+      plural = word
+    } else if (/[^aeiou]y$/i.test(word)) {
+      plural = word.slice(0, -1) + 'ies'
+    } else if (/(?:ch|sh|x|z)$/i.test(word)) {
+      plural = word + 'es'
+    } else {
+      plural = word + 's'
+    }
+  } else if (word[0] === word[0]?.toUpperCase()) {
+    plural = plural.charAt(0).toUpperCase() + plural.slice(1)
+  }
+  const phrase = subject.slice(0, match.index) + plural
+  return phrase.charAt(0).toLowerCase() + phrase.slice(1)
+}
+
+function productCategorySubject(products: readonly Pick<Product, 'name' | 'category'>[]): string {
+  const category = products
+    .map((product) => normalizedResultPhrase(product.category, 72))
+    .find((value): value is string => Boolean(value && !genericResultSubject(value)))
+  if (!category) return 'products'
+  const leaf = category
+    .split(/\s*(?:>|\/|\|)\s*/)
+    .filter(Boolean)
+    .at(-1)
+  if (!leaf) return 'products'
+  const finalWord = leaf.match(/[a-z][a-z-]*$/i)?.[0]
+  if (!finalWord || !KNOWN_RESULT_PLURALS[finalWord.toLowerCase()]) {
+    return leaf.toLowerCase()
+  }
+  return pluralResultSubject(leaf)
+}
+
+function unsafeCatalogSearchSubject(subject: string): boolean {
+  return (
+    /^(?:check|inspect|compare|use|tell|recommend)\b/i.test(subject) ||
+    /\b(?:and|then)\s+(?:please\s+)?(?:find|show|search|look|get|give|check)\b/i.test(subject) ||
+    /\b(?:inventory|similar(?:\s+to)?|already\s+own|i\s+(?:own|have))\b/i.test(subject)
+  )
+}
+
+function similarityResultSubject(
+  anchor: SimilarityAnchor,
+  products: readonly Pick<Product, 'name' | 'category'>[],
+): string {
+  const trustedLabel = anchor.label.replace(/^(?:my|your)\s+/i, '').trim()
+  const finalWord = trustedLabel.match(/[a-z][a-z-]*$/i)?.[0]
+  if (finalWord) {
+    const normalizedWord = finalWord.toLowerCase()
+    if (KNOWN_RESULT_PLURALS[normalizedWord] || normalizedWord.endsWith('s')) {
+      return pluralResultSubject(finalWord)
+    }
+  }
+  return productCategorySubject(products)
+}
+
+function similarProductResultIntroduction(
+  anchor: SimilarityAnchor,
+  products: readonly Pick<Product, 'name' | 'category'>[],
+): string {
+  const subject = similarityResultSubject(anchor, products)
+  const target = anchor.inventoryItemId
+    ? /^my\s+/i.test(anchor.label)
+      ? 'your ' + anchor.label.replace(/^my\s+/i, '')
+      : /^your\s+/i.test(anchor.label)
+        ? anchor.label.charAt(0).toLowerCase() + anchor.label.slice(1)
+        : 'your ' + anchor.label
+    : anchor.label
+  return 'Here are similar ' + subject + ' to ' + target + ':'
+}
+
 function catalogSearchSubject(query: string | null | undefined): string {
   let subject = plainAgentText(query ?? '')
     .replace(/[?!.,:;]+$/g, '')
@@ -173,7 +334,7 @@ function catalogSearchSubject(query: string | null | undefined): string {
     .replace(/\s+(?:under|below|for less than)\s+[$€£]?\d.*$/i, '')
     .trim()
 
-  if (!subject || subject.length > 72) return 'products'
+  if (!subject || subject.length > 72 || unsafeCatalogSearchSubject(subject)) return 'products'
   return `${subject.charAt(0).toLowerCase()}${subject.slice(1)}`
 }
 
@@ -188,7 +349,7 @@ export function conciseProductResultIntroduction(
     text.match(/^I found these\s+([^:\n]{1,72}):/i)?.[1]?.trim() ??
     text.match(/^I found (?:(?:many|several|some|a few)\s+)([^:.\n]{1,72})[.:]/i)?.[1]?.trim()
   const genericSubject = existing
-    ? /^(?:grounded\s+)?(?:products|options|items|matches|results)$/i.test(existing)
+    ? genericResultSubject(existing) || unsafeCatalogSearchSubject(existing)
     : true
   const repeatsProductName = existing
     ? products.some((product) => existing.toLowerCase().includes(product.name.toLowerCase()))
@@ -198,15 +359,12 @@ export function conciseProductResultIntroduction(
     /^(?:i (?:do not|don't|dont) see any|more|try again|show me (?:more|others)|other ones)$/i.test(
       querySubject,
     )
-  const category = products[0]?.category?.trim()
   const subject =
     existing && !genericSubject && !repeatsProductName
       ? existing
       : !contextlessQuery && querySubject !== 'products'
         ? querySubject
-        : category && !/^(?:product|products)$/i.test(category)
-          ? `${category.charAt(0).toLowerCase()}${category.slice(1)}`
-          : 'products'
+        : productCategorySubject(products)
   return `I found these ${subject}:`
 }
 
@@ -1161,6 +1319,15 @@ export function blocksForAgentMessage(
   )
   const blocks: DiscoverChatBlock[] = []
   const toolName = message.correlationId?.split(':').at(-1) ?? ''
+  const similarityAnchor = similarityAnchorForToolResult(
+    message.contentJson,
+    orderedMessageArtifacts,
+  )
+  const projectedSimilarityAnchor = similarityAnchor
+    ? { ...similarityAnchor, query: similarityResultSubject(similarityAnchor, products) }
+    : null
+  const similarityResult =
+    toolName === 'find_similar_products' || projectedSimilarityAnchor !== null
   const comparison = orderedMessageArtifacts.find((artifact) => artifact.type === 'COMPARISON')
   const mission = orderedMessageArtifacts.find((artifact) => artifact.type === 'MISSION')
   if (mission) {
@@ -1171,8 +1338,15 @@ export function blocksForAgentMessage(
     const block = createMiniCompareBlock(products, deliveryLocations)
     if (block) blocks.push(block)
   } else if (products.length > 0) {
-    if (toolName === 'find_similar_products') {
-      blocks.push({ type: 'similar', products, sourceMessageId: message.messageId })
+    if (similarityResult) {
+      blocks.push({
+        type: 'similar',
+        products,
+        sourceMessageId: message.messageId,
+        query: projectedSimilarityAnchor?.query,
+        anchorCanonicalProductKey: projectedSimilarityAnchor?.canonicalProductKey,
+        similarityAnchor: projectedSimilarityAnchor ?? undefined,
+      })
     } else if (toolName === 'pick_recommended_product' && products[0]) {
       blocks.push({ type: 'decision', product: products[0], runnerUp: products[1] ?? null })
     } else if (orderedMessageArtifacts.some((artifact) => artifact.type === 'SAVED_PRODUCT')) {
@@ -1370,20 +1544,56 @@ export function discoverMessagesFromAgentConversation(
         (block): block is Extract<DiscoverChatBlock, { type: 'products' }> =>
           block.type === 'products' && Boolean(block.query),
       )
-      const text = searchProducts
-        ? conciseProductResultIntroduction(
-            message.textContent,
-            searchProducts.query,
-            searchProducts.products,
-          )
-        : message.textContent
-          ? plainAgentText(message.textContent)
-          : null
+      const groundedSimilarities = toolBlocks.filter(
+        (block) => block.type === 'similar' && Boolean(block.similarityAnchor),
+      )
+      const groundedSearches = toolBlocks.filter(
+        (block) => block.type === 'products' && Boolean(block.query),
+      )
+      const inlineResultHeadings =
+        groundedSimilarities.length > 0 && groundedSimilarities.length + groundedSearches.length > 0
       const clarificationReplies = productClarificationReplies(message.contentJson)
+      const text =
+        clarificationReplies && message.textContent
+          ? plainAgentText(message.textContent)
+          : inlineResultHeadings
+            ? null
+            : searchProducts
+              ? conciseProductResultIntroduction(
+                  message.textContent,
+                  searchProducts.query,
+                  searchProducts.products,
+                )
+              : message.textContent
+                ? plainAgentText(message.textContent)
+                : null
+      const displayToolBlocks = inlineResultHeadings
+        ? toolBlocks.flatMap<DiscoverChatBlock>((block) => {
+            if (block.type === 'similar' && block.similarityAnchor) {
+              return [
+                {
+                  type: 'text',
+                  text: similarProductResultIntroduction(block.similarityAnchor, block.products),
+                },
+                block,
+              ]
+            }
+            if (block.type === 'products' && block.query) {
+              return [
+                {
+                  type: 'text',
+                  text: conciseProductResultIntroduction(null, block.query, block.products),
+                },
+                block,
+              ]
+            }
+            return [block]
+          })
+        : toolBlocks
       messages.push({
         id: message.messageId,
         role: 'ai',
-        blocks: [...(text ? [{ type: 'text' as const, text }] : []), ...toolBlocks],
+        blocks: [...(text ? [{ type: 'text' as const, text }] : []), ...displayToolBlocks],
         suggestedReplies: clarificationReplies?.labels,
         suggestedReplySubmissions: clarificationReplies?.submissions,
       })
@@ -1398,7 +1608,7 @@ export function discoverMessagesFromAgentConversation(
         deliveryLocations,
       )
       const searchQuery = message.runId ? userQueryByRun.get(message.runId) : undefined
-      const displayBlocks: DiscoverChatBlock[] =
+      let displayBlocks: DiscoverChatBlock[] =
         message.correlationId?.split(':').at(-1) === 'search_catalog' && searchQuery
           ? blocks.flatMap<DiscoverChatBlock>((block) =>
               block.type === 'products'
@@ -1412,6 +1622,17 @@ export function discoverMessagesFromAgentConversation(
                 : [block],
             )
           : blocks
+      displayBlocks = displayBlocks.flatMap<DiscoverChatBlock>((block) =>
+        block.type === 'similar' && block.similarityAnchor
+          ? [
+              {
+                type: 'text',
+                text: similarProductResultIntroduction(block.similarityAnchor, block.products),
+              },
+              block,
+            ]
+          : [block],
+      )
       if (displayBlocks.length > 0) {
         messages.push({ id: message.messageId, role: 'ai', blocks: displayBlocks })
       }

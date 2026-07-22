@@ -28,6 +28,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -87,6 +88,27 @@ class AgentCanonicalProductArtifactTest {
                 .isEqualTo("DISCOVERY_OBSERVATION");
         assertThat(artifactJson.at("/offers/0/provenance/0/provider").asText())
                 .isEqualTo("SHOPIFY");
+    }
+
+    @Test
+    void similarityDiscoveryPersistsItsGroundedAnchorWithTheProductArtifact() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        AgentSimilarityAnchorResult anchor = new AgentSimilarityAnchorResult(
+                "canonical:owned-jacket",
+                UUID.fromString("00000000-0000-0000-0000-000000000701"),
+                "Black Quilted Jacket",
+                "similar jackets"
+        );
+
+        AgentArtifact artifact = new AgentProductReadResultService(
+                new AgentJsonSupport(mapper, properties())
+        ).discoveryArtifacts(product(), 1, null, null, Map.of(), anchor).getFirst();
+        JsonNode payload = mapper.readTree(artifact.payloadJson());
+
+        assertThat(payload.at("/key").asText()).isEqualTo("canonical:shoe-1");
+        assertThat(payload.at("/similarityAnchor/canonicalProductKey").asText())
+                .isEqualTo("canonical:owned-jacket");
+        assertThat(payload.at("/similarityAnchor/label").asText()).isEqualTo("Black Quilted Jacket");
     }
 
     private CanonicalProduct product() {

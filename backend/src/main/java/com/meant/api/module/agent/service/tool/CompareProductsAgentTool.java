@@ -66,7 +66,7 @@ public class CompareProductsAgentTool implements AgentTool {
                 .flatMap(List::stream)
                 .toList());
         AgentProductListResult output = new AgentProductListResult(
-                references, null, false, false, result.unavailableCanonicalProductKeys());
+                references, null, false, false, result.unavailableCanonicalProductKeys(), null);
         artifacts.add(new AgentArtifact(
                 AgentArtifactType.COMPARISON,
                 1,

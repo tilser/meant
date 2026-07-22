@@ -161,6 +161,29 @@ class AgentContextAssemblerTest {
     }
 
     @Test
+    void inventoryGroundedSimilarityTakesPriorityOverGenericCatalogDiscoveryInThePrompt() {
+        givenRunAndMessages();
+
+        String systemPrompt = assembler.assemble(RUN_ID).messages().getFirst().text();
+        int inventorySimilarityRule = systemPrompt.indexOf(
+                "When the user asks for products similar to something they own or identify in inventory");
+        int genericCatalogRule = systemPrompt.indexOf(
+                "A request for one product or category is catalog discovery");
+
+        assertThat(inventorySimilarityRule).isGreaterThanOrEqualTo(0);
+        assertThat(genericCatalogRule).isGreaterThan(inventorySimilarityRule);
+        assertThat(systemPrompt)
+                .contains("call search_inventory with only concise identifying")
+                .contains("Continue only after exactly one inventory item is")
+                .contains("hasMore=false and scanTruncated=false")
+                .contains("ask the user to choose one")
+                .contains("call get_inventory_item")
+                .contains("call find_similar_products with")
+                .contains("chosen server-issued inventoryItemId")
+                .contains("Never substitute search_catalog for inventory-grounded similarity");
+    }
+
+    @Test
     void currentTurnGroundingMakesTheVisiblePageOrderAuthoritative() {
         givenRunAndMessages();
         AgentVisibleProductContext visible = new AgentVisibleProductContext(SEARCH_MESSAGE_ID, List.of(

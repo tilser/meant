@@ -38,6 +38,24 @@ const productResults: DiscoverChatMessage = {
   blocks: [{ type: 'products', products: [], query: 'caps' }],
 }
 
+const similarResults: DiscoverChatMessage = {
+  id: 'current-similar-results',
+  role: 'ai',
+  blocks: [
+    { type: 'text', text: 'Here are similar jackets to your Black Quilted Jacket:' },
+    {
+      type: 'similar',
+      products: [],
+      similarityAnchor: {
+        canonicalProductKey: 'canonical:owned-jacket',
+        inventoryItemId: '00000000-0000-0000-0000-000000000402',
+        label: 'Black Quilted Jacket',
+        query: 'similar jackets',
+      },
+    },
+  ],
+}
+
 describe('agent message projection', () => {
   test('renders a waiting clarification immediately when prior product results exist', () => {
     const messages = withProjectedAgentMessages(
@@ -77,6 +95,18 @@ describe('agent message projection', () => {
     )
 
     expect(messages).toEqual([productResults])
+  })
+
+  test('suppresses duplicate live assistant prose behind grounded similarity cards', () => {
+    const messages = withProjectedAgentMessages(
+      [similarResults],
+      new Set([similarResults.id]),
+      new Set([similarResults.id]),
+      'run-current',
+      projection('RUNNING'),
+    )
+
+    expect(messages).toEqual([similarResults])
   })
 
   test('does not duplicate a clarification already present in the durable transcript', () => {

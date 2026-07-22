@@ -204,6 +204,114 @@ class AgentMutationTargetPolicyTest {
     }
 
     @Test
+    void inventorySelectionIsBoundToTheUsersOrdinalBeforeSimilaritySearch() {
+        UUID searchMessageId = UUID.randomUUID();
+        UUID selectionMessageId = UUID.randomUUID();
+        UUID brownCoatId = UUID.randomUUID();
+        UUID blackJacketId = UUID.randomUUID();
+        AgentArtifactReference brownCoat = inventoryItem(
+                searchMessageId, 1, brownCoatId, "Brown chore coat", "SEARCH_RESULT");
+        AgentArtifactReference blackJacket = inventoryItem(
+                searchMessageId, 2, blackJacketId, "Black quilted jacket", "SEARCH_RESULT");
+        AgentArtifactReference selectedJacket = inventoryItem(
+                selectionMessageId, 1, blackJacketId, "Black quilted jacket", "SELECTED_ITEM");
+        when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any()))
+                .thenReturn(List.of(selectedJacket, brownCoat, blackJacket));
+        AgentToolExecutionContext context = context("Use the second one.");
+
+        assertThat(policy.matchesExplicitOrdinal(
+                context,
+                "get_inventory_item",
+                "{\"inventoryItemId\":\"" + blackJacketId + "\"}"
+        )).isTrue();
+        assertThat(policy.matchesExplicitOrdinal(
+                context,
+                "get_inventory_item",
+                "{\"inventoryItemId\":\"" + brownCoatId + "\"}"
+        )).isFalse();
+        assertThat(policy.matchesExplicitOrdinal(
+                context,
+                "find_similar_products",
+                "{\"inventoryItemId\":\"" + blackJacketId + "\"}"
+        )).isTrue();
+    }
+
+    @Test
+    void inventorySelectionRequiresOneServerResolvedNameWhenNoOrdinalIsPresent() {
+        UUID messageId = UUID.randomUUID();
+        UUID brownJacketId = UUID.randomUUID();
+        UUID blackJacketId = UUID.randomUUID();
+        AgentArtifactReference brownJacket = inventoryItem(
+                messageId, 1, brownJacketId, "Brown leather jacket", "SEARCH_RESULT");
+        AgentArtifactReference blackJacket = inventoryItem(
+                messageId, 2, blackJacketId, "Black quilted jacket", "SEARCH_RESULT");
+        when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any()))
+                .thenReturn(List.of(brownJacket, blackJacket));
+
+        assertThat(policy.matchesExplicitOrdinal(
+                context("Use the black quilted jacket."),
+                "get_inventory_item",
+                "{\"inventoryItemId\":\"" + blackJacketId + "\"}"
+        )).isTrue();
+        assertThat(policy.matchesExplicitOrdinal(
+                context("check my black jacket in inventory and find me some new that are similar"),
+                "get_inventory_item",
+                "{\"inventoryItemId\":\"" + blackJacketId + "\"}"
+        )).isTrue();
+        assertThat(policy.matchesExplicitOrdinal(
+                context("Use the black quilted jacket."),
+                "get_inventory_item",
+                "{\"inventoryItemId\":\"" + brownJacketId + "\"}"
+        )).isFalse();
+        assertThat(policy.matchesExplicitOrdinal(
+                context("Yes, use one."),
+                "get_inventory_item",
+                "{\"inventoryItemId\":\"" + blackJacketId + "\"}"
+        )).isFalse();
+    }
+
+    @Test
+    void inventorySelectionUsesTrustedItemDetailsAndIgnoresConversationalTerms() {
+        UUID messageId = UUID.randomUUID();
+        UUID brownJacketId = UUID.randomUUID();
+        UUID blackJacketId = UUID.randomUUID();
+        AgentArtifactReference brownJacket = inventoryItemWithDetails(
+                messageId,
+                1,
+                brownJacketId,
+                "Jacket",
+                "Brown",
+                "Leather"
+        );
+        AgentArtifactReference blackJacket = inventoryItemWithDetails(
+                messageId,
+                2,
+                blackJacketId,
+                "Jacket",
+                "Black",
+                "Quilted"
+        );
+        when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any()))
+                .thenReturn(List.of(brownJacket, blackJacket));
+
+        assertThat(policy.matchesExplicitOrdinal(
+                context("The black one."),
+                "get_inventory_item",
+                "{\"inventoryItemId\":\"" + blackJacketId + "\"}"
+        )).isTrue();
+        assertThat(policy.matchesExplicitOrdinal(
+                context("I meant the black quilted jacket."),
+                "get_inventory_item",
+                "{\"inventoryItemId\":\"" + blackJacketId + "\"}"
+        )).isTrue();
+        assertThat(policy.matchesExplicitOrdinal(
+                context("The black one."),
+                "get_inventory_item",
+                "{\"inventoryItemId\":\"" + brownJacketId + "\"}"
+        )).isFalse();
+    }
+
+    @Test
     void unmatchedVisibleDescriptionCannotAuthorizeAnOrdinalMutation() {
         UUID messageId = UUID.randomUUID();
         AgentVisibleProductContext visible = new AgentVisibleProductContext(messageId, List.of(
@@ -1690,6 +1798,51 @@ class AgentMutationTargetPolicyTest {
                 .checkoutAttemptId(source.getCheckoutAttemptId())
                 .payloadJson(source.getPayloadJson())
                 .createdAt(createdAt)
+                .build();
+    }
+
+    private AgentArtifactReference inventoryItem(
+            UUID messageId,
+            int ordinal,
+            UUID inventoryItemId,
+            String label,
+            String kind
+    ) {
+        return AgentArtifactReference.builder()
+                .conversationId(CONVERSATION_ID)
+                .messageId(messageId)
+                .artifactType(AgentArtifactType.INVENTORY_ITEM)
+                .ordinal(ordinal)
+                .stableKey("inventory:" + inventoryItemId)
+                .label(label)
+                .inventoryItemId(inventoryItemId)
+                .payloadJson("{\"kind\":\"" + kind + "\"}")
+                .createdAt(Instant.parse("2026-07-19T10:00:00Z"))
+                .build();
+    }
+
+    private AgentArtifactReference inventoryItemWithDetails(
+            UUID messageId,
+            int ordinal,
+            UUID inventoryItemId,
+            String label,
+            String color,
+            String attribute
+    ) {
+        return AgentArtifactReference.builder()
+                .conversationId(CONVERSATION_ID)
+                .messageId(messageId)
+                .artifactType(AgentArtifactType.INVENTORY_ITEM)
+                .ordinal(ordinal)
+                .stableKey("inventory:" + inventoryItemId)
+                .label(label)
+                .inventoryItemId(inventoryItemId)
+                .payloadJson("""
+                        {"kind":"SEARCH_RESULT","item":{
+                          "name":"Jacket","color":"%s","attributes":["%s"]
+                        }}
+                        """.formatted(color, attribute).strip())
+                .createdAt(Instant.parse("2026-07-19T10:00:00Z"))
                 .build();
     }
 

@@ -5,6 +5,8 @@ import com.meant.api.module.agent.service.dto.AgentArtifact;
 import com.meant.api.module.agent.service.dto.AgentCanonicalProductArtifact;
 import com.meant.api.module.agent.service.dto.AgentOfferReferenceResult;
 import com.meant.api.module.agent.service.dto.AgentProductReferenceResult;
+import com.meant.api.module.agent.service.dto.AgentSimilarityAnchorResult;
+import com.meant.api.module.agent.service.dto.AgentSimilarityProductArtifact;
 import com.meant.api.module.catalog.service.dto.CanonicalProduct;
 import com.meant.api.module.catalog.service.dto.Money;
 import com.meant.api.module.catalog.service.dto.Offer;
@@ -49,6 +51,24 @@ public class AgentProductReadResultService {
             UserCanonicalProductPersonalizationResult personalization,
             Map<String, OfferRankingExplanation> offerRankingExplanations
     ) {
+        return discoveryArtifacts(
+                product,
+                ordinal,
+                rankingExplanation,
+                personalization,
+                offerRankingExplanations,
+                null
+        );
+    }
+
+    public List<AgentArtifact> discoveryArtifacts(
+            CanonicalProduct product,
+            int ordinal,
+            ProductRankingExplanation rankingExplanation,
+            UserCanonicalProductPersonalizationResult personalization,
+            Map<String, OfferRankingExplanation> offerRankingExplanations,
+            AgentSimilarityAnchorResult similarityAnchor
+    ) {
         return artifacts(
                 product,
                 ordinal,
@@ -57,19 +77,24 @@ public class AgentProductReadResultService {
                         rankingExplanation,
                         personalization,
                         offerRankingExplanations
-                )
+                ),
+                similarityAnchor
         );
     }
 
     public List<AgentArtifact> detailArtifacts(UserProductDetailResult detail, int ordinal) {
-        return artifacts(detail.product(), ordinal, AgentCanonicalProductArtifact.detail(detail));
+        return artifacts(detail.product(), ordinal, AgentCanonicalProductArtifact.detail(detail), null);
     }
 
     private List<AgentArtifact> artifacts(
             CanonicalProduct product,
             int ordinal,
-            AgentCanonicalProductArtifact payload
+            AgentCanonicalProductArtifact payload,
+            AgentSimilarityAnchorResult similarityAnchor
     ) {
+        Object durablePayload = similarityAnchor == null
+                ? payload
+                : new AgentSimilarityProductArtifact(payload, similarityAnchor);
         AgentArtifact productArtifact = new AgentArtifact(
                 AgentArtifactType.PRODUCT,
                 ordinal,
@@ -81,7 +106,7 @@ public class AgentProductReadResultService {
                 null,
                 null,
                 null,
-                json.writeArtifact(payload)
+                json.writeArtifact(durablePayload)
         );
         List<AgentArtifact> offerArtifacts = product.offers().stream()
                 .map(offer -> new AgentArtifact(

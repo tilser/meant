@@ -1,10 +1,12 @@
 package com.meant.api.module.agent.service.tool;
 
 import com.meant.api.module.agent.constant.AgentArtifactType;
+import com.meant.api.module.agent.constant.AgentInventoryArtifactKind;
 import com.meant.api.module.agent.constant.AgentToolRisk;
 import com.meant.api.module.agent.service.AgentJsonSupport;
 import com.meant.api.module.agent.service.AgentProductReadReferenceService;
 import com.meant.api.module.agent.service.dto.AgentArtifact;
+import com.meant.api.module.agent.service.dto.AgentInventorySelectedItemArtifact;
 import com.meant.api.module.agent.service.dto.AgentToolDescriptor;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionResult;
@@ -23,7 +25,9 @@ public class GetInventoryItemAgentTool implements AgentTool {
 
     private static final AgentToolDescriptor DESCRIPTOR = new AgentToolDescriptor(
             "get_inventory_item",
-            "Load a previously listed inventory item and rehydrate current product facts when available.",
+            "Load a previously listed inventory item and rehydrate current product facts when available. After the "
+                    + "user chooses among multiple inventory matches, call this with the chosen inventoryItemId before "
+                    + "find_similar_products.",
             """
             {"type":"object","properties":{"inventoryItemId":{"type":"string","format":"uuid"}},"required":["inventoryItemId"],"additionalProperties":false}
             """,
@@ -57,7 +61,10 @@ public class GetInventoryItemAgentTool implements AgentTool {
                 commerce == null ? null : commerce.canonicalProductKey(),
                 commerce == null ? null : commerce.offerKey(),
                 result.inventoryItemId(), null, null, null,
-                json.writeArtifact(result)
+                json.writeArtifact(new AgentInventorySelectedItemArtifact(
+                        AgentInventoryArtifactKind.SELECTED_ITEM,
+                        result
+                ))
         );
         return AgentToolExecutionResult.read(
                 json.write(result),

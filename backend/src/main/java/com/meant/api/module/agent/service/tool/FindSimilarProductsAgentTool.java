@@ -10,6 +10,7 @@ import com.meant.api.module.agent.service.dto.AgentArtifact;
 import com.meant.api.module.agent.service.dto.AgentInventoryProductAnchor;
 import com.meant.api.module.agent.service.dto.AgentProductListResult;
 import com.meant.api.module.agent.service.dto.AgentProductReferenceResult;
+import com.meant.api.module.agent.service.dto.AgentSimilarityAnchorResult;
 import com.meant.api.module.agent.service.dto.AgentToolDescriptor;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionResult;
@@ -29,7 +30,10 @@ public class FindSimilarProductsAgentTool implements AgentTool {
 
     private static final AgentToolDescriptor DESCRIPTOR = new AgentToolDescriptor(
             "find_similar_products",
-            "Find products similar to a product or owned inventory item previously shown in this conversation. Inventory anchors preserve selected size and options.",
+            "Find products similar to a product or owned inventory item previously shown in this conversation. "
+                    + "For an owned item, call only after search_inventory resolves one complete, unambiguous match, "
+                    + "or after the user chooses a match and get_inventory_item loads it. Pass that inventoryItemId. "
+                    + "Inventory anchors preserve selected size and options.",
             """
             {"type":"object","properties":{"canonicalProductKey":{"type":"string","minLength":1,"maxLength":200},"inventoryItemId":{"type":"string","format":"uuid"},"query":{"type":"string","maxLength":500}},"anyOf":[{"required":["canonicalProductKey"]},{"required":["inventoryItemId"]}],"additionalProperties":false}
             """,
@@ -52,17 +56,17 @@ public class FindSimilarProductsAgentTool implements AgentTool {
     @Override
     public AgentToolExecutionResult execute(AgentToolExecutionContext context, String argumentsJson) {
         FindSimilarProductsAgentToolInput input = json.readArguments(argumentsJson, FindSimilarProductsAgentToolInput.class);
-        String canonicalProductKey = anchor(context, input);
         String query = input.query() == null || input.query().isBlank()
                 ? "similar products"
                 : input.query().trim();
         if (query.length() > 500) {
             throw AgentProductReadToolException.invalid("The query must be at most 500 characters.");
         }
+        AgentSimilarityAnchorResult similarityAnchor = anchor(context, input, query);
         UserGroupedProductSearchResult result = similarProductSearchService.search(
                 profileService.profile(context.userId()),
                 new SearchSimilarUserProductsCommand(
-                        context.userId(), canonicalProductKey, query, null, null));
+                        context.userId(), similarityAnchor.canonicalProductKey(), query, null, null));
         List<CanonicalProduct> products = result.products();
         List<AgentProductReferenceResult> references = IntStream.range(0, products.size())
                 .mapToObj(index -> resultService.reference(products.get(index), index + 1))
@@ -73,17 +77,22 @@ public class FindSimilarProductsAgentTool implements AgentTool {
                         index + 1,
                         result.productRankingExplanations().get(products.get(index).key()),
                         result.productPersonalizations().get(products.get(index).key()),
-                        result.offerRankingExplanations()
+                        result.offerRankingExplanations(),
+                        similarityAnchor
                 ))
                 .flatMap(List::stream)
                 .toList();
         AgentProductListResult output = new AgentProductListResult(
-                references, null, false, result.upstreamTruncated(), List.of());
+                references, null, false, result.upstreamTruncated(), List.of(), similarityAnchor);
         return AgentToolExecutionResult.read(
                 json.write(output), "Found " + products.size() + " similar product(s).", artifacts);
     }
 
-    private String anchor(AgentToolExecutionContext context, FindSimilarProductsAgentToolInput input) {
+    private AgentSimilarityAnchorResult anchor(
+            AgentToolExecutionContext context,
+            FindSimilarProductsAgentToolInput input,
+            String query
+    ) {
         boolean productSupplied = input.canonicalProductKey() != null && !input.canonicalProductKey().isBlank();
         boolean inventorySupplied = input.inventoryItemId() != null;
         if (productSupplied == inventorySupplied) {
@@ -91,12 +100,33 @@ public class FindSimilarProductsAgentTool implements AgentTool {
                     "Supply exactly one product reference or inventory item reference.");
         }
         if (productSupplied) {
-            referenceService.requireProduct(context, input.canonicalProductKey());
-            return input.canonicalProductKey().trim();
+            String canonicalProductKey = input.canonicalProductKey().trim();
+            var reference = referenceService.requireProduct(context, canonicalProductKey);
+            return new AgentSimilarityAnchorResult(
+                    canonicalProductKey,
+                    null,
+                    firstText(reference.getLabel(), canonicalProductKey),
+                    query
+            );
         }
-        referenceService.requireInventoryItem(context, input.inventoryItemId());
+        var reference = referenceService.requireSoleInventoryItem(context, input.inventoryItemId());
         AgentInventoryProductAnchor anchor = inventoryAnchorService.anchor(
                 context.userId(), input.inventoryItemId());
-        return anchor.canonicalProductKey();
+        return new AgentSimilarityAnchorResult(
+                anchor.canonicalProductKey(),
+                input.inventoryItemId(),
+                firstText(reference.getLabel(), anchor.label(), anchor.canonicalProductKey()),
+                query
+        );
     }
+
+    private String firstText(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
+        return null;
+    }
+
 }

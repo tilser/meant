@@ -3,7 +3,11 @@ import { plainAgentText } from './artifactMapping'
 import type { AgentRunProjection } from './eventReducer'
 
 function hasCatalogResult(message: DiscoverChatMessage): boolean {
-  return Boolean(message.blocks?.some((block) => block.type === 'products' && Boolean(block.query)))
+  return Boolean(
+    message.blocks?.some(
+      (block) => block.type === 'similar' || (block.type === 'products' && Boolean(block.query)),
+    ),
+  )
 }
 
 /**

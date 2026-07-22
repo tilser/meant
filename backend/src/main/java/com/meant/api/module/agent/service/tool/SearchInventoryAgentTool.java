@@ -1,12 +1,14 @@
 package com.meant.api.module.agent.service.tool;
 
 import com.meant.api.module.agent.constant.AgentArtifactType;
+import com.meant.api.module.agent.constant.AgentInventoryArtifactKind;
 import com.meant.api.module.agent.constant.AgentToolRisk;
 import com.meant.api.module.agent.service.AgentContextProfileService;
 import com.meant.api.module.agent.service.AgentJsonSupport;
 import com.meant.api.module.agent.service.dto.AgentArtifact;
 import com.meant.api.module.agent.service.dto.AgentInventoryListResult;
 import com.meant.api.module.agent.service.dto.AgentInventoryReferenceResult;
+import com.meant.api.module.agent.service.dto.AgentInventorySearchArtifact;
 import com.meant.api.module.agent.service.dto.AgentToolDescriptor;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionResult;
@@ -32,7 +34,9 @@ public class SearchInventoryAgentTool implements AgentTool {
     private static final int MAXIMUM_SCANNED_ITEMS = 500;
     private static final AgentToolDescriptor DESCRIPTOR = new AgentToolDescriptor(
             "search_inventory",
-            "Find products the current user owns. Use category and a short text query when helpful.",
+            "Find products the current user owns. For inventory-grounded similarity, pass only concise "
+                    + "identifying terms from the request, not the full instruction. Treat a match as unique only "
+                    + "when exactly one item is returned with hasMore=false and scanTruncated=false.",
             """
             {"type":"object","properties":{"query":{"type":"string","maxLength":200},"category":{"type":"string","enum":["APPAREL","PANTRY","HOME","OTHER"]},"restockOnly":{"type":"boolean"},"limit":{"type":"integer","minimum":1,"maximum":20}},"additionalProperties":false}
             """,
@@ -54,21 +58,27 @@ public class SearchInventoryAgentTool implements AgentTool {
         SearchInventoryAgentToolInput input = json.readArguments(argumentsJson, SearchInventoryAgentToolInput.class);
         int limit = boundedLimit(input.limit());
         UserInventoryCategory category = category(input.category());
-        List<UserInventoryItemResult> items = matchingInventory(
+        InventoryMatches matches = matchingInventory(
                 context,
                 input,
                 category,
                 limit
         );
+        List<UserInventoryItemResult> items = matches.items();
         List<AgentInventoryReferenceResult> references = IntStream.range(0, items.size())
                 .mapToObj(index -> reference(items.get(index), index + 1))
                 .toList();
         List<AgentArtifact> artifacts = IntStream.range(0, items.size())
-                .mapToObj(index -> artifact(items.get(index), index + 1))
+                .mapToObj(index -> artifact(items.get(index), index + 1, matches))
                 .toList();
         return AgentToolExecutionResult.read(
-                json.write(new AgentInventoryListResult(references)),
-                "Found " + items.size() + " matching inventory item(s).",
+                json.write(new AgentInventoryListResult(
+                        references,
+                        matches.hasMore(),
+                        matches.scanTruncated()
+                )),
+                "Found " + items.size() + " matching inventory item(s)"
+                        + (matches.hasMore() || matches.scanTruncated() ? "; more may exist." : "."),
                 artifacts
         );
     }
@@ -80,7 +90,7 @@ public class SearchInventoryAgentTool implements AgentTool {
                 item.attributes(), item.commerceReference());
     }
 
-    private List<UserInventoryItemResult> matchingInventory(
+    private InventoryMatches matchingInventory(
             AgentToolExecutionContext context,
             SearchInventoryAgentToolInput input,
             UserInventoryCategory category,
@@ -88,29 +98,33 @@ public class SearchInventoryAgentTool implements AgentTool {
     ) {
         List<UserInventoryItemResult> matches = new ArrayList<>();
         int scanned = 0;
-        for (int page = 0; scanned < MAXIMUM_SCANNED_ITEMS && matches.size() < limit; page++) {
+        boolean exhausted = false;
+        for (int page = 0; scanned < MAXIMUM_SCANNED_ITEMS && matches.size() <= limit; page++) {
             List<UserInventoryItemResult> batch = userInventoryService.list(
                     profileService.profile(context.userId()),
                     new ListUserInventoryItemsQuery(
                             context.userId(), category, input.restockOnly(), page, SCAN_PAGE_SIZE)
             );
             if (batch.isEmpty()) {
+                exhausted = true;
                 break;
             }
             for (UserInventoryItemResult item : batch) {
                 scanned++;
                 if (matches(item, input.query())) {
                     matches.add(item);
-                    if (matches.size() == limit || scanned == MAXIMUM_SCANNED_ITEMS) {
-                        break;
-                    }
+                }
+                if (matches.size() > limit || scanned == MAXIMUM_SCANNED_ITEMS) {
+                    break;
                 }
             }
         }
-        return List.copyOf(matches);
+        boolean hasMore = matches.size() > limit;
+        List<UserInventoryItemResult> displayed = matches.stream().limit(limit).toList();
+        return new InventoryMatches(displayed, hasMore, !hasMore && !exhausted);
     }
 
-    private AgentArtifact artifact(UserInventoryItemResult item, int ordinal) {
+    private AgentArtifact artifact(UserInventoryItemResult item, int ordinal, InventoryMatches matches) {
         return new AgentArtifact(
                 AgentArtifactType.INVENTORY_ITEM,
                 ordinal,
@@ -119,7 +133,12 @@ public class SearchInventoryAgentTool implements AgentTool {
                 item.commerceReference() == null ? null : item.commerceReference().canonicalProductKey(),
                 item.commerceReference() == null ? null : item.commerceReference().offerKey(),
                 item.id(), null, null, null,
-                json.writeArtifact(item)
+                json.writeArtifact(new AgentInventorySearchArtifact(
+                        AgentInventoryArtifactKind.SEARCH_RESULT,
+                        item,
+                        matches.hasMore(),
+                        matches.scanTruncated()
+                ))
         );
     }
 
@@ -127,13 +146,20 @@ public class SearchInventoryAgentTool implements AgentTool {
         if (query == null || query.isBlank()) {
             return true;
         }
-        String needle = query.trim().toLowerCase(Locale.ROOT);
+        List<String> terms = normalizedTerms(query);
         String text = String.join(" ", List.of(
                 value(item.name()), value(item.brand()), value(item.description()), value(item.notes()),
                 value(item.size()), value(item.color()), value(item.material()),
-                String.join(" ", item.attributes() == null ? List.of() : item.attributes())))
-                .toLowerCase(Locale.ROOT);
-        return text.contains(needle);
+                String.join(" ", item.attributes() == null ? List.of() : item.attributes())));
+        List<String> searchableTerms = normalizedTerms(text);
+        return terms.stream().allMatch(searchableTerms::contains);
+    }
+
+    private List<String> normalizedTerms(String value) {
+        return java.util.Arrays.stream(value.toLowerCase(Locale.ROOT).split("[^\\p{L}\\p{N}]+"))
+                .filter(term -> !term.isBlank())
+                .distinct()
+                .toList();
     }
 
     private UserInventoryCategory category(String value) {
@@ -160,5 +186,12 @@ public class SearchInventoryAgentTool implements AgentTool {
 
     private String value(String value) {
         return value == null ? "" : value;
+    }
+
+    private record InventoryMatches(
+            List<UserInventoryItemResult> items,
+            boolean hasMore,
+            boolean scanTruncated
+    ) {
     }
 }

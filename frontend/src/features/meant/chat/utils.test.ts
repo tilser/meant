@@ -10,6 +10,7 @@ import {
   createDiscoverChatThread,
   deleteStoredDiscoverChatThread,
   discoverChatThreadPersistenceSnapshot,
+  discoverChatMessageCopyText,
   discoverProductResearchQuery,
   discoverSuggestedReplies,
   discoverThreadSearchContext,
@@ -79,6 +80,33 @@ afterEach(() => {
 })
 
 describe('discover chat history storage', () => {
+  test('copies grounded similarity results without a second generic heading', () => {
+    const product = historyProduct({ name: 'Black Field Jacket', category: 'Jackets' })
+    const message: DiscoverChatMessage = {
+      id: 'similarity-result',
+      role: 'ai',
+      blocks: [
+        { type: 'text', text: 'Here are similar jackets to your Black Quilted Jacket:' },
+        {
+          type: 'similar',
+          products: [product],
+          similarityAnchor: {
+            canonicalProductKey: 'canonical:owned-jacket',
+            inventoryItemId: '00000000-0000-0000-0000-000000000402',
+            label: 'Black Quilted Jacket',
+            query: 'similar jackets',
+          },
+        },
+      ],
+    }
+
+    const copied = discoverChatMessageCopyText(message)
+
+    expect(copied).toContain('Here are similar jackets to your Black Quilted Jacket:')
+    expect(copied).toContain('Black Field Jacket')
+    expect(copied).not.toContain('Similar products:')
+  })
+
   test('restores locally saved discover chat threads', () => {
     const thread = {
       ...createDiscoverChatThread(

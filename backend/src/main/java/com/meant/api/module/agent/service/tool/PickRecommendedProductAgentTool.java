@@ -64,7 +64,8 @@ public class PickRecommendedProductAgentTool implements AgentTool {
                 null,
                 false,
                 false,
-                rehydrated.unavailableCanonicalProductKeys()
+                rehydrated.unavailableCanonicalProductKeys(),
+                null
         );
         return AgentToolExecutionResult.read(
                 json.write(output),

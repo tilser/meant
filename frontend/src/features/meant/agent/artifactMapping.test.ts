@@ -230,6 +230,33 @@ describe('agent artifact mapping', () => {
     ).toBe('I found these running shoes:')
   })
 
+  test('never echoes a compound inventory instruction as a catalog result subject', () => {
+    const query = 'check my black jacket in inventory and find me some new that are similar'
+
+    expect(
+      conciseProductResultIntroduction(
+        'I found these check my black jacket in inventory and find me some new that are similar:',
+        query,
+        [{ name: 'Black field jacket', category: 'Jacket' }],
+      ),
+    ).toBe('I found these jackets:')
+  })
+
+  test('preserves unknown taxonomy categories instead of inventing plurals', () => {
+    const query = 'check my saved shoes and find something similar'
+
+    expect(
+      conciseProductResultIntroduction('I found some options.', query, [
+        { name: 'Trail shoe', category: 'Footwear' },
+      ]),
+    ).toBe('I found these footwear:')
+    expect(
+      conciseProductResultIntroduction('I found some options.', query, [
+        { name: 'Smart speaker', category: 'Home & Kitchen' },
+      ]),
+    ).toBe('I found these home & kitchen:')
+  })
+
   test('does not let an older conversation replace a fresher same-id product snapshot', () => {
     const olderArtifact = artifact({
       type: 'PRODUCT',
@@ -1364,6 +1391,234 @@ describe('agent artifact mapping', () => {
     })
   })
 
+  test('grounds inventory similarity copy in durable product metadata', () => {
+    const query = 'check my black jacket in inventory and find me some new that are similar'
+    const user: AgentMessageProfile = {
+      messageId: 'message-user-similar',
+      runId: 'run-similar',
+      sequenceNumber: 1,
+      role: 'USER',
+      contentKind: 'TEXT',
+      textContent: query,
+      contentJson: null,
+      correlationId: null,
+      createdAt,
+    }
+    const inventoryTool: AgentMessageProfile = {
+      messageId: 'message-inventory',
+      runId: 'run-similar',
+      sequenceNumber: 2,
+      role: 'TOOL',
+      contentKind: 'TOOL_RESULT',
+      textContent: null,
+      contentJson: '{}',
+      correlationId: 'call-inventory:search_inventory',
+      createdAt,
+    }
+    const similarTool: AgentMessageProfile = {
+      messageId: 'message-similar',
+      runId: 'run-similar',
+      sequenceNumber: 3,
+      role: 'TOOL',
+      contentKind: 'TOOL_RESULT',
+      textContent: null,
+      contentJson: JSON.stringify({ truncated: true, preview: '{"products":[' }),
+      correlationId: 'call-similar:find_similar_products',
+      createdAt,
+    }
+    const assistant: AgentMessageProfile = {
+      messageId: 'message-assistant-similar',
+      runId: 'run-similar',
+      sequenceNumber: 4,
+      role: 'ASSISTANT',
+      contentKind: 'TEXT',
+      textContent: `I found these ${query}:`,
+      contentJson: null,
+      correlationId: null,
+      createdAt,
+    }
+    const similarProduct = canonicalProduct(
+      'product-similar-jacket',
+      'offer-similar-jacket',
+      'Black field jacket',
+    )
+    similarProduct.attributes = [
+      ...similarProduct.attributes,
+      { name: 'category', value: 'Jacket' },
+    ]
+    const conversation: AgentConversationDetailProfile = {
+      conversationId: 'conversation-similar',
+      title: 'Similar jackets',
+      status: 'ACTIVE',
+      activeMissionId: null,
+      latestSequence: 4,
+      createdAt,
+      updatedAt: createdAt,
+      rollingSummary: null,
+      summaryVersion: 0,
+      latestCursor: 8,
+      messages: [user, inventoryTool, similarTool, assistant],
+      artifacts: [
+        artifact({
+          artifactId: 'artifact-inventory-other',
+          type: 'INVENTORY_ITEM',
+          stableKey: 'inventory:other',
+          messageId: inventoryTool.messageId,
+          runId: 'run-similar',
+          label: 'Brown Chore Coat',
+          inventoryItemId: '00000000-0000-0000-0000-000000000401',
+        }),
+        artifact({
+          artifactId: 'artifact-inventory-selected-search',
+          type: 'INVENTORY_ITEM',
+          stableKey: 'inventory:selected',
+          messageId: inventoryTool.messageId,
+          runId: 'run-similar',
+          label: 'Black Quilted Jacket',
+          canonicalProductKey: 'canonical:owned-black-jacket',
+          inventoryItemId: '00000000-0000-0000-0000-000000000402',
+        }),
+        artifact({
+          artifactId: 'artifact-product-similar-jacket',
+          type: 'PRODUCT',
+          stableKey: similarProduct.key,
+          messageId: similarTool.messageId,
+          runId: 'run-similar',
+          canonicalProductKey: similarProduct.key,
+          payloadJson: JSON.stringify({
+            product: similarProduct,
+            similarityAnchor: {
+              canonicalProductKey: 'canonical:owned-black-jacket',
+              inventoryItemId: '00000000-0000-0000-0000-000000000402',
+              label: 'My Black Quilted Jacket',
+              query,
+            },
+          }),
+        }),
+      ],
+    }
+
+    const messages = discoverMessagesFromAgentConversation(conversation, [])
+
+    expect(messages).toHaveLength(2)
+    expect(messages[1]?.blocks?.[0]).toEqual({
+      type: 'text',
+      text: 'Here are similar jackets to your Black Quilted Jacket:',
+    })
+    expect(messages[1]?.blocks?.[1]).toMatchObject({
+      type: 'similar',
+      products: [{ id: 'product-similar-jacket' }],
+      similarityAnchor: {
+        canonicalProductKey: 'canonical:owned-black-jacket',
+        inventoryItemId: '00000000-0000-0000-0000-000000000402',
+        label: 'My Black Quilted Jacket',
+      },
+    })
+    expect(JSON.stringify(messages[1])).not.toContain(query)
+    expect(JSON.stringify(messages[1])).not.toContain('Brown Chore Coat')
+  })
+
+  test('keeps each grounded heading next to its own similarity result in a multi-tool run', () => {
+    const jacket = canonicalProduct('product-jacket', 'offer-jacket', 'Field Jacket')
+    const boots = canonicalProduct('product-boots', 'offer-boots', 'Hiking Boots')
+    const toolMessage = (messageId: string, sequenceNumber: number): AgentMessageProfile => ({
+      messageId,
+      runId: 'run-multi-similar',
+      sequenceNumber,
+      role: 'TOOL',
+      contentKind: 'TOOL_RESULT',
+      textContent: null,
+      contentJson: JSON.stringify({ truncated: true }),
+      correlationId: `${messageId}:find_similar_products`,
+      createdAt,
+    })
+    const firstTool = toolMessage('message-similar-jacket', 2)
+    const secondTool = toolMessage('message-similar-boots', 3)
+    const conversation: AgentConversationDetailProfile = {
+      conversationId: 'conversation-multi-similar',
+      title: 'Two similarity searches',
+      status: 'ACTIVE',
+      activeMissionId: null,
+      latestSequence: 4,
+      createdAt,
+      updatedAt: createdAt,
+      rollingSummary: null,
+      summaryVersion: 0,
+      latestCursor: 8,
+      messages: [
+        {
+          messageId: 'message-user-multi-similar',
+          runId: 'run-multi-similar',
+          sequenceNumber: 1,
+          role: 'USER',
+          contentKind: 'TEXT',
+          textContent: 'Find alternatives for both items.',
+          contentJson: null,
+          correlationId: null,
+          createdAt,
+        },
+        firstTool,
+        secondTool,
+        {
+          messageId: 'message-assistant-multi-similar',
+          runId: 'run-multi-similar',
+          sequenceNumber: 4,
+          role: 'ASSISTANT',
+          contentKind: 'TEXT',
+          textContent: 'Here are all the results.',
+          contentJson: null,
+          correlationId: null,
+          createdAt,
+        },
+      ],
+      artifacts: [
+        artifact({
+          artifactId: 'artifact-similar-jacket',
+          messageId: firstTool.messageId,
+          runId: 'run-multi-similar',
+          type: 'PRODUCT',
+          stableKey: jacket.key,
+          canonicalProductKey: jacket.key,
+          payloadJson: JSON.stringify({
+            product: jacket,
+            similarityAnchor: {
+              canonicalProductKey: 'owned-jacket',
+              inventoryItemId: '00000000-0000-0000-0000-000000000501',
+              label: 'Black Quilted Jacket',
+              query: 'jackets',
+            },
+          }),
+        }),
+        artifact({
+          artifactId: 'artifact-similar-boots',
+          messageId: secondTool.messageId,
+          runId: 'run-multi-similar',
+          type: 'PRODUCT',
+          stableKey: boots.key,
+          canonicalProductKey: boots.key,
+          payloadJson: JSON.stringify({
+            product: boots,
+            similarityAnchor: {
+              canonicalProductKey: 'owned-boots',
+              inventoryItemId: '00000000-0000-0000-0000-000000000502',
+              label: 'Brown Hiking Boots',
+              query: 'boots',
+            },
+          }),
+        }),
+      ],
+    }
+
+    const messages = discoverMessagesFromAgentConversation(conversation, [])
+
+    expect(messages[1]?.blocks).toMatchObject([
+      { type: 'text', text: 'Here are similar jackets to your Black Quilted Jacket:' },
+      { type: 'similar', products: [{ id: jacket.key }] },
+      { type: 'text', text: 'Here are similar boots to your Brown Hiking Boots:' },
+      { type: 'similar', products: [{ id: boots.key }] },
+    ])
+  })
+
   test('projects trusted product clarification choices as clickable numbered replies', () => {
     const assistant: AgentMessageProfile = {
       messageId: 'message-clarification',
@@ -1408,6 +1663,90 @@ describe('agent artifact mapping', () => {
         suggestedReplySubmissions: ['1', '2', '3'],
       }),
     ])
+  })
+
+  test('keeps a clarification question visible beside grounded similarity results', () => {
+    const product = canonicalProduct('product-clarification-jacket', 'offer-jacket', 'Field Jacket')
+    const tool: AgentMessageProfile = {
+      messageId: 'message-tool-clarification-similar',
+      runId: 'run-clarification-similar',
+      sequenceNumber: 1,
+      role: 'TOOL',
+      contentKind: 'TOOL_RESULT',
+      textContent: null,
+      contentJson: JSON.stringify({ truncated: true }),
+      correlationId: 'call-clarification-similar:find_similar_products',
+      createdAt,
+    }
+    const assistant: AgentMessageProfile = {
+      messageId: 'message-assistant-clarification-similar',
+      runId: 'run-clarification-similar',
+      sequenceNumber: 2,
+      role: 'ASSISTANT',
+      contentKind: 'TEXT',
+      textContent: 'Which jacket should I use? Reply with a number or product name.',
+      contentJson: JSON.stringify({
+        pendingProductClarification: {
+          toolName: 'find_similar_products',
+          originalUserText: 'Find jackets like mine.',
+          products: [
+            { visibleOrdinal: 1, title: 'Black Quilted Jacket' },
+            { visibleOrdinal: 2, title: 'Black Leather Jacket' },
+          ],
+        },
+      }),
+      correlationId: null,
+      createdAt,
+    }
+    const conversation: AgentConversationDetailProfile = {
+      conversationId: 'conversation-clarification-similar',
+      title: 'Clarify jacket',
+      status: 'ACTIVE',
+      activeMissionId: null,
+      latestSequence: 2,
+      createdAt,
+      updatedAt: createdAt,
+      rollingSummary: null,
+      summaryVersion: 0,
+      latestCursor: 4,
+      messages: [tool, assistant],
+      artifacts: [
+        artifact({
+          artifactId: 'artifact-product-clarification-jacket',
+          messageId: tool.messageId,
+          runId: tool.runId,
+          type: 'PRODUCT',
+          stableKey: product.key,
+          canonicalProductKey: product.key,
+          payloadJson: JSON.stringify({
+            ...product,
+            similarityAnchor: {
+              canonicalProductKey: 'canonical:owned-black-jacket',
+              inventoryItemId: '00000000-0000-0000-0000-000000000601',
+              label: 'Black Quilted Jacket',
+              query: 'jackets',
+            },
+          }),
+        }),
+      ],
+    }
+
+    const messages = discoverMessagesFromAgentConversation(conversation, [])
+
+    expect(messages).toHaveLength(1)
+    expect(messages[0]).toMatchObject({
+      role: 'ai',
+      blocks: [
+        {
+          type: 'text',
+          text: 'Which jacket should I use? Reply with a number or product name.',
+        },
+        { type: 'text', text: 'Here are similar jackets to your Black Quilted Jacket:' },
+        { type: 'similar', products: [{ id: product.key }] },
+      ],
+      suggestedReplies: ['1. Black Quilted Jacket', '2. Black Leather Jacket'],
+      suggestedReplySubmissions: ['1', '2'],
+    })
   })
 
   test('replaces enumerated catalog prose with one concise lead-in and product cards', () => {

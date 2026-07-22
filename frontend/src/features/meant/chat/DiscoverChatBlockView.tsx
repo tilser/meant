@@ -386,11 +386,13 @@ export function DiscoverChatBlockView({
   if (block.type === 'similar') {
     return (
       <div className="mt-ct-block">
-        <div className="mt-ct-block-head">
-          <div className="mt-mono mt-ct-block-key">
-            {block.product ? `Similar to ${block.product.name}` : 'Similar products'}
+        {block.similarityAnchor ? null : (
+          <div className="mt-ct-block-head">
+            <div className="mt-mono mt-ct-block-key">
+              {block.product ? `Similar to ${block.product.name}` : 'Similar products'}
+            </div>
           </div>
-        </div>
+        )}
         <DiscoverProductBatch
           products={block.products}
           query={researchQuery ?? undefined}

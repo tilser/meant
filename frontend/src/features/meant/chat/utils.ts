@@ -879,6 +879,9 @@ function discoverBlockCopyText(block: DiscoverChatBlock): string {
     return `${block.product.name} code search: ${block.message ?? 'No accepted code found'}`
   }
   if (block.type === 'similar') {
+    if (block.similarityAnchor) {
+      return block.products.map(productCopyLine).join('\n')
+    }
     const heading = block.product ? `Similar to ${block.product.name}:` : 'Similar products:'
     return [heading, ...block.products.map(productCopyLine)].join('\n')
   }

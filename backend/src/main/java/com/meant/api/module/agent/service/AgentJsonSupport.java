@@ -3,10 +3,11 @@ package com.meant.api.module.agent.service;
 import com.meant.api.common.constant.ApiErrorCode;
 import com.meant.api.module.agent.exception.AgentException;
 import com.meant.api.module.agent.properties.AgentProperties;
-import java.util.Iterator;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.TreeMap;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -78,6 +79,18 @@ public class AgentJsonSupport {
                     "Agent artifact could not be serialized.",
                     exception
             );
+        }
+    }
+
+    /** Reads immutable server-owned artifact metadata without applying model-argument rules. */
+    public <T> Optional<T> readArtifact(String value, Class<T> type) {
+        if (value == null || value.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(objectMapper.readValue(value, type));
+        } catch (JacksonException exception) {
+            return Optional.empty();
         }
     }
 

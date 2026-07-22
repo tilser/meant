@@ -88,23 +88,24 @@ public class AgentMutationTargetPolicy {
     private static final Pattern PENDING_UNWATCH_ACTION = pendingAction("unwatch|stop\\s+watching");
     private static final Pattern TOKEN = Pattern.compile("[\\p{L}\\p{N}]+");
     private static final Set<String> NON_DESCRIPTIVE_TOKENS = Set.of(
-            "actually", "add", "again", "already", "also", "and", "back", "bag", "basket", "both", "buy",
+            "actually", "add", "again", "already", "also", "and", "are", "back", "bag", "basket", "both", "buy",
             "card", "cards", "choice", "choices",
             "can", "cart", "check", "checkout", "choose", "compare", "could", "delete", "did", "does", "don",
             "dont", "eighth",
             "fifth", "first", "for", "fourth",
             "about", "availability", "available", "cost", "costs", "coupon", "coupons", "detail", "details",
             "discount", "discounts", "find", "four", "from", "get", "give", "how", "info", "information",
-            "inspect", "into", "item", "items",
-            "fine", "good", "great", "look", "looking", "looks", "more", "need", "new", "nice", "not", "one", "ones",
-            "ninth", "know", "like", "may", "might", "must", "now", "okay", "our",
+            "inspect", "into", "inventory", "item", "items",
+            "fine", "good", "great", "look", "looking", "looks", "mean", "meant", "more", "need", "new", "nice",
+            "not", "one", "ones",
+            "ninth", "know", "like", "may", "might", "mine", "must", "now", "okay", "our", "own", "owned",
             "option", "options", "order", "pair", "pin", "place", "please", "product", "products", "purchase", "put",
             "prepare", "price", "prices", "pricing", "promo", "promos", "remove", "pick", "really", "recommend",
             "recommended", "result", "results", "review", "reviews", "same",
             "save", "search", "second", "set",
             "select", "selected", "seventh", "should", "show", "similar", "sixth", "size", "some", "sounds", "take", "tell",
             "tenth", "that", "the", "them", "then", "these", "third", "this", "those", "three", "two",
-            "view", "want", "watch", "what", "which", "will", "with", "would", "you", "your"
+            "use", "using", "view", "want", "watch", "what", "which", "will", "with", "would", "you", "your"
     );
     private static final Set<String> PRODUCT_SELECTION_TOOLS = Set.of(
             "pin_product", "unpin_product", "watch_product", "unwatch_product",
@@ -152,6 +153,9 @@ public class AgentMutationTargetPolicy {
             List<Integer> ordinals = ordinals(context.triggeringUserText());
             if (!ordinals.isEmpty()) {
                 return matchesOrdinals(context, toolName, canonicalArgumentsJson, ordinals, evidence);
+            }
+            if (toolName.equals("get_inventory_item")) {
+                return matchesResolvedInventoryReadTarget(context, canonicalArgumentsJson, evidence);
             }
             return !SINGLE_PRODUCT_READ_TOOLS.contains(toolName)
                     || matchesResolvedProductReadTarget(
@@ -423,6 +427,11 @@ public class AgentMutationTargetPolicy {
                         single(ordinals) && expectedProductKey(context, evidence, ordinals.getFirst())
                                 .map(expected -> expected.equals(text(arguments, "canonicalProductKey")))
                                 .orElse(false);
+                case "get_inventory_item" ->
+                        single(ordinals) && expectedInventoryItem(evidence, ordinals.getFirst())
+                                .map(expected -> expected.getInventoryItemId().toString()
+                                        .equals(text(arguments, "inventoryItemId")))
+                                .orElse(false);
                 case "find_similar_products" -> matchesSimilarAnchor(context, ordinals, arguments, evidence);
                 default -> true;
             };
@@ -616,6 +625,74 @@ public class AgentMutationTargetPolicy {
                 .toList();
         return namedMatches.size() == 1
                 && namedMatches.getFirst().canonicalProductKey().equals(proposedProductKey);
+    }
+
+    private boolean matchesResolvedInventoryReadTarget(
+            AgentToolExecutionContext context,
+            String canonicalArgumentsJson,
+            List<AgentArtifactReference> evidence
+    ) {
+        JsonNode arguments = objectMapper.readTree(canonicalArgumentsJson);
+        String proposedInventoryItemId = text(arguments, "inventoryItemId");
+        if (proposedInventoryItemId == null || proposedInventoryItemId.isBlank()) {
+            return false;
+        }
+        List<AgentArtifactReference> candidates = latestInventoryResultSet(evidence);
+        if (candidates.isEmpty()) {
+            return false;
+        }
+        String userText = Optional.ofNullable(context.triggeringUserText()).orElse("");
+        List<AgentArtifactReference> stableMatches = candidates.stream()
+                .filter(candidate -> literalReference(userText, candidate.getInventoryItemId().toString()))
+                .toList();
+        if (!stableMatches.isEmpty()) {
+            return stableMatches.size() == 1
+                    && stableMatches.getFirst().getInventoryItemId().toString()
+                            .equals(proposedInventoryItemId);
+        }
+        Set<String> description = descriptiveTokens(userText);
+        if (description.isEmpty()) {
+            return candidates.size() == 1
+                    && candidates.getFirst().getInventoryItemId().toString()
+                            .equals(proposedInventoryItemId);
+        }
+        List<AgentArtifactReference> namedMatches = candidates.stream()
+                .filter(candidate -> inventoryDescriptiveTokens(candidate).containsAll(description))
+                .toList();
+        return namedMatches.size() == 1
+                && namedMatches.getFirst().getInventoryItemId().toString()
+                        .equals(proposedInventoryItemId);
+    }
+
+    private Set<String> inventoryDescriptiveTokens(AgentArtifactReference reference) {
+        Set<String> tokens = new LinkedHashSet<>(descriptiveTokens(reference.getLabel()));
+        try {
+            JsonNode payload = objectMapper.readTree(reference.getPayloadJson());
+            JsonNode item = payload == null ? null : payload.get("item");
+            if (item == null || !item.isObject()) {
+                item = payload;
+            }
+            if (item == null || !item.isObject()) {
+                return Set.copyOf(tokens);
+            }
+            for (String field : List.of(
+                    "name", "brand", "category", "description", "notes", "size", "color", "material",
+                    "unit", "location"
+            )) {
+                tokens.addAll(descriptiveTokens(text(item, field)));
+            }
+            JsonNode attributes = item.get("attributes");
+            if (attributes != null && attributes.isArray()) {
+                for (JsonNode attribute : attributes) {
+                    if (attribute.isTextual()) {
+                        tokens.addAll(descriptiveTokens(attribute.asText()));
+                    }
+                }
+            }
+        } catch (RuntimeException ignored) {
+            // The trusted display label remains usable when reading historical payloads fails.
+        }
+        return Set.copyOf(tokens);
     }
 
     private boolean singlePreparedOfferMatches(
@@ -1108,19 +1185,35 @@ public class AgentMutationTargetPolicy {
             List<AgentArtifactReference> evidence,
             int ordinal
     ) {
+        return atOrdinal(latestInventoryResultSet(evidence), ordinal);
+    }
+
+    private List<AgentArtifactReference> latestInventoryResultSet(
+            List<AgentArtifactReference> evidence
+    ) {
         Optional<AgentArtifactReference> newest = evidence.stream()
                 .filter(reference -> reference.getArtifactType() == AgentArtifactType.INVENTORY_ITEM)
+                .filter(reference -> !selectedInventoryItem(reference))
                 .findFirst();
         if (newest.isEmpty()) {
-            return Optional.empty();
+            return List.of();
         }
         AgentArtifactReference anchor = newest.get();
-        List<AgentArtifactReference> items = evidence.stream()
+        return evidence.stream()
                 .filter(reference -> reference.getArtifactType() == AgentArtifactType.INVENTORY_ITEM)
+                .filter(reference -> !selectedInventoryItem(reference))
                 .filter(reference -> sameResultSet(anchor, reference))
                 .sorted(java.util.Comparator.comparingInt(AgentArtifactReference::getOrdinal))
                 .toList();
-        return atOrdinal(items, ordinal);
+    }
+
+    private boolean selectedInventoryItem(AgentArtifactReference reference) {
+        try {
+            JsonNode payload = objectMapper.readTree(reference.getPayloadJson());
+            return "SELECTED_ITEM".equals(text(payload, "kind"));
+        } catch (RuntimeException exception) {
+            return false;
+        }
     }
 
     private <T> Optional<T> atOrdinal(List<T> items, int ordinal) {

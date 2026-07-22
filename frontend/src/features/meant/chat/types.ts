@@ -48,6 +48,13 @@ export interface SimilarProductsRehydrationResult {
   unavailableCanonicalProductKeys: readonly string[]
 }
 
+export interface SimilarityAnchor {
+  canonicalProductKey: string
+  inventoryItemId: string | null
+  label: string
+  query: string
+}
+
 export type DiscoverChatBlock =
   | { type: 'text'; text: string }
   | { type: 'newsletter' }
@@ -84,6 +91,8 @@ export type DiscoverChatBlock =
       sourceMessageId?: string
       anchorCanonicalProductKey?: string
       resultCanonicalProductKeys?: readonly string[]
+      /** Trusted anchor metadata returned by the similarity tool. */
+      similarityAnchor?: SimilarityAnchor
     }
   | {
       type: 'similar-reference'
