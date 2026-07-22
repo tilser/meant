@@ -29,7 +29,6 @@ import type { ActiveCheckoutSession, CheckoutAssistantContext } from './cart/che
 import { resolveCartableOffer } from './cart/cartOfferResolver'
 import type { MerchantCartSnapshot, MerchantCartStateReplacement } from './cart/types'
 import { useCartController } from './cart/useCartController'
-import { ChatDiscoverView } from './chat/ChatDiscoverView'
 import { AgentDiscoverView } from './agent/AgentDiscoverView'
 import { agentActionQueueFor } from './agent/actionQueue'
 import {
@@ -47,7 +46,6 @@ import {
   registerPendingAgentCartRun,
   type PendingAgentCartRun,
 } from './agent/cartSync'
-import { isAgenticDiscoverEnabled } from './agent/featureFlag'
 import { CompareView } from './compare/CompareView'
 import { InventoryView } from './inventory/InventoryView'
 import {
@@ -63,9 +61,7 @@ import {
 } from './inventory/inventoryUtils'
 import { ProductCard } from './product/ProductCard'
 import { ProductModal } from './product/ProductModal'
-import { productFromCanonical } from './product/groupedProductMapping'
 import {
-  appendProductSnapshots,
   confirmedSavedProductSnapshot,
   productSnapshotsForIds,
   refreshedSavedProductSnapshot,
@@ -77,13 +73,7 @@ import { productFromSearchResult } from './product/productSearchMapping'
 import { savedProductFromProfile, savedProductInput } from './product/savedProductMapping'
 import { OrdersView } from './orders/OrdersView'
 import { orderFromProfile } from './orders/orderMapping'
-import type {
-  DiscoverFindRequest,
-  DiscoverProductSearchTurnInput,
-  DiscoverProductSearchTurnResult,
-  ProductDetailChatRequest,
-} from './chat/types'
-import { isRenderableSearchProduct } from './chat/utils'
+import type { DiscoverFindRequest, ProductDetailChatRequest } from './chat/types'
 import type { ProductOpenProps, ProductSaveProps } from './product/types'
 import { productWithCuratedFields } from './product/productCuration'
 import { deliveryLocationSummary } from './shared/locations'
@@ -127,13 +117,9 @@ import {
   removeSavedProduct,
   removeUserTasteSignal,
   rejectUserTasteSuggestion,
-  rehydrateCanonicalProducts,
-  qualifyProductSearch,
   revokeMerchantIdentityLink,
   saveUserProduct,
   startMerchantIdentityAuthorization,
-  searchGroupedProducts,
-  searchSimilarGroupedProducts,
   type CheckoutAssistantMessage,
   type CheckoutAssistantResult,
   type CheckoutProfile,
@@ -167,14 +153,7 @@ import type {
   UserLocation,
   View,
 } from './types'
-import {
-  cartItemIdentity,
-  cartLines,
-  cartMerchantKey,
-  normalizedMerchantName,
-  productsForLocation,
-  productsForClothingFit,
-} from './utils'
+import { cartItemIdentity, cartLines, cartMerchantKey, normalizedMerchantName } from './utils'
 
 const EMPTY_TASTE_PROFILE: UserTasteProfile = {
   profileHash: '',
@@ -190,7 +169,6 @@ interface NavOptions {
 
 const DEFAULT_GREETING = 'Good afternoon'
 const SEARCH_SUGGESTION_COUNT = 4
-const PRODUCT_SEARCH_PAGE_SIZE = 20
 
 function greetingForHour(hour: number): string {
   if (hour >= 5 && hour < 12) {
@@ -740,10 +718,6 @@ export function MeantApp() {
   )
   const [cartPeek, setCartPeek] = useState(false)
   const [accountMenu, setAccountMenu] = useState(false)
-  const searchRequestSequenceRef = useRef(0)
-  const searchRequestsRef = useRef(
-    new Map<string, { requestId: number; controller: AbortController }>(),
-  )
   const activeUserIdRef = useRef(userId)
   activeUserIdRef.current = userId
   const pendingAgentCartRunsRef = useRef(pendingAgentCartRuns)
@@ -807,8 +781,6 @@ export function MeantApp() {
   )
 
   useEffect(() => {
-    searchRequestsRef.current.forEach(({ controller }) => controller.abort())
-    searchRequestsRef.current.clear()
     searchSuggestionsRequestRef.current += 1
     inventoryRequestRef.current += 1
     ordersRequestRef.current += 1
@@ -1086,16 +1058,6 @@ export function MeantApp() {
         .filter((product): product is Product => Boolean(product)),
     [allKnownProductsMap, currentSavedIds],
   )
-  const discoveryProducts = useMemo(() => {
-    const seen = new Set<ProductId>()
-    return [...savedListProducts, ...currentRemoteProducts].filter((product) => {
-      if (seen.has(product.id)) {
-        return false
-      }
-      seen.add(product.id)
-      return true
-    })
-  }, [currentRemoteProducts, savedListProducts])
 
   const liveProfile = useMemo(
     () => ({
@@ -1104,12 +1066,6 @@ export function MeantApp() {
     }),
     [user.name],
   )
-
-  const baseFeed = discoveryProducts
-  const shippingScopedFeedProducts = productsForLocation(baseFeed, deliveryLocations)
-  const unscopedFeedProducts = productsForClothingFit(shippingScopedFeedProducts, clothingFit)
-  const feedProducts = unscopedFeedProducts
-  const hiddenByShip = baseFeed.length - shippingScopedFeedProducts.length
 
   const refreshSavedProductForOpen = useCallback(
     (product: Product, force = false) => {
@@ -1576,8 +1532,6 @@ export function MeantApp() {
     setProductSearchPreferencesBusy(false)
     setProductSearchPreferencesError(null)
     productSearchPreferencesSessionRef.current += 1
-    searchRequestsRef.current.forEach(({ controller }) => controller.abort())
-    searchRequestsRef.current.clear()
     savedProductDetailRequestRef.current?.controller.abort()
     savedProductDetailRequestRef.current = null
     setSavedProductDetailLoadingId(null)
@@ -2440,191 +2394,6 @@ export function MeantApp() {
     URL.revokeObjectURL(url)
   }
 
-  const runProductSearch = async (
-    turn: DiscoverProductSearchTurnInput,
-  ): Promise<DiscoverProductSearchTurnResult> => {
-    const submittedMessage = turn.message.trim()
-    if (!submittedMessage) {
-      throw new Error('Tell Meant what you want to find.')
-    }
-    const merchantId = turn.merchantId ?? null
-    const searchUserId = userId
-    if (!searchUserId) {
-      throw new Error('Sign in before starting a product search.')
-    }
-    const requestId = searchRequestSequenceRef.current + 1
-    searchRequestSequenceRef.current = requestId
-    searchRequestsRef.current.get(turn.conversationId)?.controller.abort()
-    const controller = new AbortController()
-    searchRequestsRef.current.set(turn.conversationId, { requestId, controller })
-    const isCurrentRequest = () =>
-      searchRequestsRef.current.get(turn.conversationId)?.requestId === requestId &&
-      !controller.signal.aborted &&
-      activeUserIdRef.current === searchUserId
-    turn.onActivities?.([
-      {
-        agent: 'qualification',
-        label: 'Understanding which filters matter for this search',
-        state: 'active',
-        updatedAt: Date.now(),
-      },
-    ])
-    try {
-      const qualification = await qualifyProductSearch({
-        conversationId: turn.conversationId,
-        qualificationId: turn.qualificationId,
-        message: submittedMessage,
-        merchantId,
-        signal: controller.signal,
-        expectedUserId: searchUserId,
-      })
-      if (!isCurrentRequest()) {
-        throw new Error('Product search was cancelled.')
-      }
-
-      const effectiveQuery = qualification.effectiveQuery.trim() || submittedMessage
-      void refreshProductSearchPreferences()
-      if (qualification.status === 'NEEDS_INPUT') {
-        turn.onActivities?.([
-          {
-            agent: 'qualification',
-            label: 'Waiting for your search preferences',
-            state: 'done',
-            updatedAt: Date.now(),
-          },
-        ])
-        return {
-          status: 'NEEDS_INPUT',
-          qualificationId: qualification.qualificationId,
-          assistantMessage: qualification.assistantMessage,
-          suggestedReplies: qualification.suggestedReplies,
-          effectiveQuery,
-        }
-      }
-
-      turn.onActivities?.([
-        {
-          agent: 'search',
-          label: 'Grouping products and ranking merchant offers',
-          state: 'active',
-          updatedAt: Date.now(),
-        },
-      ])
-      const result = await searchGroupedProducts({
-        query: effectiveQuery,
-        qualificationId: qualification.qualificationId,
-        merchantId,
-        offset: 0,
-        limit: PRODUCT_SEARCH_PAGE_SIZE,
-        signal: controller.signal,
-        expectedUserId: searchUserId,
-      })
-      if (!isCurrentRequest()) {
-        throw new Error('Product search was cancelled.')
-      }
-      const products = result.products.map(productFromCanonical).filter(isRenderableSearchProduct)
-      setRemoteProducts((current) => appendProductSnapshots(current, products))
-      const degradedCount = result.sourceStates.filter((source) => source.degraded).length
-      const sourceNote =
-        degradedCount > 0
-          ? ` ${degradedCount} source${degradedCount === 1 ? ' is' : 's are'} limited; healthy offers are still shown.`
-          : ''
-      const resultMessage = result.cached
-        ? `Showing ${products.length} cached grouped match${products.length === 1 ? '' : 'es'} for "${effectiveQuery}".${sourceNote}`
-        : `Found ${products.length} grouped product${products.length === 1 ? '' : 's'} for "${effectiveQuery}".${sourceNote}`
-      const qualificationMessage = qualification.assistantMessage.trim()
-      turn.onActivities?.([
-        {
-          agent: 'search',
-          label: 'Grouped products and ranked offers',
-          state: 'done',
-          updatedAt: Date.now(),
-        },
-      ])
-      return {
-        status: 'READY',
-        qualificationId: qualification.qualificationId,
-        assistantMessage: qualificationMessage
-          ? `${qualificationMessage} ${resultMessage}`
-          : resultMessage,
-        suggestedReplies: qualification.suggestedReplies,
-        effectiveQuery,
-        products,
-        productResultSetId: result.productResultSetId,
-      }
-    } catch (error: unknown) {
-      const errorMessage =
-        error instanceof Error && error.message.trim()
-          ? error.message
-          : 'Product search failed. Please try again.'
-      turn.onActivities?.([
-        {
-          agent: 'search',
-          label: 'Grouped product search failed',
-          state: 'error',
-          updatedAt: Date.now(),
-        },
-      ])
-      throw error instanceof Error ? error : new Error(errorMessage)
-    } finally {
-      if (searchRequestsRef.current.get(turn.conversationId)?.requestId === requestId) {
-        searchRequestsRef.current.delete(turn.conversationId)
-      }
-    }
-  }
-
-  const findSimilarProducts = useCallback(
-    async (
-      product: Product,
-      sourceQuery: string,
-      qualificationId: string | undefined,
-      signal: AbortSignal,
-    ): Promise<Product[]> => {
-      const canonicalProductKey = product.canonicalProduct?.key ?? product.id
-      const result = await searchSimilarGroupedProducts({
-        canonicalProductKey,
-        query: sourceQuery,
-        qualificationId,
-        signal,
-      })
-      if (signal.aborted) {
-        return []
-      }
-      const seen = new Set<ProductId>([product.id, canonicalProductKey])
-      const similarProducts = result.products
-        .filter((candidate) => candidate.key !== canonicalProductKey)
-        .map(productFromCanonical)
-        .filter(isRenderableSearchProduct)
-        .filter((candidate) => {
-          if (seen.has(candidate.id)) {
-            return false
-          }
-          seen.add(candidate.id)
-          return true
-        })
-
-      setRemoteProducts((current) => appendProductSnapshots(current, similarProducts))
-      return similarProducts
-    },
-    [],
-  )
-
-  const rehydrateSimilarProducts = useCallback(
-    async (canonicalProductKeys: readonly string[], signal: AbortSignal) => {
-      const result = await rehydrateCanonicalProducts({ canonicalProductKeys, signal })
-      if (signal.aborted) {
-        throw new DOMException('Similar product rehydration was aborted', 'AbortError')
-      }
-      const products = result.products.map(productFromCanonical).filter(isRenderableSearchProduct)
-      setRemoteProducts((current) => appendProductSnapshots(current, products))
-      return {
-        products,
-        unavailableCanonicalProductKeys: result.unavailableCanonicalProductKeys,
-      }
-    },
-    [],
-  )
-
   const compareChatProducts = (products: readonly Product[]) => {
     const nextProducts = products.slice(0, 4)
     if (nextProducts.length < 2) {
@@ -3097,7 +2866,7 @@ export function MeantApp() {
         )
       case 'discover':
       default:
-        return isAgenticDiscoverEnabled() ? (
+        return (
           <AgentDiscoverView
             key={userId ?? 'anonymous'}
             expectedUserId={userId ?? ''}
@@ -3120,7 +2889,7 @@ export function MeantApp() {
             homeRequestId={discoverHomeRequestId}
             newsletter={user.newsletter}
             onOpen={(product, products, researchQuery) =>
-              openProduct(product, products ?? feedProducts, researchQuery)
+              openProduct(product, products ?? allKnownProducts, researchQuery)
             }
             onToggleSave={toggleSave}
             onCompareProducts={compareChatProducts}
@@ -3144,65 +2913,6 @@ export function MeantApp() {
             onCaptureAgentCartRevision={captureAgentCartRevision}
             onAgentCartSnapshot={registerAgentCartSnapshot}
             onAgentRunSubmitted={registerAgentCartRun}
-            onProductDetailChatRequestHandled={(requestId) => {
-              setProductDetailChatRequest((current) => (current?.id === requestId ? null : current))
-            }}
-            onFlashMessage={flashShelfMessage}
-          />
-        ) : (
-          <ChatDiscoverView
-            key={userId ?? 'anonymous'}
-            profile={liveProfile}
-            storageScope={userId ?? 'anonymous'}
-            greeting={greeting}
-            products={feedProducts}
-            hiddenByShip={hiddenByShip}
-            deliveryLocations={deliveryLocations}
-            prompts={currentSearchSuggestions}
-            preferences={allPreferences}
-            merchants={currentMerchants}
-            merchantsLoading={merchantsLoading}
-            merchantsError={merchantsError}
-            savedProducts={savedListProducts}
-            cart={cart}
-            cartProducts={allKnownProducts}
-            orders={currentOrders}
-            shelf={shelf}
-            shelfFlashMessageId={shelfFlashMessageId}
-            discoverFindRequest={currentDiscoverFindRequest}
-            homeRequestId={discoverHomeRequestId}
-            productDetailChatRequest={currentProductDetailChatRequest}
-            newsletter={user.newsletter}
-            onSubmit={runProductSearch}
-            onSearchSimilarProducts={findSimilarProducts}
-            onRehydrateSimilarProducts={rehydrateSimilarProducts}
-            onOpen={(product, products, researchQuery) =>
-              openProduct(product, products ?? feedProducts, researchQuery)
-            }
-            savedSet={savedSet}
-            savePendingSet={savePendingSet}
-            onToggleSave={toggleSave}
-            onAddProductToCart={addProductOfferToCartResolved}
-            onAddSelectedOfferToCart={addSelectedOfferToCartGuarded}
-            onFallbackAddToCart={(product, offer) => addToCartGuarded(product.id, offer.merchant)}
-            onCompareProducts={compareChatProducts}
-            onCartQty={updateQtyGuarded}
-            onCartRemove={removeFromCartGuarded}
-            onCheckout={checkoutInChat}
-            activeCheckout={activeCheckout?.source === 'chat' ? activeCheckout : null}
-            checkoutBusy={checkoutFlowBusy}
-            checkoutError={checkoutFlowError}
-            onCheckoutAssistant={assistActiveCheckout}
-            onRefreshCheckout={refreshActiveCheckout}
-            onReleaseCheckout={releaseChatCheckout}
-            onOpenSaved={() => nav('saved')}
-            onOpenOrders={() => nav('orders')}
-            onOpenPrefs={() => nav('preferences')}
-            onOpenCart={() => nav('cart')}
-            onOpenShelf={() => setShelfOpen(true)}
-            onNewsletterChange={updateNewsletter}
-            onShelfAddMessage={addMessageToShelf}
-            onShelfAddProduct={addProductToShelf}
             onProductDetailChatRequestHandled={(requestId) => {
               setProductDetailChatRequest((current) => (current?.id === requestId ? null : current))
             }}

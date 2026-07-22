@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 
 import type { MerchantProfile } from '../../../lib/apiClient'
-import { MerchantScope } from './ChatDiscoverView'
+import { MerchantScope } from './MerchantScope'
 
 const merchant: MerchantProfile = {
   id: '00000000-0000-4000-8000-000000000088',

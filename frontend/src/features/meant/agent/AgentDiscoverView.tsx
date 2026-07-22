@@ -30,7 +30,7 @@ import type {
   CheckoutReleaseHandler,
 } from '../cart/checkoutTypes'
 import { AgentActivityPanel } from '../chat/AgentActivityPanel'
-import { DiscoverHomeHero } from '../chat/ChatDiscoverView'
+import { DiscoverHomeHero } from '../chat/DiscoverHomeHero'
 import { comingSoonMessage } from '../chat/comingSoon'
 import { DiscoverChatMessageRow } from '../chat/DiscoverChatMessageRow'
 import { DiscoverShareSheet } from '../chat/DiscoverShareSheet'

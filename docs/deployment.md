@@ -133,7 +133,6 @@ VITE_SUPABASE_URL=https://<project-ref>.supabase.co
 VITE_SUPABASE_ANON_KEY=<publishable-or-anon-key>
 VITE_EMBEDDED_CHECKOUT_ENABLED=true
 VITE_CHECKOUT_KIT_DEBUG=false
-VITE_AGENTIC_DISCOVER_ENABLED=true
 ```
 
 Every variable prefixed with `VITE_` is included in browser code. Never put a database password,
