@@ -435,8 +435,8 @@ public class CheckoutAssistantService {
                 - shippingAddress.addressCountry as a 2-letter country code when clear
 
                 The buyer is shown this template and often sends it in one message:
-                "Ship to 1531 Hyde St, San Francisco, CA 94109, US, David Test, \
-                david@test.cz, +420 731 958 653".
+                "Ship to 1531 Hyde St, San Francisco, CA 94109, US, John Novak, \
+                john.novak@gmail.com, +1 415 555 0137".
 
                 Parsing rules:
                 - The current buyer message is the highest priority source. Merchant messages \

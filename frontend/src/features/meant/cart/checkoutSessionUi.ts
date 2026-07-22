@@ -157,7 +157,7 @@ export function checkoutAssistantPrompt(session: ActiveCheckoutSession): string 
     return [
       `I need shipping and contact details before I can continue with ${session.merchant}.`,
       coverage,
-      'Send them here in one message, for example: "Ship to 1531 Hyde St, San Francisco, CA 94109, US, David Test, david@test.cz, +420 731 958 653".',
+      'Send them here in one message, for example: "Ship to 1531 Hyde St, San Francisco, CA 94109, US, John Novak, john.novak@gmail.com, +1 415 555 0137".',
     ].join(' ')
   }
   if (session.profile.nextAction === 'OPEN_EMBEDDED_CHECKOUT') {
