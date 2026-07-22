@@ -93,7 +93,9 @@ public class MerchantCatalogSearchExecutor {
                             catalogSearchResult.endpoint(),
                             safeNonNullList(catalogSearchResult.products()).size()
                     ),
-                    productCandidates(merchant, catalogSearchResult)
+                    productCandidates(merchant, catalogSearchResult),
+                    catalogSearchResult.pagination() != null
+                            && Boolean.TRUE.equals(catalogSearchResult.pagination().hasNextPage())
             );
         } catch (RuntimeException exception) {
             return merchantCatalogSearchFailure(merchant, exception);

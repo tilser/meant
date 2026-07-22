@@ -131,7 +131,7 @@ public class MerchantSemanticCatalogDiscoverySource implements CatalogDiscoveryS
                     NegotiatedCapabilities.none(),
                     candidates,
                     null,
-                    candidates.size() >= request.candidateLimit(),
+                    (result != null && result.truncated()) || candidates.size() >= request.candidateLimit(),
                     null
             );
         } catch (RuntimeException exception) {
@@ -146,7 +146,7 @@ public class MerchantSemanticCatalogDiscoverySource implements CatalogDiscoveryS
                 request.merchantId(),
                 null,
                 null,
-                null,
+                request.candidateLimit(),
                 request.candidateLimit(),
                 request.context(),
                 request.signals(),

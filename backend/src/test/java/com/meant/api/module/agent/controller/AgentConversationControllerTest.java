@@ -7,21 +7,25 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.meant.api.module.agent.constant.AgentContentKind;
+import com.meant.api.module.agent.constant.AgentConversationStatus;
 import com.meant.api.module.agent.constant.AgentMessageRole;
 import com.meant.api.module.agent.constant.AgentShelfItemKind;
 import com.meant.api.module.agent.controller.request.AgentShelfContextRequest;
 import com.meant.api.module.agent.controller.request.AgentShelfItemRequest;
 import com.meant.api.module.agent.controller.request.AgentUserActionRequest;
 import com.meant.api.module.agent.controller.request.AgentVisibleProductContextRequest;
+import com.meant.api.module.agent.controller.request.CreateAgentConversationRequest;
 import com.meant.api.module.agent.controller.request.SubmitAgentTurnRequest;
 import com.meant.api.module.agent.service.AgentConversationService;
 import com.meant.api.module.agent.service.AgentRunCoordinator;
 import com.meant.api.module.agent.service.AgentTurnService;
 import com.meant.api.module.agent.service.AgentUserActionService;
 import com.meant.api.module.agent.service.command.DeleteAgentConversationCommand;
+import com.meant.api.module.agent.service.command.CreateAgentConversationCommand;
 import com.meant.api.module.agent.service.command.RecordAgentUserActionCommand;
 import com.meant.api.module.agent.service.command.SubmitAgentTurnCommand;
 import com.meant.api.module.agent.service.dto.AgentMessageResult;
+import com.meant.api.module.agent.service.dto.AgentConversationSummaryResult;
 import com.meant.api.module.agent.service.dto.AgentUserActionResult;
 import com.meant.api.module.agent.service.dto.SubmitAgentTurnResult;
 import jakarta.servlet.http.HttpServletRequest;
@@ -33,6 +37,43 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.security.oauth2.jwt.Jwt;
 
 class AgentConversationControllerTest {
+
+    @Test
+    void createsAConversationWithTheSelectedMerchantScope() {
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID merchantId = UUID.randomUUID();
+        Instant now = Instant.now();
+        AgentConversationService conversationService = mock(AgentConversationService.class);
+        when(conversationService.create(any())).thenReturn(new AgentConversationSummaryResult(
+                conversationId,
+                "Trail shoes",
+                AgentConversationStatus.ACTIVE,
+                merchantId,
+                null,
+                0L,
+                now,
+                now
+        ));
+        AgentConversationController controller = new AgentConversationController(
+                conversationService,
+                mock(AgentTurnService.class),
+                mock(AgentRunCoordinator.class),
+                mock(AgentUserActionService.class)
+        );
+
+        var response = controller.create(
+                jwt(userId),
+                new CreateAgentConversationRequest("Trail shoes", merchantId)
+        );
+
+        ArgumentCaptor<CreateAgentConversationCommand> commandCaptor =
+                ArgumentCaptor.forClass(CreateAgentConversationCommand.class);
+        verify(conversationService).create(commandCaptor.capture());
+        assertThat(commandCaptor.getValue().userId()).isEqualTo(userId);
+        assertThat(commandCaptor.getValue().merchantId()).isEqualTo(merchantId);
+        assertThat(response.merchantId()).isEqualTo(merchantId);
+    }
 
     @Test
     void deletesTheAuthenticatedUsersConversation() {

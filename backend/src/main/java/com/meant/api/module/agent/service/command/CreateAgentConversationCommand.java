@@ -6,6 +6,11 @@ import java.util.UUID;
 
 public record CreateAgentConversationCommand(
         @NotNull UUID userId,
-        @Size(max = 120) String title
+        @Size(max = 120) String title,
+        UUID merchantId
 ) {
+
+    public CreateAgentConversationCommand(UUID userId, String title) {
+        this(userId, title, null);
+    }
 }

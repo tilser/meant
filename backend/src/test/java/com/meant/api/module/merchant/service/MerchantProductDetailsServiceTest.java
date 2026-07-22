@@ -89,7 +89,7 @@ class MerchantProductDetailsServiceTest {
         private UUID requestedMerchantId;
 
         FakeMerchantLookupService() {
-            super(null);
+            super(null, null);
         }
 
         @Override

@@ -13,6 +13,7 @@ import com.meant.api.module.user.service.dto.UserGroupedProductSearchResult;
 import com.meant.api.module.user.service.dto.UserQualifiedProductSearchInput;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
+import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
@@ -40,21 +41,25 @@ public class UserSimilarProductSearchService {
                 .or(() -> productReferencePersistenceService.findProduct(
                         command.userId(), command.canonicalProductKey()))
                 .orElseThrow(() -> UserException.notFound("Canonical product reference was not found"));
-        CatalogSimilarityReference reference = similarityReferenceResolver.resolve(anchor)
-                .orElseThrow(() -> UserException.notFound(
-                        "Canonical product has no supported product-level similarity reference"));
         UserQualifiedProductSearchInput qualified = command.qualificationId() == null
                 ? null
                 : qualifiedSearchResolver.resolve(command.userId(), command.qualificationId());
-        if (qualified != null && qualified.merchantId() != null) {
-            throw new UserException("Similarity search qualification must target the global catalog");
+        if (qualified != null && command.merchantId() != null
+                && !Objects.equals(qualified.merchantId(), command.merchantId())) {
+            throw UserException.notFound("Product-search qualification not found");
         }
+        var merchantId = qualified == null ? command.merchantId() : qualified.merchantId();
+        CatalogSimilarityReference reference = merchantId != null
+                ? null
+                : similarityReferenceResolver.resolve(anchor)
+                        .orElseThrow(() -> UserException.notFound(
+                                "Canonical product has no supported product-level similarity reference"));
         String query = qualified == null ? command.query() : qualified.effectiveQuery();
         CatalogDiscoveryFilters discoveryFilters = qualified == null ? null : qualified.filters();
         SearchUserProductsCommand searchCommand = new SearchUserProductsCommand(
                 command.userId(),
                 query,
-                null,
+                merchantId,
                 command.buyerIp(),
                 command.userAgent(),
                 UserProductSearchPagination.DEFAULT_OFFSET,

@@ -343,6 +343,7 @@ export function normalizeDiscoverChatThreads(
     return {
       ...thread,
       id,
+      merchantId: normalizedQualificationId(thread.merchantId),
       messages: messages.map((message) => {
         if (!message.pending) return message
         if (message.pendingOperation === 'similar-product-search') {
@@ -509,6 +510,7 @@ export function durableDiscoverChatThread(
     title,
     archived,
     messages: thread.messages.map(durableDiscoverMessage),
+    merchantId: normalizedQualificationId(thread.merchantId),
     qualificationId: thread.qualificationId,
     named: thread.named,
     focusProductId: thread.focusProductId,

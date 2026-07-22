@@ -156,7 +156,7 @@ public class UserGroupedProductSearchService {
                 groupedProducts,
                 rankingContextFactory.create(command.userId(), preparation, groupedProducts)
         );
-        boolean singlePageSimilarity = similarityReference != null;
+        boolean singlePageSimilarity = anchor != null;
         int responseOffset = singlePageSimilarity
                 ? UserProductSearchPagination.DEFAULT_OFFSET
                 : preparation.offset();
@@ -250,14 +250,19 @@ public class UserGroupedProductSearchService {
             CanonicalProduct anchor,
             CatalogSimilarityReference similarityReference
     ) {
-        if (anchor == null || similarityReference == null) {
+        if (anchor == null) {
             return false;
         }
-        if (anchor.key().equals(candidate.key())
-                || hasReference(
-                        candidate,
-                        similarityReference.provider(),
-                        similarityReference.productReference().value())) {
+        if (anchor.key().equals(candidate.key())) {
+            return true;
+        }
+        if (similarityReference == null) {
+            return false;
+        }
+        if (hasReference(
+                candidate,
+                similarityReference.provider(),
+                similarityReference.productReference().value())) {
             return true;
         }
         boolean matchingProvenance = anchor.provenance().stream().anyMatch(provenance ->

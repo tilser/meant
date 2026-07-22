@@ -33,12 +33,14 @@ class AgentUserActionServiceTest {
     @Test
     void timedOutMutationReturnsAnExplicitUncertainCodeSoTheClientReusesItsKey() {
         UUID actionId = UUID.randomUUID();
+        UUID merchantId = UUID.randomUUID();
         AgentToolRegistry registry = mock(AgentToolRegistry.class);
         AgentUserActionPersistenceService persistence = mock(AgentUserActionPersistenceService.class);
         AgentJsonSupport json = mock(AgentJsonSupport.class);
         AgentToolSchemaValidator schema = mock(AgentToolSchemaValidator.class);
         CountDownLatch blocked = new CountDownLatch(1);
         AtomicReference<String> observedBuyerIp = new AtomicReference<>();
+        AtomicReference<UUID> observedMerchantId = new AtomicReference<>();
         AgentTool tool = new AgentTool() {
             @Override
             public AgentToolDescriptor descriptor() {
@@ -54,6 +56,7 @@ class AgentUserActionServiceTest {
             @Override
             public AgentToolExecutionResult execute(AgentToolExecutionContext context, String argumentsJson) {
                 observedBuyerIp.set(context.buyerIp());
+                observedMerchantId.set(context.merchantId());
                 try {
                     blocked.await();
                 } catch (InterruptedException exception) {
@@ -70,7 +73,7 @@ class AgentUserActionServiceTest {
                 "203.0.113.42"
         );
         when(persistence.reserve(command, "{}", "v1"))
-                .thenReturn(new AgentUserActionReservation(actionId, true, null));
+                .thenReturn(new AgentUserActionReservation(actionId, true, null, merchantId));
         AgentUserActionService service = new AgentUserActionService(
                 registry,
                 persistence,
@@ -92,6 +95,7 @@ class AgentUserActionServiceTest {
                     any(String.class)
             );
             assertThat(observedBuyerIp.get()).isEqualTo("203.0.113.42");
+            assertThat(observedMerchantId.get()).isEqualTo(merchantId);
         } finally {
             service.shutdown();
             blocked.countDown();

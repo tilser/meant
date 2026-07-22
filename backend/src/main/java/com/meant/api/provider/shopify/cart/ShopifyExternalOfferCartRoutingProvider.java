@@ -96,14 +96,15 @@ public class ShopifyExternalOfferCartRoutingProvider implements ExternalOfferCar
             boolean checkoutPolicyRequired
     ) {
         try {
-            Optional<MerchantCartProvider> match = merchantLookup.findActiveByCanonicalDomain(domain);
+            Optional<MerchantCartProvider> match = merchantLookup.findActiveByCanonicalDomain(domain)
+                    .or(() -> merchantLookup.findActiveByShopifyShopId(externalMerchantId));
             if (match.isPresent()) {
                 Optional<Observation> stored = storedObservation(domain, match.get());
                 Observation observation = stored.isEmpty()
-                        ? refreshObservation(domain)
+                        ? refreshObservation(domain, externalMerchantId)
                         : checkoutPolicyRequired
                                 && !hasCapability(stored.get().capabilities(), CHECKOUT_CAPABILITY_PREFIX)
-                                ? observeObservation(domain)
+                                ? observeObservation(domain, externalMerchantId)
                                 : stored.get();
                 return Optional.of(externalTarget(domain, externalMerchantId, observation));
             }
@@ -115,10 +116,10 @@ public class ShopifyExternalOfferCartRoutingProvider implements ExternalOfferCar
 
     public CartRoutingTarget refresh(CartRoutingTarget target) {
         String domain = normalizedDomain(target.merchantProvider().domain());
-        if (domain == null) {
-            throw new MerchantEnrichmentException("Stored Shopify cart route has no merchant domain");
+        if (domain == null || target.externalMerchantId() == null) {
+            throw new MerchantEnrichmentException("Stored Shopify cart route is incomplete");
         }
-        Observation observation = refreshObservation(domain);
+        Observation observation = refreshObservation(domain, target.externalMerchantId());
         return new CartRoutingTarget(target.scopeKey(), target.provider(), null, target.externalMerchantId(),
                 externalProvider(domain, observation));
     }
@@ -131,27 +132,42 @@ public class ShopifyExternalOfferCartRoutingProvider implements ExternalOfferCar
         if (domain == null || target.externalMerchantId() == null) {
             throw new MerchantEnrichmentException("Stored Shopify checkout route is incomplete");
         }
-        Observation observation = refreshObservation(domain);
+        Observation observation = refreshObservation(domain, target.externalMerchantId());
         if (!hasCapability(observation.capabilities(), CHECKOUT_CAPABILITY_PREFIX)) {
             throw new MerchantEnrichmentException("Merchant profile does not advertise checkout capability");
         }
         return externalTarget(domain, target.externalMerchantId(), observation);
     }
 
-    private Observation refreshObservation(String domain) {
+    private Observation refreshObservation(String domain, String externalMerchantId) {
         URI profileOrigin = profileOrigin(domain);
-        return executable(profileObservations.refresh(domain, profileOrigin));
+        return executable(profileObservations.refresh(
+                domain,
+                profileOrigin,
+                MerchantIntegrationProvider.SHOPIFY,
+                externalMerchantId
+        ));
     }
 
-    private Observation observeObservation(String domain) {
+    private Observation observeObservation(String domain, String externalMerchantId) {
         URI profileOrigin = profileOrigin(domain);
-        return executable(profileObservations.observe(domain, profileOrigin));
+        return executable(profileObservations.observe(
+                domain,
+                profileOrigin,
+                MerchantIntegrationProvider.SHOPIFY,
+                externalMerchantId
+        ));
     }
 
     private Optional<CartRoutingTarget> discovered(String domain, String externalMerchantId) {
         try {
             URI profileOrigin = profileOrigin(domain);
-            Observation observation = executable(profileObservations.observe(domain, profileOrigin));
+            Observation observation = executable(profileObservations.observe(
+                    domain,
+                    profileOrigin,
+                    MerchantIntegrationProvider.SHOPIFY,
+                    externalMerchantId
+            ));
             return Optional.of(externalTarget(domain, externalMerchantId, observation));
         } catch (RuntimeException exception) {
             return Optional.empty();

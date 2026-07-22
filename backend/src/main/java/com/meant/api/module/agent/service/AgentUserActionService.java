@@ -60,7 +60,8 @@ public class AgentUserActionService {
                         reservation.actionId(),
                         command.summary(),
                         reservation.actionId()
-                ).withBuyerIp(command.buyerIp()),
+                ).withBuyerIp(command.buyerIp())
+                        .withMerchantId(reservation.merchantId()),
                 arguments
         ));
         try {

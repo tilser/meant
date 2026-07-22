@@ -57,7 +57,7 @@ class UserGroupedProductSearchV1ControllerTest {
                 new UserProductSearchRequest(
                         "initial linen request",
                         FixedQualifiedSearchResolver.QUALIFICATION_ID,
-                        null,
+                        FixedQualifiedSearchResolver.MERCHANT_ID,
                         5,
                         10),
                 httpRequest
@@ -76,6 +76,7 @@ class UserGroupedProductSearchV1ControllerTest {
                 .containsExactly(userId, "shopper@example.com", "Ada", "Shopper");
         assertThat(service.searchCommand.buyerIp()).isEqualTo("192.0.2.10");
         assertThat(service.searchCommand.userAgent()).isEqualTo("grouped-client");
+        assertThat(service.searchCommand.merchantId()).isEqualTo(FixedQualifiedSearchResolver.MERCHANT_ID);
         assertThat(service.searchCommand.offset()).isEqualTo(5);
         assertThat(service.searchCommand.limit()).isEqualTo(10);
         assertThat(service.historyContext.conversationId())
@@ -203,6 +204,8 @@ class UserGroupedProductSearchV1ControllerTest {
     private static final class FixedQualifiedSearchResolver extends UserQualifiedProductSearchResolver {
         private static final UUID QUALIFICATION_ID =
                 UUID.fromString("60000000-0000-0000-0000-000000000099");
+        private static final UUID MERCHANT_ID =
+                UUID.fromString("60000000-0000-0000-0000-000000000096");
 
         private FixedQualifiedSearchResolver() {
             super(null, null, null);
@@ -214,7 +217,7 @@ class UserGroupedProductSearchV1ControllerTest {
             return new UserQualifiedProductSearchInput(
                     QUALIFICATION_ID,
                     UUID.fromString("60000000-0000-0000-0000-000000000098"),
-                    null,
+                    MERCHANT_ID,
                     "linen",
                     new CatalogDiscoveryFilters(
                             true, List.of(), null, List.of(), null, List.of(), List.of(), List.of(), null, List.of())

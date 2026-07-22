@@ -141,6 +141,29 @@ public class MerchantIntegration {
         verifiedShopIdentity = normalizeVerifiedIdentity(verifiedShopIdentity);
     }
 
+    public void refreshDiscovery(
+            String verifiedDomain,
+            String endpoint,
+            String protocolVersion,
+            Set<MerchantIntegrationRole> roles,
+            String rawMetadata,
+            Instant capturedAt,
+            boolean active
+    ) {
+        this.verifiedDomain = verifiedDomain;
+        this.endpoint = endpoint;
+        this.protocolVersion = protocolVersion;
+        this.roles.clear();
+        this.roles.addAll(roles);
+        this.rawMetadata = rawMetadata;
+        this.capturedAt = capturedAt;
+        this.status = active ? MerchantIntegrationStatus.ACTIVE : MerchantIntegrationStatus.INACTIVE;
+    }
+
+    public void markInactive() {
+        this.status = MerchantIntegrationStatus.INACTIVE;
+    }
+
     private static String trimToNull(String value) {
         if (value == null) {
             return null;

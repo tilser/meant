@@ -78,6 +78,31 @@ class UserProductSearchQualificationServiceTest {
     }
 
     @Test
+    void firstTurnPersistsTheRequestedMerchantScope() {
+        FakePersistenceService persistenceService = new FakePersistenceService();
+        UserProductSearchQualificationService service = new UserProductSearchQualificationService(
+                new FakeUserSettingsService(settings()),
+                new FakePreferenceService(List.of()),
+                new FakeModelService(new UserProductSearchQualificationModelResult(
+                        plan(UserProductSearchFilterState.ANY),
+                        "qualification-model",
+                        "qualification-v1"
+                )),
+                persistenceService,
+                catalogInputBuilder(),
+                conversationService()
+        );
+        EnsureUserProfileCommand profile = profile();
+        UUID merchantId = UUID.fromString("00000000-0000-4000-8000-000000000002");
+
+        var result = service.qualify(profile, new QualifyUserProductSearchCommand(
+                profile.id(), UUID.randomUUID(), null, "running shoes", merchantId));
+
+        assertThat(result.status()).isEqualTo(UserProductSearchQualificationStatus.READY);
+        assertThat(persistenceService.lastPersistedCommand.merchantId()).isEqualTo(merchantId);
+    }
+
+    @Test
     void readyQualificationIsImmutableAndDoesNotCallModelAgain() {
         FakeUserSettingsService settingsService = new FakeUserSettingsService(settings());
         FakePreferenceService preferenceService = new FakePreferenceService(List.of());

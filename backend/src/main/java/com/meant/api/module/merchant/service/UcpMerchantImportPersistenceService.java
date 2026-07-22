@@ -1,5 +1,6 @@
 package com.meant.api.module.merchant.service;
 
+import com.meant.api.module.merchant.constant.MerchantRawSource;
 import com.meant.api.module.merchant.entity.MerchantRaw;
 import com.meant.api.module.merchant.repository.MerchantRepository;
 import com.meant.api.module.merchant.repository.MerchantRawRepository;
@@ -18,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class UcpMerchantImportPersistenceService {
 
     private static final int DOMAIN_UPDATE_BATCH_SIZE = 1_000;
+    private static final MerchantRawSource IMPORT_SOURCE = MerchantRawSource.HUGGING_FACE;
 
     private final MerchantRawRepository merchantRawRepository;
     private final MerchantRepository merchantRepository;
@@ -37,25 +39,27 @@ public class UcpMerchantImportPersistenceService {
                 .toList();
 
         merchantRawRepository.saveAll(merchantsToSave);
-        markMissingMerchantsInactive(seenDomains, fetchedAt);
+        markMissingMerchantsInactive(seenDomains);
+        merchantRepository.synchronizeActiveWithSources(fetchedAt);
     }
 
     private Map<String, MerchantRaw> findExistingMerchants(Set<String> seenDomains) {
         if (seenDomains.isEmpty()) {
             return Map.of();
         }
-        return merchantRawRepository.findByDomainIn(seenDomains).stream()
+        return merchantRawRepository.findBySourceAndDomainIn(IMPORT_SOURCE, seenDomains).stream()
                 .collect(Collectors.toMap(MerchantRaw::getDomain, Function.identity()));
     }
 
-    private void markMissingMerchantsInactive(Set<String> seenDomains, Instant fetchedAt) {
+    private void markMissingMerchantsInactive(Set<String> seenDomains) {
         if (seenDomains.isEmpty()) {
-            merchantRawRepository.markAllActiveInactive();
-            merchantRepository.markAllActiveInactive(fetchedAt);
+            merchantRawRepository.markAllActiveBySourceInactive(IMPORT_SOURCE);
             return;
         }
-        markRawDomainsInactive(missingDomains(merchantRawRepository.findActiveDomains(), seenDomains));
-        markMerchantDomainsInactive(missingDomains(merchantRepository.findActiveDomains(), seenDomains), fetchedAt);
+        markRawDomainsInactive(missingDomains(
+                merchantRawRepository.findActiveDomainsBySource(IMPORT_SOURCE),
+                seenDomains
+        ));
     }
 
     private List<String> missingDomains(List<String> activeDomains, Set<String> seenDomains) {
@@ -65,11 +69,8 @@ public class UcpMerchantImportPersistenceService {
     }
 
     private void markRawDomainsInactive(List<String> domains) {
-        batches(domains).forEach(merchantRawRepository::markInactiveByDomainIn);
-    }
-
-    private void markMerchantDomainsInactive(List<String> domains, Instant fetchedAt) {
-        batches(domains).forEach(batch -> merchantRepository.markInactiveByDomainIn(batch, fetchedAt));
+        batches(domains).forEach(batch ->
+                merchantRawRepository.markInactiveBySourceAndDomainIn(IMPORT_SOURCE, batch));
     }
 
     private List<List<String>> batches(List<String> values) {

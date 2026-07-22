@@ -2138,6 +2138,7 @@ export interface AgentArtifactProfile {
 
 export interface AgentConversationSummaryProfile {
   conversationId: string
+  merchantId: string | null
   title: string
   status: AgentConversationStatusProfile
   activeMissionId: string | null
@@ -2217,16 +2218,24 @@ const agentConversationUrl = (conversationId: string): string =>
 
 export async function createAgentConversation(input?: {
   title?: string
+  merchantId?: string | null
   expectedUserId?: string
   signal?: AbortSignal
 }): Promise<AgentConversationSummaryProfile> {
+  const body: { title?: string; merchantId?: string } = {}
+  if (input?.title !== undefined) {
+    body.title = input.title
+  }
+  if (input?.merchantId) {
+    body.merchantId = input.merchantId
+  }
   const response = await fetch(`${API_URL}/api/v1/users/me/agent/conversations`, {
     method: 'POST',
     headers: {
       ...(await authHeaders(input?.expectedUserId)),
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(input?.title === undefined ? {} : { title: input.title }),
+    body: JSON.stringify(body),
     signal: input?.signal,
   })
   return parseJsonResponse<AgentConversationSummaryProfile>(

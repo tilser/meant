@@ -1,15 +1,18 @@
 package com.meant.api.module.merchant.service;
 
+import com.meant.api.module.merchant.constant.MerchantRawSource;
 import com.meant.api.module.merchant.entity.MerchantRaw;
 import com.meant.api.module.merchant.properties.MerchantImportProperties;
 import com.meant.api.module.merchant.service.dto.HuggingFaceDatasetRow;
 import com.meant.api.module.merchant.service.dto.UcpMerchantDatasetRow;
+import java.net.IDN;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
@@ -69,7 +72,7 @@ public class UcpMerchantImportService {
     private List<HuggingFaceDatasetRow> deduplicateByDomain(List<HuggingFaceDatasetRow> verifiedRows) {
         Map<String, HuggingFaceDatasetRow> rowsByDomain = verifiedRows.stream()
                 .collect(Collectors.toMap(
-                        datasetRow -> datasetRow.row().domain(),
+                        datasetRow -> normalizeDomain(datasetRow.row().domain()),
                         Function.identity(),
                         (first, _) -> first,
                         LinkedHashMap::new
@@ -89,7 +92,11 @@ public class UcpMerchantImportService {
         if (domain == null) {
             return "";
         }
-        String normalizedDomain = domain.trim().toLowerCase();
+        String normalizedDomain = IDN.toASCII(domain.trim(), IDN.USE_STD3_ASCII_RULES)
+                .toLowerCase(Locale.ROOT);
+        while (normalizedDomain.endsWith(".")) {
+            normalizedDomain = normalizedDomain.substring(0, normalizedDomain.length() - 1);
+        }
         if (normalizedDomain.startsWith("www.")) {
             return normalizedDomain.substring("www.".length());
         }
@@ -100,8 +107,9 @@ public class UcpMerchantImportService {
         UcpMerchantDatasetRow row = datasetRow.row();
 
         return MerchantRaw.builder()
+                .source(MerchantRawSource.HUGGING_FACE)
                 .datasetRowIdx(datasetRow.rowIdx())
-                .domain(row.domain())
+                .domain(normalizeDomain(row.domain()))
                 .status(row.status())
                 .ucpUrl(row.ucpUrl())
                 .httpStatus(toHttpStatus(row.httpStatus()))

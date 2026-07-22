@@ -78,7 +78,11 @@ public class AgentConversationController {
     ) {
         UUID userId = AuthenticatedUser.fromJwt(jwt).id();
         return AgentConversationSummaryResponse.from(
-                conversationService.create(new CreateAgentConversationCommand(userId, request.title()))
+                conversationService.create(new CreateAgentConversationCommand(
+                        userId,
+                        request.title(),
+                        request.merchantId()
+                ))
         );
     }
 

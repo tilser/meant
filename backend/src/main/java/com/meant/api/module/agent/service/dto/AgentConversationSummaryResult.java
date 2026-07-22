@@ -8,6 +8,7 @@ public record AgentConversationSummaryResult(
         UUID conversationId,
         String title,
         AgentConversationStatus status,
+        UUID merchantId,
         UUID activeMissionId,
         long latestSequence,
         Instant createdAt,

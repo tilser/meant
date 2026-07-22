@@ -66,7 +66,14 @@ public class FindSimilarProductsAgentTool implements AgentTool {
         UserGroupedProductSearchResult result = similarProductSearchService.search(
                 profileService.profile(context.userId()),
                 new SearchSimilarUserProductsCommand(
-                        context.userId(), similarityAnchor.canonicalProductKey(), query, null, null));
+                        context.userId(),
+                        similarityAnchor.canonicalProductKey(),
+                        query,
+                        null,
+                        context.merchantId(),
+                        null,
+                        null
+                ));
         List<CanonicalProduct> products = result.products();
         List<AgentProductReferenceResult> references = IntStream.range(0, products.size())
                 .mapToObj(index -> resultService.reference(products.get(index), index + 1))

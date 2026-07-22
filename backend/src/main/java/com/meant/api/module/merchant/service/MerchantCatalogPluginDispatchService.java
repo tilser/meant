@@ -63,7 +63,8 @@ public class MerchantCatalogPluginDispatchService {
             return new CatalogSearchResult(
                     result.endpoint(),
                     safeNonNullList(response.products()),
-                    result.negotiatedCapabilities()
+                    result.negotiatedCapabilities(),
+                    response.pagination()
             );
         } catch (MerchantCatalogSearchException exception) {
             throw exception;

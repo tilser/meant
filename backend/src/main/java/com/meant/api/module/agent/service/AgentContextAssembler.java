@@ -160,7 +160,8 @@ public class AgentContextAssembler {
                 modelMessages,
                 triggering.getTextContent(),
                 visibleProductContext,
-                pendingProductClarification
+                pendingProductClarification,
+                conversation.getMerchantId()
         );
     }
 

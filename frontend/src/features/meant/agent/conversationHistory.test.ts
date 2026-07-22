@@ -6,6 +6,7 @@ import { threadFromAgentConversationSummary } from './conversationHistory'
 
 const summary = {
   conversationId: 'conversation-1',
+  merchantId: null,
   title: 'cool black jacket',
   status: 'ACTIVE',
   activeMissionId: null,

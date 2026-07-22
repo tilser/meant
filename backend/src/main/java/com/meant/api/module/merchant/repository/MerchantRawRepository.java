@@ -1,5 +1,6 @@
 package com.meant.api.module.merchant.repository;
 
+import com.meant.api.module.merchant.constant.MerchantRawSource;
 import com.meant.api.module.merchant.entity.MerchantRaw;
 import java.time.Instant;
 import java.util.Collection;
@@ -14,23 +15,18 @@ import org.springframework.data.repository.query.Param;
 
 public interface MerchantRawRepository extends JpaRepository<MerchantRaw, UUID> {
 
-    Optional<MerchantRaw> findByDomain(String domain);
+    Optional<MerchantRaw> findBySourceAndDomain(MerchantRawSource source, String domain);
+
+    List<MerchantRaw> findBySourceAndDomainIn(MerchantRawSource source, Collection<String> domains);
 
     List<MerchantRaw> findByDomainIn(Collection<String> domains);
 
-    @Query("select merchantRaw.domain from MerchantRaw merchantRaw where merchantRaw.active = true")
-    List<String> findActiveDomains();
-
-    @Modifying
     @Query("""
-            update MerchantRaw merchantRaw
-            set merchantRaw.active = false,
-                merchantRaw.processed = false,
-                merchantRaw.processingStatus = 'INACTIVE',
-                merchantRaw.processingError = null
-            where merchantRaw.active = true
+            select merchantRaw.domain from MerchantRaw merchantRaw
+            where merchantRaw.source = :source
+              and merchantRaw.active = true
             """)
-    int markAllActiveInactive();
+    List<String> findActiveDomainsBySource(@Param("source") MerchantRawSource source);
 
     @Modifying
     @Query("""
@@ -39,10 +35,26 @@ public interface MerchantRawRepository extends JpaRepository<MerchantRaw, UUID> 
                 merchantRaw.processed = false,
                 merchantRaw.processingStatus = 'INACTIVE',
                 merchantRaw.processingError = null
-            where merchantRaw.active = true
+            where merchantRaw.source = :source
+              and merchantRaw.active = true
+            """)
+    int markAllActiveBySourceInactive(@Param("source") MerchantRawSource source);
+
+    @Modifying
+    @Query("""
+            update MerchantRaw merchantRaw
+            set merchantRaw.active = false,
+                merchantRaw.processed = false,
+                merchantRaw.processingStatus = 'INACTIVE',
+                merchantRaw.processingError = null
+            where merchantRaw.source = :source
+              and merchantRaw.active = true
               and merchantRaw.domain in :domains
             """)
-    int markInactiveByDomainIn(@Param("domains") Collection<String> domains);
+    int markInactiveBySourceAndDomainIn(
+            @Param("source") MerchantRawSource source,
+            @Param("domains") Collection<String> domains
+    );
 
     @Query("""
             select merchantRaw from MerchantRaw merchantRaw

@@ -72,6 +72,7 @@ public class UserDiscoverConversationSnapshotSanitizer {
             ObjectNode snapshot = objectMapper.createObjectNode();
             copyText(parsed, snapshot, "id");
             copyText(parsed, snapshot, "title");
+            copyUuid(parsed, snapshot, "merchantId");
             copyUuid(parsed, snapshot, "qualificationId");
             copyText(parsed, snapshot, "focusProductId");
             copyBoolean(parsed, snapshot, "named");

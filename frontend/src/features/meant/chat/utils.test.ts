@@ -425,7 +425,8 @@ describe('discover chat history storage', () => {
     expect(initialDiscoverChatThreads()[0]?.messages).toHaveLength(0)
   })
 
-  test('persists qualification identity and generic suggested replies with the thread', () => {
+  test('persists merchant scope, qualification identity, and generic suggested replies with the thread', () => {
+    const merchantId = '00000000-0000-4000-8000-000000000088'
     const thread = {
       ...createDiscoverChatThread([
         {
@@ -435,12 +436,13 @@ describe('discover chat history storage', () => {
           suggestedReplies: ['Option one', 'No preference'],
         },
       ]),
+      merchantId,
       qualificationId: 'qualification-1',
     }
 
     saveStoredDiscoverChatThreads([thread])
 
-    expect(initialDiscoverChatThreads()[0]).toMatchObject(thread)
+    expect(initialDiscoverChatThreads()[0]).toMatchObject({ ...thread, merchantId })
   })
 
   test('keeps only the server result-set reference for durable product history', () => {

@@ -3,12 +3,20 @@ package com.meant.api.module.merchant.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.meant.api.PostgresIntegrationTestSupport;
+import com.meant.api.module.merchant.constant.MerchantIntegrationAuthStrategy;
+import com.meant.api.module.merchant.constant.MerchantIntegrationKind;
+import com.meant.api.module.merchant.constant.MerchantIntegrationProvider;
+import com.meant.api.module.merchant.constant.MerchantIntegrationRole;
+import com.meant.api.module.merchant.constant.MerchantIntegrationSource;
+import com.meant.api.module.merchant.constant.MerchantIntegrationStatus;
 import com.meant.api.module.merchant.entity.Merchant;
 import com.meant.api.module.merchant.entity.MerchantCategory;
+import com.meant.api.module.merchant.entity.MerchantIntegration;
 import com.meant.api.module.merchant.entity.MerchantPopularSearch;
 import com.meant.api.module.merchant.entity.MerchantRaw;
 import com.meant.api.module.merchant.properties.MerchantEmbeddingProperties;
 import com.meant.api.module.merchant.repository.MerchantCategoryRepository;
+import com.meant.api.module.merchant.repository.MerchantIntegrationRepository;
 import com.meant.api.module.merchant.repository.MerchantPopularSearchRepository;
 import com.meant.api.module.merchant.repository.MerchantRawRepository;
 import com.meant.api.module.merchant.repository.MerchantRepository;
@@ -21,6 +29,7 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -53,6 +62,9 @@ class MerchantRetrievalEmbeddingServiceIT extends PostgresIntegrationTestSupport
     private MerchantRepository merchantRepository;
 
     @Autowired
+    private MerchantIntegrationRepository merchantIntegrationRepository;
+
+    @Autowired
     private MerchantCategoryRepository merchantCategoryRepository;
 
     @Autowired
@@ -75,6 +87,7 @@ class MerchantRetrievalEmbeddingServiceIT extends PostgresIntegrationTestSupport
         merchantRetrievalEmbeddingRepository.deleteAllInBatch();
         merchantCategoryRepository.deleteAllInBatch();
         merchantPopularSearchRepository.deleteAllInBatch();
+        merchantIntegrationRepository.deleteAllInBatch();
         merchantRepository.deleteAllInBatch();
         merchantRawRepository.deleteAllInBatch();
         voyageEmbeddingClient.reset();
@@ -223,7 +236,7 @@ class MerchantRetrievalEmbeddingServiceIT extends PostgresIntegrationTestSupport
                 .active(true)
                 .lastSeenAt(Instant.parse("2026-04-02T09:00:15Z"))
                 .build());
-        return merchantRepository.save(Merchant.builder()
+        Merchant merchant = merchantRepository.save(Merchant.builder()
                 .merchantRaw(merchantRaw)
                 .domain(domain)
                 .ucpUrl(merchantRaw.getUcpUrl())
@@ -240,6 +253,22 @@ class MerchantRetrievalEmbeddingServiceIT extends PostgresIntegrationTestSupport
                 .createdAt(Instant.parse("2026-04-02T09:00:15Z"))
                 .updatedAt(Instant.parse("2026-04-02T09:00:15Z"))
                 .build());
+        Instant capturedAt = Instant.parse("2026-04-02T09:00:15Z");
+        merchantIntegrationRepository.save(MerchantIntegration.builder()
+                .merchant(merchant)
+                .provider(MerchantIntegrationProvider.GENERIC_UCP)
+                .kind(MerchantIntegrationKind.MERCHANT_CONNECTION)
+                .roles(EnumSet.of(MerchantIntegrationRole.STOREFRONT_CATALOG))
+                .endpoint("https://%s/api/ucp/mcp".formatted(domain))
+                .protocolVersion("2026-01-23")
+                .authStrategy(MerchantIntegrationAuthStrategy.NONE)
+                .status(MerchantIntegrationStatus.ACTIVE)
+                .source(MerchantIntegrationSource.DISCOVERY)
+                .capturedAt(capturedAt)
+                .createdAt(capturedAt)
+                .updatedAt(capturedAt)
+                .build());
+        return merchant;
     }
 
     private void touchMerchant(UUID merchantId, Instant updatedAt) {

@@ -4,6 +4,14 @@ import java.util.List;
 
 public record MerchantCatalogSearchOutcome(
         MerchantCatalogSearchAttemptResult merchantAttempt,
-        List<MerchantCatalogProductCandidate> productCandidates
+        List<MerchantCatalogProductCandidate> productCandidates,
+        boolean hasNextPage
 ) {
+
+    public MerchantCatalogSearchOutcome(
+            MerchantCatalogSearchAttemptResult merchantAttempt,
+            List<MerchantCatalogProductCandidate> productCandidates
+    ) {
+        this(merchantAttempt, productCandidates, false);
+    }
 }

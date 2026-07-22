@@ -32,6 +32,8 @@ public class AgentConversation {
     @Column(nullable = false, updatable = false)
     private UUID userId;
 
+    private UUID merchantId;
+
     @Column(nullable = false)
     private String title;
 
@@ -59,8 +61,13 @@ public class AgentConversation {
     private Long version;
 
     public static AgentConversation create(UUID userId, String title, Instant now) {
+        return create(userId, title, null, now);
+    }
+
+    public static AgentConversation create(UUID userId, String title, UUID merchantId, Instant now) {
         return AgentConversation.builder()
                 .userId(userId)
+                .merchantId(merchantId)
                 .title(title)
                 .status(AgentConversationStatus.ACTIVE)
                 .summaryVersion(0)

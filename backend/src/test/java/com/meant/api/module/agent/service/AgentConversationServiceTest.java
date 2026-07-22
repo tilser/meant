@@ -1,5 +1,6 @@
 package com.meant.api.module.agent.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -14,6 +15,8 @@ import com.meant.api.module.agent.repository.AgentConversationRepository;
 import com.meant.api.module.agent.repository.AgentMessageRepository;
 import com.meant.api.module.agent.repository.AgentRunRepository;
 import com.meant.api.module.agent.service.command.DeleteAgentConversationCommand;
+import com.meant.api.module.agent.service.command.CreateAgentConversationCommand;
+import com.meant.api.module.merchant.service.MerchantLookupService;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -26,13 +29,27 @@ class AgentConversationServiceTest {
     private static final Instant NOW = Instant.parse("2026-07-19T12:00:00Z");
 
     private final AgentConversationRepository conversationRepository = mock(AgentConversationRepository.class);
+    private final MerchantLookupService merchantLookupService = mock(MerchantLookupService.class);
     private final AgentConversationService service = new AgentConversationService(
             conversationRepository,
             mock(AgentMessageRepository.class),
             mock(AgentArtifactReferenceRepository.class),
             mock(AgentRunRepository.class),
+            merchantLookupService,
             Clock.fixed(NOW, ZoneOffset.UTC)
     );
+
+    @Test
+    void validatesAndPersistsTheSelectedActiveMerchantScope() {
+        UUID userId = UUID.randomUUID();
+        UUID merchantId = UUID.randomUUID();
+        when(conversationRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var created = service.create(new CreateAgentConversationCommand(userId, "Trail shoes", merchantId));
+
+        verify(merchantLookupService).activeSearchResult(merchantId);
+        assertThat(created.merchantId()).isEqualTo(merchantId);
+    }
 
     @Test
     void permanentlyDeletesAnOwnedConversation() {

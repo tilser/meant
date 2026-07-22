@@ -3,16 +3,20 @@ package com.meant.api.module.merchant.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.meant.api.PostgresIntegrationTestSupport;
+import com.meant.api.module.merchant.constant.MerchantRawSource;
 import com.meant.api.module.merchant.entity.Merchant;
 import com.meant.api.module.merchant.entity.MerchantCapability;
 import com.meant.api.module.merchant.entity.MerchantCapabilityExtension;
 import com.meant.api.module.merchant.entity.MerchantCategory;
+import com.meant.api.module.merchant.entity.MerchantIdentity;
 import com.meant.api.module.merchant.entity.MerchantMcpToolsList;
 import com.meant.api.module.merchant.entity.MerchantRaw;
 import com.meant.api.module.merchant.repository.MerchantCapabilityExtensionRepository;
 import com.meant.api.module.merchant.repository.MerchantCapabilityRepository;
 import com.meant.api.module.merchant.repository.MerchantCapabilityRequirementRepository;
 import com.meant.api.module.merchant.repository.MerchantCategoryRepository;
+import com.meant.api.module.merchant.repository.MerchantIdentityRepository;
+import com.meant.api.module.merchant.repository.MerchantIntegrationRepository;
 import com.meant.api.module.merchant.repository.MerchantMcpToolsListRepository;
 import com.meant.api.module.merchant.repository.MerchantPaymentHandlerRepository;
 import com.meant.api.module.merchant.repository.MerchantPopularSearchRepository;
@@ -77,6 +81,12 @@ class MerchantEnrichmentServiceIT extends PostgresIntegrationTestSupport {
     private MerchantMcpToolsListRepository merchantMcpToolsListRepository;
 
     @Autowired
+    private MerchantIdentityRepository merchantIdentityRepository;
+
+    @Autowired
+    private MerchantIntegrationRepository merchantIntegrationRepository;
+
+    @Autowired
     private MerchantPaymentHandlerRepository merchantPaymentHandlerRepository;
 
     @Autowired
@@ -107,6 +117,7 @@ class MerchantEnrichmentServiceIT extends PostgresIntegrationTestSupport {
         merchantPaymentHandlerRepository.deleteAllInBatch();
         merchantCategoryRepository.deleteAllInBatch();
         merchantPopularSearchRepository.deleteAllInBatch();
+        merchantIntegrationRepository.deleteAllInBatch();
         merchantRepository.deleteAllInBatch();
         merchantRawRepository.deleteAllInBatch();
         ucpProfileClient.profile = ucpProfile();
@@ -115,7 +126,7 @@ class MerchantEnrichmentServiceIT extends PostgresIntegrationTestSupport {
         ucpProfileClient.capturedAt = Instant.parse("2026-06-30T08:15:30Z");
         merchantDomainMcpClient.profile = mcpProfile();
         merchantMcpToolClient.toolsList = new MerchantMcpToolsListFetchResult(
-                "https://allbirds.com/api/mcp",
+                "https://shop.example/api/ucp/mcp",
                 "{\"tools\":[{\"name\":\"search_catalog\"}]}"
         );
     }
@@ -163,12 +174,26 @@ class MerchantEnrichmentServiceIT extends PostgresIntegrationTestSupport {
         MerchantMcpToolsList toolsList = merchantMcpToolsListRepository
                 .findByMerchantIdAndAgentProfileHash(merchant.getId(), "agent-profile-test-hash")
                 .orElseThrow();
-        assertThat(toolsList.getEndpoint()).isEqualTo("https://allbirds.com/api/mcp");
+        assertThat(toolsList.getEndpoint()).isEqualTo("https://shop.example/api/ucp/mcp");
         assertThat(toolsList.getToolsListRaw()).contains("search_catalog");
         assertThat(toolsList.getCapturedAt()).isNotNull();
         assertThat(merchant.getProfileToolsListHash()).isEqualTo(toolsList.getToolsListHash());
+        assertThat(merchantIdentityRepository.findByMerchantIdOrderByVerifiedAtAsc(merchant.getId()))
+                .extracting(MerchantIdentity::getNormalizedValue)
+                .containsExactly("allbirds.com");
+        assertThat(merchantIntegrationRepository.findByMerchantIdOrderByCreatedAtAsc(merchant.getId()))
+                .singleElement()
+                .satisfies(integration -> {
+                    assertThat(integration.getProvider().name()).isEqualTo("GENERIC_UCP");
+                    assertThat(integration.getEndpoint()).isEqualTo("https://shop.example/api/ucp/mcp");
+                    assertThat(integration.getRoles()).contains(
+                            com.meant.api.module.merchant.constant.MerchantIntegrationRole.STOREFRONT_CATALOG
+                    );
+                });
 
-        MerchantRaw raw = merchantRawRepository.findByDomain("allbirds.com").orElseThrow();
+        MerchantRaw raw = merchantRawRepository.findBySourceAndDomain(
+                MerchantRawSource.HUGGING_FACE, "allbirds.com"
+        ).orElseThrow();
         assertThat(raw.isProcessed()).isTrue();
         assertThat(raw.getProcessingStatus()).isEqualTo("PROCESSED_UPDATED");
         assertThat(raw.getProcessingError()).isNull();
@@ -180,7 +205,9 @@ class MerchantEnrichmentServiceIT extends PostgresIntegrationTestSupport {
         service.enrichMerchants(new EnrichMerchantsCommand(10));
         Merchant merchant = merchantRepository.findByDomain("allbirds.com").orElseThrow();
         UUID categoryId = merchantCategoryRepository.findByMerchant(merchant).getFirst().getId();
-        MerchantRaw raw = merchantRawRepository.findByDomain("allbirds.com").orElseThrow();
+        MerchantRaw raw = merchantRawRepository.findBySourceAndDomain(
+                MerchantRawSource.HUGGING_FACE, "allbirds.com"
+        ).orElseThrow();
         raw.updateFromImport(
                 1,
                 "verified",
@@ -204,13 +231,15 @@ class MerchantEnrichmentServiceIT extends PostgresIntegrationTestSupport {
         merchantDomainMcpClient.profile = new MerchantMcpProfileResult("https://www.allbirds.com/api/mcp", mcpProfile().entry());
         ucpProfileClient.rawProfile = rawProfile("platinum");
         merchantMcpToolClient.toolsList = new MerchantMcpToolsListFetchResult(
-                "https://www.allbirds.com/api/mcp",
+                "https://shop.example/api/ucp/mcp",
                 "{\"tools\":[{\"name\":\"lookup_catalog\"}]}"
         );
 
         service.enrichMerchants(new EnrichMerchantsCommand(10));
 
-        MerchantRaw processedRaw = merchantRawRepository.findByDomain("allbirds.com").orElseThrow();
+        MerchantRaw processedRaw = merchantRawRepository.findBySourceAndDomain(
+                MerchantRawSource.HUGGING_FACE, "allbirds.com"
+        ).orElseThrow();
         Merchant updatedMerchant = merchantRepository.findByDomain("allbirds.com").orElseThrow();
         assertThat(processedRaw.isProcessed()).isTrue();
         assertThat(processedRaw.getProcessingStatus()).isEqualTo("PROCESSED_UNCHANGED");
@@ -225,7 +254,7 @@ class MerchantEnrichmentServiceIT extends PostgresIntegrationTestSupport {
         assertThat(merchantMcpToolsListRepository
                 .findByMerchantIdAndAgentProfileHash(updatedMerchant.getId(), "agent-profile-test-hash"))
                 .hasValueSatisfying(toolsList -> {
-                    assertThat(toolsList.getEndpoint()).isEqualTo("https://www.allbirds.com/api/mcp");
+                    assertThat(toolsList.getEndpoint()).isEqualTo("https://shop.example/api/ucp/mcp");
                     assertThat(toolsList.getToolsListRaw()).contains("lookup_catalog");
                     assertThat(updatedMerchant.getProfileToolsListHash()).isEqualTo(toolsList.getToolsListHash());
                 });
@@ -251,12 +280,57 @@ class MerchantEnrichmentServiceIT extends PostgresIntegrationTestSupport {
 
         service.enrichMerchants(new EnrichMerchantsCommand(10));
 
-        assertThat(merchantRawRepository.findByDomain("new.example").orElseThrow().isProcessed()).isTrue();
-        assertThat(merchantRawRepository.findByDomain("stale-failure.example").orElseThrow().isProcessed()).isTrue();
-        MerchantRaw skippedFailure = merchantRawRepository.findByDomain("recent-failure.example").orElseThrow();
+        assertThat(merchantRawRepository.findBySourceAndDomain(
+                MerchantRawSource.HUGGING_FACE, "new.example"
+        ).orElseThrow().isProcessed()).isTrue();
+        assertThat(merchantRawRepository.findBySourceAndDomain(
+                MerchantRawSource.HUGGING_FACE, "stale-failure.example"
+        ).orElseThrow().isProcessed()).isTrue();
+        MerchantRaw skippedFailure = merchantRawRepository.findBySourceAndDomain(
+                MerchantRawSource.HUGGING_FACE, "recent-failure.example"
+        ).orElseThrow();
         assertThat(skippedFailure.isProcessed()).isFalse();
         assertThat(skippedFailure.getProcessingStatus()).isEqualTo("FAILED_RETRYABLE");
         assertThat(skippedFailure.getProcessingError()).isEqualTo("merchant returned 429");
+    }
+
+    @Test
+    void enrichMerchantsMergesDatasetAndObservedAliasesByVerifiedShopifyShopId() throws Exception {
+        String endpointDomain = "brand-store.myshopify.com";
+        String storefrontDomain = "brand.example";
+        MerchantRaw observed = merchantRaw(endpointDomain, MerchantRawSource.SHOPIFY_OBSERVATION);
+        observed.observeProviderIdentity(
+                com.meant.api.module.merchant.constant.MerchantIntegrationProvider.SHOPIFY,
+                "gid://shopify/Shop/17756429"
+        );
+        MerchantRaw imported = merchantRaw(storefrontDomain, MerchantRawSource.HUGGING_FACE);
+        merchantRawRepository.saveAll(List.of(observed, imported));
+        ucpProfileClient.profile = shopifyProfile(endpointDomain, storefrontDomain);
+
+        service.enrichMerchants(new EnrichMerchantsCommand(10));
+
+        assertThat(merchantRepository.findAll()).singleElement().satisfies(merchant -> {
+            assertThat(merchant.getDomain()).isEqualTo(storefrontDomain);
+            assertThat(merchant.getName()).isEqualTo("Brand Store");
+            assertThat(merchantIdentityRepository.findByMerchantIdOrderByVerifiedAtAsc(merchant.getId()))
+                    .extracting(MerchantIdentity::getNormalizedValue)
+                    .containsExactlyInAnyOrder(
+                            storefrontDomain,
+                            "gid://shopify/shop/17756429"
+                    );
+            assertThat(merchantIntegrationRepository.findByMerchantIdOrderByCreatedAtAsc(merchant.getId()))
+                    .singleElement()
+                    .satisfies(integration -> assertThat(integration.getEndpoint())
+                            .isEqualTo("https://" + endpointDomain + "/api/ucp/mcp"));
+            assertThat(jdbcTemplate.queryForObject(
+                    "select count(distinct merchant_id) from merchant_raw where merchant_id is not null",
+                    Integer.class
+            )).isEqualTo(1);
+            assertThat(jdbcTemplate.queryForObject(
+                    "select count(*) from merchant_raw where merchant_id is null",
+                    Integer.class
+            )).isZero();
+        });
     }
 
     @Test
@@ -266,7 +340,12 @@ class MerchantEnrichmentServiceIT extends PostgresIntegrationTestSupport {
     }
 
     private MerchantRaw merchantRaw(String domain) {
+        return merchantRaw(domain, MerchantRawSource.HUGGING_FACE);
+    }
+
+    private MerchantRaw merchantRaw(String domain, MerchantRawSource source) {
         return MerchantRaw.builder()
+                .source(source)
                 .datasetRowIdx(1)
                 .domain(domain)
                 .status("verified")
@@ -289,6 +368,49 @@ class MerchantEnrichmentServiceIT extends PostgresIntegrationTestSupport {
                 .active(true)
                 .lastSeenAt(Instant.parse("2026-04-02T09:00:15Z"))
                 .build();
+    }
+
+    private UcpProfile shopifyProfile(String endpointDomain, String storefrontDomain) throws Exception {
+        UcpProfile base = ucpProfile();
+        tools.jackson.databind.ObjectMapper mapper = new tools.jackson.databind.ObjectMapper();
+        return new UcpProfile(
+                base.version(),
+                base.supportedVersions(),
+                Map.of("dev.ucp.shopping", List.of(new UcpServiceDefinition(
+                        "dev.ucp.shopping",
+                        "1.0.0",
+                        new UcpResourceReference("https://ucp.dev/spec"),
+                        "mcp",
+                        "https://" + endpointDomain + "/api/ucp/mcp",
+                        new UcpResourceReference("https://ucp.dev/schema")
+                ))),
+                base.capabilities(),
+                Map.of(
+                        "dev.shopify.shop_pay", List.of(new UcpPaymentHandlerDefinition(
+                                "shop-pay", "1.0.0", null, null,
+                                mapper.readTree("{\"shop_id\":\"17756429\"}")
+                        )),
+                        "com.google.pay", List.of(new UcpPaymentHandlerDefinition(
+                                "google-pay", "1.0.0", null, null,
+                                mapper.readTree("""
+                                        {
+                                          "merchant_info": {
+                                            "merchant_origin": "https://www.%s/",
+                                            "merchant_name": "Brand Store"
+                                          },
+                                          "allowed_payment_methods": [{
+                                            "tokenization_specification": {
+                                              "parameters": {
+                                                "gateway": "shopify",
+                                                "gatewayMerchantId": "17756429"
+                                              }
+                                            }
+                                          }]
+                                        }
+                                        """.formatted(storefrontDomain))
+                        ))
+                )
+        );
     }
 
     private UcpProfile ucpProfile() {
@@ -487,12 +609,8 @@ class MerchantEnrichmentServiceIT extends PostgresIntegrationTestSupport {
         }
 
         @Override
-        public MerchantMcpToolsListFetchResult listTools(
-                String domain,
-                String advertisedMcpEndpoint,
-                String profileMcpEndpoint
-        ) {
-            return toolsList;
+        public MerchantMcpToolsListFetchResult listToolsExactEndpoint(String domain, String endpoint) {
+            return new MerchantMcpToolsListFetchResult(endpoint, toolsList.toolsListRaw());
         }
     }
 }

@@ -61,6 +61,7 @@ class AgentRunCoordinatorTest {
     void executesSequentialToolRoundsAndPersistsTheGroundedFinalMessage() {
         UUID runId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();
+        UUID merchantId = UUID.randomUUID();
         AgentModelToolCall search = new AgentModelToolCall("call-1", "search_catalog", "{\"query\":\"shoes\"}");
         AgentModelToolCall detail = new AgentModelToolCall("call-2", "get_product", "{\"canonicalProductKey\":\"p1\"}");
         ScriptedAgentModelGateway model = new ScriptedAgentModelGateway(List.of(
@@ -68,7 +69,19 @@ class AgentRunCoordinatorTest {
                 response(model("", List.of(detail))),
                 response(model("Here are two grounded choices.", List.of()), "Here are ", "two grounded choices.")
         ));
-        Fixture fixture = fixture(runId, conversationId, model, false);
+        Fixture fixture = fixture(
+                runId,
+                conversationId,
+                model,
+                false,
+                new AgentModelContext(
+                        List.of(AgentModelMessage.user("Find shoes")),
+                        "Find shoes",
+                        null,
+                        null,
+                        merchantId
+                )
+        );
         when(fixture.toolExecutor().execute(any(AgentToolExecutionContext.class), any()))
                 .thenAnswer(invocation -> {
                     AgentModelToolCall call = invocation.getArgument(1);
@@ -92,6 +105,9 @@ class AgentRunCoordinatorTest {
         assertThat(executionContexts.getAllValues())
                 .extracting(AgentToolExecutionContext::buyerIp)
                 .containsOnly("203.0.113.42");
+        assertThat(executionContexts.getAllValues())
+                .extracting(AgentToolExecutionContext::merchantId)
+                .containsOnly(merchantId);
         assertThat(model.requests()).hasSize(3);
         assertThat(model.requests().get(1).messages().getLast().toolResults())
                 .singleElement()

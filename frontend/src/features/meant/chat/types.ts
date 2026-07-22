@@ -165,6 +165,8 @@ export interface DiscoverChatThread {
   id: string
   title: string
   messages: readonly DiscoverChatMessage[]
+  /** Active merchant row selected for direct storefront catalog search. */
+  merchantId?: string
   /** Server-owned count used while a historical transcript has not been loaded yet. */
   messageCount?: number
   qualificationId?: string
@@ -181,6 +183,7 @@ export interface DiscoverChatThread {
 export interface DiscoverProductSearchTurnInput {
   conversationId: string
   qualificationId?: string
+  merchantId?: string
   message: string
   onActivities?: (activities: readonly AgentActivity[]) => void
 }

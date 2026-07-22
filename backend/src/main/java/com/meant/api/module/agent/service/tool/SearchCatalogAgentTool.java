@@ -59,7 +59,15 @@ public class SearchCatalogAgentTool implements AgentTool {
         }
         UserGroupedProductSearchResult result = searchService.search(
                 profileService.profile(context.userId()),
-                new SearchUserProductsCommand(context.userId(), query, null, null, null, offset, limit));
+                new SearchUserProductsCommand(
+                        context.userId(),
+                        query,
+                        context.merchantId(),
+                        null,
+                        null,
+                        offset,
+                        limit
+                ));
         return response(result);
     }
 

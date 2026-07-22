@@ -122,7 +122,9 @@ public class Merchant {
             Instant lastProfiledAt,
             Instant updatedAt
     ) {
-        this.merchantRaw = merchantRaw;
+        if (this.merchantRaw == null) {
+            this.merchantRaw = merchantRaw;
+        }
         this.domain = domain;
         this.ucpUrl = ucpUrl;
         this.ucpVersion = ucpVersion;
@@ -151,7 +153,9 @@ public class Merchant {
             Instant lastProfiledAt,
             Instant updatedAt
     ) {
-        this.merchantRaw = merchantRaw;
+        if (this.merchantRaw == null) {
+            this.merchantRaw = merchantRaw;
+        }
         this.domain = domain;
         this.ucpUrl = ucpUrl;
         this.ucpVersion = ucpVersion;
@@ -182,4 +186,5 @@ public class Merchant {
         this.active = false;
         this.updatedAt = updatedAt;
     }
+
 }

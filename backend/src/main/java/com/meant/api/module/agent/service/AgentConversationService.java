@@ -14,6 +14,7 @@ import com.meant.api.module.agent.service.dto.AgentConversationResult;
 import com.meant.api.module.agent.service.dto.AgentConversationSummaryResult;
 import com.meant.api.module.agent.service.query.GetAgentConversationQuery;
 import com.meant.api.module.agent.service.query.ListAgentConversationsQuery;
+import com.meant.api.module.merchant.service.MerchantLookupService;
 import jakarta.validation.Valid;
 import java.time.Clock;
 import java.time.Instant;
@@ -40,14 +41,18 @@ public class AgentConversationService {
     private final AgentMessageRepository messageRepository;
     private final AgentArtifactReferenceRepository artifactRepository;
     private final AgentRunRepository runRepository;
+    private final MerchantLookupService merchantLookupService;
     private final Clock clock;
 
     @Transactional
     public AgentConversationSummaryResult create(@Valid CreateAgentConversationCommand command) {
         Instant now = clock.instant();
         String title = normalizeTitle(command.title());
+        if (command.merchantId() != null) {
+            merchantLookupService.activeSearchResult(command.merchantId());
+        }
         AgentConversation conversation = conversationRepository.save(
-                AgentConversation.create(command.userId(), title, now)
+                AgentConversation.create(command.userId(), title, command.merchantId(), now)
         );
         return AgentResultMapper.conversation(conversation);
     }
@@ -111,6 +116,7 @@ public class AgentConversationService {
                 conversation.getStatus(),
                 conversation.getRollingSummary(),
                 conversation.getSummaryVersion(),
+                conversation.getMerchantId(),
                 conversation.getActiveMissionId(),
                 conversation.getLastSequenceNumber(),
                 latestCursor,

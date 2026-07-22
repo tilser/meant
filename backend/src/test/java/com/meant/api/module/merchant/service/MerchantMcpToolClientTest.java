@@ -132,6 +132,33 @@ class MerchantMcpToolClientTest {
     }
 
     @Test
+    void rejectsRelativeCatalogEndpointWithoutSynthesizingARoute() {
+        RestClient.Builder restClientBuilder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
+        MerchantMcpToolClient client = client(restClientBuilder.build(), "93.184.216.34");
+
+        assertThatThrownBy(() -> client.callTool(
+                new MerchantSemanticSearchResult(
+                        UUID.randomUUID(),
+                        "store.example",
+                        "Store",
+                        "/api/ucp/mcp",
+                        null,
+                        "Context",
+                        0.9d,
+                        0.8d,
+                        1
+                ),
+                "search_catalog",
+                Map.of("catalog", Map.of("query", "candle"))
+        ))
+                .isInstanceOf(MerchantMcpToolException.class)
+                .hasMessageContaining("Exact MCP tool search_catalog failed");
+
+        server.verify();
+    }
+
+    @Test
     void blocksLocalhostEndpointWithoutSendingRequest() {
         RestClient.Builder restClientBuilder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
@@ -153,7 +180,7 @@ class MerchantMcpToolClientTest {
                 Map.of("catalog", Map.of("query", "candle"))
         ))
                 .isInstanceOf(MerchantMcpToolException.class)
-                .hasMessageContaining("failed for all endpoint candidates");
+                .hasMessageContaining("Exact MCP tool search_catalog failed");
         server.verify();
     }
 
@@ -217,7 +244,7 @@ class MerchantMcpToolClientTest {
     }
 
     @Test
-    void fallsBackToConventionalUcpEndpointWhenAdvertisedEndpointFails() {
+    void catalogCallNeverFallsBackAfterIntegrationEndpointFailure() {
         RestClient.Builder restClientBuilder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
         MerchantMcpToolClient client = client(restClientBuilder.build(), "93.184.216.34");
@@ -233,25 +260,7 @@ class MerchantMcpToolClientTest {
                           }
                         }
                         """, MediaType.APPLICATION_JSON));
-        server.expect(requestTo("https://advertised.example/api/ucp/mcp"))
-                .andExpect(method(HttpMethod.POST))
-                .andRespond(withSuccess("""
-                        {
-                          "jsonrpc": "2.0",
-                          "id": 2,
-                          "result": {
-                            "content": [
-                              {
-                                "type": "text",
-                                "text": "{\\"ok\\":true}"
-                              }
-                            ],
-                            "isError": false
-                          }
-                        }
-                        """, MediaType.APPLICATION_JSON));
-
-        MerchantMcpToolCallResult result = client.callTool(
+        assertThatThrownBy(() -> client.callTool(
                 new MerchantSemanticSearchResult(
                         UUID.randomUUID(),
                         "advertised.example",
@@ -265,10 +274,10 @@ class MerchantMcpToolClientTest {
                 ),
                 "search_catalog",
                 Map.of("catalog", Map.of("query", "candle"))
-        );
+        ))
+                .isInstanceOf(MerchantMcpToolException.class)
+                .hasMessageContaining("Exact MCP tool search_catalog failed");
 
-        assertThat(result.endpoint()).isEqualTo("https://advertised.example/api/ucp/mcp");
-        assertThat(result.contentText()).isEqualTo("{\"ok\":true}");
         server.verify();
     }
 
@@ -360,7 +369,7 @@ class MerchantMcpToolClientTest {
                 Map.of("catalog", Map.of("query", "candle"))
         ))
                 .isInstanceOf(MerchantMcpToolException.class)
-                .hasMessageContaining("failed for all endpoint candidates");
+                .hasMessageContaining("Exact MCP tool search_catalog failed");
         server.verify();
         assertThat(output.getAll()).doesNotContain("secret-token", "product-payload", "Bearer");
     }

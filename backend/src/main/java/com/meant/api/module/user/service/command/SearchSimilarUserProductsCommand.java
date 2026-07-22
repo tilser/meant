@@ -19,6 +19,8 @@ public record SearchSimilarUserProductsCommand(
 
         UUID qualificationId,
 
+        UUID merchantId,
+
         @Size(max = 128)
         String buyerIp,
 
@@ -37,9 +39,20 @@ public record SearchSimilarUserProductsCommand(
             UUID userId,
             String canonicalProductKey,
             String query,
+            UUID qualificationId,
             String buyerIp,
             String userAgent
     ) {
-        this(userId, canonicalProductKey, query, null, buyerIp, userAgent);
+        this(userId, canonicalProductKey, query, qualificationId, null, buyerIp, userAgent);
+    }
+
+    public SearchSimilarUserProductsCommand(
+            UUID userId,
+            String canonicalProductKey,
+            String query,
+            String buyerIp,
+            String userAgent
+    ) {
+        this(userId, canonicalProductKey, query, null, null, buyerIp, userAgent);
     }
 }

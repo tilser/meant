@@ -1,6 +1,8 @@
 package com.meant.api.module.merchant.repository;
 
 import com.meant.api.module.merchant.constant.MerchantIntegrationProvider;
+import com.meant.api.module.merchant.constant.MerchantIntegrationRole;
+import com.meant.api.module.merchant.constant.MerchantIntegrationStatus;
 import com.meant.api.module.merchant.entity.MerchantIntegration;
 import java.util.List;
 import java.util.Optional;
@@ -15,6 +17,30 @@ public interface MerchantIntegrationRepository extends JpaRepository<MerchantInt
 
     @EntityGraph(attributePaths = {"roles", "merchant"})
     List<MerchantIntegration> findByMerchantIdOrderByCreatedAtAsc(UUID merchantId);
+
+    @EntityGraph(attributePaths = {"roles", "merchant"})
+    List<MerchantIntegration> findByMerchantIdAndProviderOrderByCreatedAtAsc(
+            UUID merchantId,
+            MerchantIntegrationProvider provider
+    );
+
+    @EntityGraph(attributePaths = {"roles", "merchant"})
+    @Query("""
+            select distinct integration
+            from MerchantIntegration integration
+            join integration.roles role
+            where integration.merchant.id = :merchantId
+              and integration.provider = :provider
+              and integration.status = :status
+              and role = :role
+            order by integration.createdAt asc
+            """)
+    List<MerchantIntegration> findByMerchantIdAndProviderAndStatusAndRole(
+            @Param("merchantId") UUID merchantId,
+            @Param("provider") MerchantIntegrationProvider provider,
+            @Param("status") MerchantIntegrationStatus status,
+            @Param("role") MerchantIntegrationRole role
+    );
 
     @EntityGraph(attributePaths = {"roles", "merchant"})
     List<MerchantIntegration> findByMerchantIdInOrderByCreatedAtAsc(Set<UUID> merchantIds);

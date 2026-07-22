@@ -500,6 +500,7 @@ describe('qualified product search API', () => {
     await searchGroupedProducts({
       query: 'black running shoes size 10',
       qualificationId: 'qualification-1',
+      merchantId: 'merchant-1',
       offset: 0,
       limit: 20,
     })
@@ -510,6 +511,7 @@ describe('qualified product search API', () => {
     expect(await requests[0]?.json()).toEqual({
       query: 'black running shoes size 10',
       qualificationId: 'qualification-1',
+      merchantId: 'merchant-1',
       offset: 0,
       limit: 20,
     })

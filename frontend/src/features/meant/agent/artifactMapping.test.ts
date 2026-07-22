@@ -1357,6 +1357,7 @@ describe('agent artifact mapping', () => {
     const product = canonicalProduct('product-1')
     const conversation: AgentConversationDetailProfile = {
       conversationId: 'conversation-1',
+      merchantId: null,
       title: 'Trail shoes',
       status: 'ACTIVE',
       activeMissionId: null,
@@ -1448,6 +1449,7 @@ describe('agent artifact mapping', () => {
     ]
     const conversation: AgentConversationDetailProfile = {
       conversationId: 'conversation-similar',
+      merchantId: null,
       title: 'Similar jackets',
       status: 'ACTIVE',
       activeMissionId: null,
@@ -1536,6 +1538,7 @@ describe('agent artifact mapping', () => {
     const secondTool = toolMessage('message-similar-boots', 3)
     const conversation: AgentConversationDetailProfile = {
       conversationId: 'conversation-multi-similar',
+      merchantId: null,
       title: 'Two similarity searches',
       status: 'ACTIVE',
       activeMissionId: null,
@@ -1643,6 +1646,7 @@ describe('agent artifact mapping', () => {
     }
     const conversation: AgentConversationDetailProfile = {
       conversationId: 'conversation-clarification',
+      merchantId: null,
       title: 'Caps',
       status: 'ACTIVE',
       activeMissionId: null,
@@ -1700,6 +1704,7 @@ describe('agent artifact mapping', () => {
     }
     const conversation: AgentConversationDetailProfile = {
       conversationId: 'conversation-clarification-similar',
+      merchantId: null,
       title: 'Clarify jacket',
       status: 'ACTIVE',
       activeMissionId: null,
@@ -1787,6 +1792,7 @@ describe('agent artifact mapping', () => {
     const product = canonicalProduct('product-1')
     const conversation: AgentConversationDetailProfile = {
       conversationId: 'conversation-1',
+      merchantId: null,
       title: 'Sunglasses',
       status: 'ACTIVE',
       activeMissionId: null,
@@ -1896,6 +1902,7 @@ describe('agent artifact mapping', () => {
     const product = canonicalProduct(canonicalKey, 'offer-1', 'Fashion Square Vintage Sunglasses')
     const conversation: AgentConversationDetailProfile = {
       conversationId: 'conversation-action',
+      merchantId: null,
       title: 'Sunglasses',
       status: 'ACTIVE',
       activeMissionId: null,
@@ -2073,6 +2080,7 @@ describe('agent artifact mapping', () => {
     const comparisonTranscript = discoverMessagesFromAgentConversation(
       {
         conversationId: 'conversation-comparison',
+        merchantId: null,
         title: 'Comparison',
         status: 'ACTIVE',
         activeMissionId: null,
@@ -2184,6 +2192,7 @@ describe('agent artifact mapping', () => {
     })
     const conversation: AgentConversationDetailProfile = {
       conversationId: 'conversation-1',
+      merchantId: null,
       title: 'Picnic',
       status: 'ACTIVE',
       activeMissionId: 'picnic',

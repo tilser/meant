@@ -2,11 +2,18 @@ package com.meant.api.module.merchant.service;
 
 import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
 
+import com.meant.api.module.merchant.constant.MerchantIntegrationAuthStrategy;
+import com.meant.api.module.merchant.constant.MerchantIntegrationKind;
+import com.meant.api.module.merchant.constant.MerchantIntegrationProvider;
+import com.meant.api.module.merchant.constant.MerchantIntegrationRole;
+import com.meant.api.module.merchant.constant.MerchantIntegrationSource;
+import com.meant.api.module.merchant.constant.MerchantIntegrationStatus;
 import com.meant.api.module.merchant.entity.Merchant;
 import com.meant.api.module.merchant.entity.MerchantCapability;
 import com.meant.api.module.merchant.entity.MerchantCapabilityExtension;
 import com.meant.api.module.merchant.entity.MerchantCapabilityRequirement;
 import com.meant.api.module.merchant.entity.MerchantCategory;
+import com.meant.api.module.merchant.entity.MerchantIntegration;
 import com.meant.api.module.merchant.entity.MerchantMcpToolsList;
 import com.meant.api.module.merchant.entity.MerchantPaymentHandler;
 import com.meant.api.module.merchant.entity.MerchantPopularSearch;
@@ -15,6 +22,7 @@ import com.meant.api.module.merchant.repository.MerchantCapabilityExtensionRepos
 import com.meant.api.module.merchant.repository.MerchantCapabilityRepository;
 import com.meant.api.module.merchant.repository.MerchantCapabilityRequirementRepository;
 import com.meant.api.module.merchant.repository.MerchantCategoryRepository;
+import com.meant.api.module.merchant.repository.MerchantIntegrationRepository;
 import com.meant.api.module.merchant.repository.MerchantMcpToolsListRepository;
 import com.meant.api.module.merchant.repository.MerchantPaymentHandlerRepository;
 import com.meant.api.module.merchant.repository.MerchantPopularSearchRepository;
@@ -22,6 +30,7 @@ import com.meant.api.module.merchant.repository.MerchantRawRepository;
 import com.meant.api.module.merchant.repository.MerchantRepository;
 import com.meant.api.module.merchant.repository.MerchantServiceRepository;
 import com.meant.api.module.merchant.service.dto.MerchantMcpProfileResult;
+import com.meant.api.module.merchant.service.dto.MerchantIdentityResolution;
 import com.meant.api.module.merchant.service.dto.MerchantMcpToolsListResult;
 import com.meant.api.module.merchant.service.dto.MerchantProfileData;
 import com.meant.api.module.merchant.service.dto.UcpCapabilityDefinition;
@@ -29,6 +38,7 @@ import com.meant.api.module.merchant.service.dto.UcpProfile;
 import com.meant.api.module.merchant.service.dto.UcpServiceDefinition;
 import com.meant.api.module.merchant.service.dto.UcpVersionRange;
 import java.time.Instant;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -45,9 +55,14 @@ public class MerchantEnrichmentPersistenceService {
 
     private static final String PROCESSED_UPDATED = "PROCESSED_UPDATED";
     private static final String PROCESSED_UNCHANGED = "PROCESSED_UNCHANGED";
+    private static final String CART_CAPABILITY_PREFIX = "dev.ucp.shopping.cart";
+    private static final String CHECKOUT_CAPABILITY_PREFIX = "dev.ucp.shopping.checkout";
+    private static final String ORDER_CAPABILITY_PREFIX = "dev.ucp.shopping.order";
 
     private final MerchantRawRepository merchantRawRepository;
     private final MerchantRepository merchantRepository;
+    private final MerchantIdentityPersistenceService merchantIdentityPersistenceService;
+    private final MerchantIntegrationRepository merchantIntegrationRepository;
     private final MerchantServiceRepository merchantServiceRepository;
     private final MerchantCapabilityRepository merchantCapabilityRepository;
     private final MerchantCapabilityExtensionRepository merchantCapabilityExtensionRepository;
@@ -61,6 +76,7 @@ public class MerchantEnrichmentPersistenceService {
     @Transactional
     public void persistProfile(
             UUID merchantRawId,
+            MerchantIdentityResolution identity,
             UcpProfile ucpProfile,
             String profileRaw,
             String profileEndpoint,
@@ -72,13 +88,13 @@ public class MerchantEnrichmentPersistenceService {
             MerchantMcpToolsListResult toolsList
     ) {
         MerchantRaw merchantRaw = merchantRawRepository.getReferenceById(merchantRawId);
-        Merchant merchant = merchantRepository.findByDomain(merchantRaw.getDomain()).orElse(null);
+        Merchant merchant = merchantIdentityPersistenceService.findOwner(merchantRaw, identity).orElse(null);
         Instant now = Instant.now();
 
         if (merchant != null && profileHash.equals(merchant.getProfileHash())) {
             merchant.updateProfileMetadata(
                     merchantRaw,
-                    merchantRaw.getDomain(),
+                    identity.canonicalDomain(),
                     merchantRaw.getUcpUrl(),
                     valueOrEmpty(ucpProfile.version()),
                     advertisedMcpEndpoint,
@@ -87,15 +103,23 @@ public class MerchantEnrichmentPersistenceService {
                     now,
                     now
             );
+            Merchant savedMerchant = merchantRepository.save(merchant);
             updateProfileArchive(
-                    merchant,
+                    savedMerchant,
                     ucpProfile,
                     profileRaw,
                     profileEndpoint,
                     profileCapturedAt,
                     toolsList
             );
-            persistToolsList(merchant, toolsList, now);
+            merchantIdentityPersistenceService.linkSourceAndPersistClaims(
+                    merchantRaw, savedMerchant, identity, now
+            );
+            persistToolsList(savedMerchant, toolsList, now);
+            persistGenericUcpIntegration(
+                    savedMerchant, identity, ucpProfile, profileRaw,
+                    toolsList.endpoint(), merchantRaw, now
+            );
             merchantRaw.markProcessed(PROCESSED_UNCHANGED, now);
             return;
         }
@@ -103,7 +127,7 @@ public class MerchantEnrichmentPersistenceService {
         if (merchant == null) {
             merchant = Merchant.builder()
                     .merchantRaw(merchantRaw)
-                    .domain(merchantRaw.getDomain())
+                    .domain(identity.canonicalDomain())
                     .ucpUrl(merchantRaw.getUcpUrl())
                     .ucpVersion(valueOrEmpty(ucpProfile.version()))
                     .advertisedMcpEndpoint(advertisedMcpEndpoint)
@@ -123,7 +147,7 @@ public class MerchantEnrichmentPersistenceService {
         } else {
             merchant.updateProfile(
                     merchantRaw,
-                    merchantRaw.getDomain(),
+                    identity.canonicalDomain(),
                     merchantRaw.getUcpUrl(),
                     valueOrEmpty(ucpProfile.version()),
                     advertisedMcpEndpoint,
@@ -150,7 +174,14 @@ public class MerchantEnrichmentPersistenceService {
         );
 
         Merchant savedMerchant = merchantRepository.save(merchant);
+        merchantIdentityPersistenceService.linkSourceAndPersistClaims(
+                merchantRaw, savedMerchant, identity, now
+        );
         persistToolsList(savedMerchant, toolsList, now);
+        persistGenericUcpIntegration(
+                savedMerchant, identity, ucpProfile, profileRaw,
+                toolsList.endpoint(), merchantRaw, now
+        );
         replaceChildren(savedMerchant, ucpProfile, profileData);
         merchantRaw.markProcessed(PROCESSED_UPDATED, now);
     }
@@ -178,6 +209,77 @@ public class MerchantEnrichmentPersistenceService {
         merchantPaymentHandlerRepository.deleteByMerchant(merchant);
         merchantCategoryRepository.deleteByMerchant(merchant);
         merchantPopularSearchRepository.deleteByMerchant(merchant);
+    }
+
+    private void persistGenericUcpIntegration(
+            Merchant merchant,
+            MerchantIdentityResolution identity,
+            UcpProfile profile,
+            String profileRaw,
+            String endpoint,
+            MerchantRaw source,
+            Instant capturedAt
+    ) {
+        List<MerchantIntegration> existing = merchantIntegrationRepository
+                .findByMerchantIdAndProviderOrderByCreatedAtAsc(
+                        merchant.getId(), MerchantIntegrationProvider.GENERIC_UCP
+                );
+        MerchantIntegration integration = existing.stream()
+                .filter(candidate -> endpoint.equals(candidate.getEndpoint()))
+                .findFirst()
+                .orElseGet(() -> existing.stream().findFirst().orElseGet(() -> MerchantIntegration.builder()
+                        .merchant(merchant)
+                        .provider(MerchantIntegrationProvider.GENERIC_UCP)
+                        .kind(MerchantIntegrationKind.MERCHANT_CONNECTION)
+                        .roles(EnumSet.noneOf(MerchantIntegrationRole.class))
+                        .endpoint(endpoint)
+                        .protocolVersion(valueOrEmpty(profile.version()))
+                        .authStrategy(MerchantIntegrationAuthStrategy.NONE)
+                        .status(source.isActive()
+                                ? MerchantIntegrationStatus.ACTIVE
+                                : MerchantIntegrationStatus.INACTIVE)
+                        .source(MerchantIntegrationSource.DISCOVERY)
+                        .rawMetadata(profileRaw)
+                        .capturedAt(capturedAt)
+                        .createdAt(capturedAt)
+                        .updatedAt(capturedAt)
+                        .build()));
+        integration.refreshDiscovery(
+                identity.canonicalDomain(),
+                endpoint,
+                valueOrEmpty(profile.version()),
+                integrationRoles(profile),
+                profileRaw,
+                capturedAt,
+                source.isActive()
+        );
+        merchantIntegrationRepository.save(integration);
+        existing.stream()
+                .filter(candidate -> candidate != integration)
+                .filter(candidate -> candidate.getStatus() != MerchantIntegrationStatus.INACTIVE)
+                .forEach(MerchantIntegration::markInactive);
+        merchantIntegrationRepository.saveAll(existing.stream()
+                .filter(candidate -> candidate != integration)
+                .toList());
+    }
+
+    private EnumSet<MerchantIntegrationRole> integrationRoles(UcpProfile profile) {
+        EnumSet<MerchantIntegrationRole> roles = EnumSet.of(MerchantIntegrationRole.STOREFRONT_CATALOG);
+        java.util.Set<String> capabilities = safeMap(profile.capabilities()).keySet();
+        if (hasCapability(capabilities, CART_CAPABILITY_PREFIX)) {
+            roles.add(MerchantIntegrationRole.CART);
+        }
+        if (hasCapability(capabilities, CHECKOUT_CAPABILITY_PREFIX)) {
+            roles.add(MerchantIntegrationRole.CHECKOUT);
+        }
+        if (hasCapability(capabilities, ORDER_CAPABILITY_PREFIX)) {
+            roles.add(MerchantIntegrationRole.ORDERS);
+        }
+        return roles;
+    }
+
+    private boolean hasCapability(java.util.Set<String> capabilities, String prefix) {
+        return capabilities.stream().anyMatch(value -> value != null && value.startsWith(prefix));
     }
 
     private void saveServices(Merchant merchant, UcpProfile ucpProfile) {

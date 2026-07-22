@@ -11,6 +11,7 @@ public record AgentConversationResult(
         AgentConversationStatus status,
         String rollingSummary,
         int summaryVersion,
+        UUID merchantId,
         UUID activeMissionId,
         long latestSequence,
         long latestCursor,

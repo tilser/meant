@@ -217,6 +217,7 @@ public class AgentRunCoordinator {
                 context.triggeringUserText()
         ).withVisibleProductContext(context.visibleProductContext())
                 .withPendingProductClarification(context.pendingProductClarification())
+                .withMerchantId(context.merchantId())
                 .withExecutionOwner(executionOwner)
                 .withBuyerIp(run.getBuyerIp());
         Map<String, Integer> perToolCounts = new HashMap<>();

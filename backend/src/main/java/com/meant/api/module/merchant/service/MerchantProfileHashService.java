@@ -94,6 +94,7 @@ public class MerchantProfileHashService {
         append(builder, paymentHandler.version());
         append(builder, resourceUrl(paymentHandler.spec()));
         append(builder, resourceUrl(paymentHandler.schema()));
+        append(builder, stableConfig(paymentHandler.config()));
     }
 
     private void appendRange(StringBuilder builder, UcpVersionRange range) {

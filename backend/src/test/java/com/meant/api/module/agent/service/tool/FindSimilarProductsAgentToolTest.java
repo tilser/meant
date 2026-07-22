@@ -38,6 +38,7 @@ import tools.jackson.databind.ObjectMapper;
 class FindSimilarProductsAgentToolTest {
 
     private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000301");
+    private static final UUID MERCHANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000303");
     private static final UUID INVENTORY_ITEM_ID =
             UUID.fromString("00000000-0000-0000-0000-000000000302");
 
@@ -135,6 +136,7 @@ class FindSimilarProductsAgentToolTest {
         verify(searches).search(eq(profile), command.capture());
         assertThat(command.getValue().canonicalProductKey()).isEqualTo("canonical:owned-black-jacket");
         assertThat(command.getValue().query()).isEqualTo("similar black jackets");
+        assertThat(command.getValue().merchantId()).isEqualTo(MERCHANT_ID);
     }
 
     @Test
@@ -246,7 +248,7 @@ class FindSimilarProductsAgentToolTest {
                 UUID.randomUUID(),
                 UUID.randomUUID(),
                 "check my black jacket in inventory and find me some new that are similar"
-        );
+        ).withMerchantId(MERCHANT_ID);
     }
 
     private EnsureUserProfileCommand profile() {

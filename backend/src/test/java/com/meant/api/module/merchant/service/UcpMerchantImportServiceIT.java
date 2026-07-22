@@ -4,14 +4,28 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.meant.api.PostgresIntegrationTestSupport;
+import com.meant.api.module.merchant.constant.MerchantIdentityNamespace;
+import com.meant.api.module.merchant.constant.MerchantIdentityRole;
+import com.meant.api.module.merchant.constant.MerchantIntegrationAuthStrategy;
+import com.meant.api.module.merchant.constant.MerchantIntegrationKind;
+import com.meant.api.module.merchant.constant.MerchantIntegrationProvider;
+import com.meant.api.module.merchant.constant.MerchantIntegrationRole;
+import com.meant.api.module.merchant.constant.MerchantIntegrationSource;
+import com.meant.api.module.merchant.constant.MerchantIntegrationStatus;
+import com.meant.api.module.merchant.constant.MerchantRawSource;
 import com.meant.api.module.merchant.entity.Merchant;
+import com.meant.api.module.merchant.entity.MerchantIdentity;
+import com.meant.api.module.merchant.entity.MerchantIntegration;
 import com.meant.api.module.merchant.entity.MerchantRaw;
 import com.meant.api.module.merchant.properties.CrawlingProperties;
+import com.meant.api.module.merchant.repository.MerchantIdentityRepository;
+import com.meant.api.module.merchant.repository.MerchantIntegrationRepository;
 import com.meant.api.module.merchant.repository.MerchantRawRepository;
 import com.meant.api.module.merchant.repository.MerchantRepository;
 import com.meant.api.module.merchant.service.dto.HuggingFaceDatasetRow;
 import com.meant.api.module.merchant.service.dto.UcpMerchantDatasetRow;
 import java.time.Instant;
+import java.util.EnumSet;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -35,10 +49,17 @@ class UcpMerchantImportServiceIT extends PostgresIntegrationTestSupport {
     private MerchantRepository merchantRepository;
 
     @Autowired
+    private MerchantIdentityRepository merchantIdentityRepository;
+
+    @Autowired
+    private MerchantIntegrationRepository merchantIntegrationRepository;
+
+    @Autowired
     private FakeUcpDatasetClient datasetClient;
 
     @BeforeEach
     void setUp() {
+        merchantIntegrationRepository.deleteAllInBatch();
         merchantRepository.deleteAllInBatch();
         repository.deleteAllInBatch();
         datasetClient.rows = List.of();
@@ -61,6 +82,9 @@ class UcpMerchantImportServiceIT extends PostgresIntegrationTestSupport {
         assertThat(repository.findAll())
                 .extracting(MerchantRaw::getStatus)
                 .containsOnly("verified");
+        assertThat(repository.findAll())
+                .extracting(MerchantRaw::getSource)
+                .containsOnly(MerchantRawSource.HUGGING_FACE);
         assertThat(repository.findAll())
                 .extracting(MerchantRaw::getAiBotPolicies)
                 .containsExactlyInAnyOrder("{\"GPTBot\": true}", "{\"GPTBot\": false}");
@@ -94,13 +118,13 @@ class UcpMerchantImportServiceIT extends PostgresIntegrationTestSupport {
     void importMerchantsKeepsProcessedStateWhenSourceHashIsUnchanged() {
         datasetClient.rows = List.of(datasetRow(1, "verified.example", "verified", "{\"GPTBot\": true}", "[\"mcp\"]"));
         service.importMerchants();
-        MerchantRaw imported = repository.findByDomain("verified.example").orElseThrow();
+        MerchantRaw imported = huggingFaceMerchant("verified.example");
         imported.markProcessed("PROCESSED_UPDATED", Instant.parse("2026-04-03T09:00:15Z"));
         repository.save(imported);
 
         service.importMerchants();
 
-        MerchantRaw updated = repository.findByDomain("verified.example").orElseThrow();
+        MerchantRaw updated = huggingFaceMerchant("verified.example");
         assertThat(updated.isProcessed()).isTrue();
         assertThat(updated.getProcessingStatus()).isEqualTo("PROCESSED_UPDATED");
         assertThat(updated.isActive()).isTrue();
@@ -110,14 +134,14 @@ class UcpMerchantImportServiceIT extends PostgresIntegrationTestSupport {
     void importMerchantsResetsProcessedStateWhenSourceHashChanges() {
         datasetClient.rows = List.of(datasetRow(1, "verified.example", "verified", "{\"GPTBot\": true}", "[\"mcp\"]"));
         service.importMerchants();
-        MerchantRaw imported = repository.findByDomain("verified.example").orElseThrow();
+        MerchantRaw imported = huggingFaceMerchant("verified.example");
         imported.markProcessed("PROCESSED_UPDATED", Instant.parse("2026-04-03T09:00:15Z"));
         repository.save(imported);
 
         datasetClient.rows = List.of(datasetRow(1, "verified.example", "verified", "{\"GPTBot\": false}", "[\"mcp\"]"));
         service.importMerchants();
 
-        MerchantRaw updated = repository.findByDomain("verified.example").orElseThrow();
+        MerchantRaw updated = huggingFaceMerchant("verified.example");
         assertThat(updated.isProcessed()).isFalse();
         assertThat(updated.getProcessedAt()).isNull();
         assertThat(updated.getProcessingStatus()).isNull();
@@ -132,7 +156,7 @@ class UcpMerchantImportServiceIT extends PostgresIntegrationTestSupport {
 
         service.importMerchants();
 
-        MerchantRaw oldMerchant = repository.findByDomain("existing.example").orElseThrow();
+        MerchantRaw oldMerchant = huggingFaceMerchant("existing.example");
         assertThat(oldMerchant.isActive()).isFalse();
         assertThat(oldMerchant.isProcessed()).isFalse();
         assertThat(oldMerchant.getProcessingStatus()).isEqualTo("INACTIVE");
@@ -146,7 +170,7 @@ class UcpMerchantImportServiceIT extends PostgresIntegrationTestSupport {
 
         service.importMerchants();
 
-        MerchantRaw oldMerchantRaw = repository.findByDomain("existing.example").orElseThrow();
+        MerchantRaw oldMerchantRaw = huggingFaceMerchant("existing.example");
         Merchant oldMerchant = merchantRepository.findByDomain("existing.example").orElseThrow();
         assertThat(oldMerchantRaw.isActive()).isFalse();
         assertThat(oldMerchantRaw.getProcessingStatus()).isEqualTo("INACTIVE");
@@ -157,23 +181,50 @@ class UcpMerchantImportServiceIT extends PostgresIntegrationTestSupport {
     @Test
     void importMerchantsDeduplicatesVerifiedRowsByDomain() {
         datasetClient.rows = List.of(
-                datasetRow(1, "duplicate.example", "verified", "{\"GPTBot\": true}", "[\"mcp\"]"),
+                datasetRow(1, "WWW.Duplicate.Example.", "verified", "{\"GPTBot\": true}", "[\"mcp\"]"),
                 datasetRow(2, "duplicate.example", "verified", "{\"GPTBot\": false}", "[\"embedded\"]")
         );
 
         service.importMerchants();
 
         assertThat(repository.findAll()).hasSize(1);
-        MerchantRaw imported = repository.findByDomain("duplicate.example").orElseThrow();
+        MerchantRaw imported = huggingFaceMerchant("duplicate.example");
         assertThat(imported.getDatasetRowIdx()).isEqualTo(1);
+        assertThat(imported.getDomain()).isEqualTo("duplicate.example");
+        assertThat(imported.getUcpUrl())
+                .isEqualTo("https://WWW.Duplicate.Example./.well-known/ucp");
         assertThat(imported.getAiBotPolicies()).isEqualTo("{\"GPTBot\": true}");
         assertThat(imported.getTransports()).isEqualTo("[\"mcp\"]");
     }
 
     @Test
+    void importMerchantsMatchesNormalizedDomainsAcrossRunsWithoutRewritingTheUcpUrl() {
+        datasetClient.rows = List.of(
+                datasetRow(1, "WWW.Verified.Example.", "verified", "{}", "[\"mcp\"]")
+        );
+        service.importMerchants();
+        MerchantRaw firstImport = huggingFaceMerchant("verified.example");
+
+        datasetClient.rows = List.of(
+                datasetRow(2, "verified.example", "verified", "{}", "[\"mcp\"]")
+        );
+        service.importMerchants();
+
+        MerchantRaw secondImport = huggingFaceMerchant("verified.example");
+        assertThat(repository.findBySourceAndDomainIn(
+                MerchantRawSource.HUGGING_FACE,
+                List.of("verified.example")
+        )).hasSize(1);
+        assertThat(secondImport.getId()).isEqualTo(firstImport.getId());
+        assertThat(secondImport.getDomain()).isEqualTo("verified.example");
+        assertThat(secondImport.getUcpUrl())
+                .isEqualTo("https://verified.example/.well-known/ucp");
+    }
+
+    @Test
     void importMerchantsSkipsExcludedDomains() {
         datasetClient.rows = List.of(
-                datasetRow(1, "ucpchecker.com", "verified", "{\"GPTBot\": true}", "[\"mcp\"]"),
+                datasetRow(1, "WWW.UCPCHECKER.COM.", "verified", "{\"GPTBot\": true}", "[\"mcp\"]"),
                 datasetRow(2, "verified.example", "verified", "{\"GPTBot\": true}", "[\"mcp\"]")
         );
 
@@ -184,8 +235,113 @@ class UcpMerchantImportServiceIT extends PostgresIntegrationTestSupport {
                 .containsExactly("verified.example");
     }
 
+    @Test
+    void importMerchantsKeepsObservationAndDatasetRowsSeparateForTheSameDomain() {
+        MerchantRaw observed = repository.save(observedMerchant("shared.example", "gid://shopify/Shop/1"));
+        datasetClient.rows = List.of(
+                datasetRow(1, "shared.example", "verified", "{\"GPTBot\": true}", "[\"mcp\"]")
+        );
+
+        service.importMerchants();
+
+        assertThat(repository.findAll()).hasSize(2);
+        assertThat(repository.findBySourceAndDomain(MerchantRawSource.HUGGING_FACE, "shared.example"))
+                .hasValueSatisfying(imported -> {
+                    assertThat(imported.getDatasetRowIdx()).isEqualTo(1);
+                    assertThat(imported.getStatus()).isEqualTo("verified");
+                });
+        assertThat(repository.findBySourceAndDomain(MerchantRawSource.SHOPIFY_OBSERVATION, "shared.example"))
+                .hasValueSatisfying(savedObservation -> {
+                    assertThat(savedObservation.getId()).isEqualTo(observed.getId());
+                    assertThat(savedObservation.getObservedProvider()).isEqualTo(MerchantIntegrationProvider.SHOPIFY);
+                    assertThat(savedObservation.getObservedExternalMerchantId()).isEqualTo("gid://shopify/Shop/1");
+                    assertThat(savedObservation.isActive()).isTrue();
+                });
+    }
+
+    @Test
+    void importMerchantsDeactivatesOnlyMissingHuggingFaceRows() {
+        repository.save(existingMerchant());
+        repository.save(observedMerchant("observed.example", "gid://shopify/Shop/2"));
+
+        service.importMerchants();
+
+        assertThat(huggingFaceMerchant("existing.example").isActive()).isFalse();
+        assertThat(repository.findBySourceAndDomain(MerchantRawSource.SHOPIFY_OBSERVATION, "observed.example"))
+                .hasValueSatisfying(observed -> assertThat(observed.isActive()).isTrue());
+    }
+
+    @Test
+    void importMerchantsDeactivatesAnUnverifiedObservationOnlyMerchant() {
+        MerchantRaw imported = repository.save(existingMerchant());
+        Merchant merchant = merchantRepository.save(profiledMerchant(imported));
+        imported.linkMerchant(merchant);
+        repository.save(imported);
+        MerchantRaw observed = observedMerchant("existing.example", "gid://shopify/Shop/3");
+        observed.linkMerchant(merchant);
+        repository.save(observed);
+
+        service.importMerchants();
+
+        assertThat(huggingFaceMerchant("existing.example").isActive()).isFalse();
+        assertThat(repository.findBySourceAndDomain(
+                MerchantRawSource.SHOPIFY_OBSERVATION,
+                "existing.example"
+        )).hasValueSatisfying(source -> assertThat(source.isActive()).isTrue());
+        assertThat(merchantRepository.findById(merchant.getId()))
+                .hasValueSatisfying(savedMerchant -> assertThat(savedMerchant.isActive()).isFalse());
+    }
+
+    @Test
+    void importMerchantsKeepsVerifiedRoutableObservationOwnerActive() {
+        MerchantRaw imported = repository.save(existingMerchant());
+        Merchant merchant = merchantRepository.save(profiledMerchant(imported));
+        imported.linkMerchant(merchant);
+        repository.save(imported);
+        MerchantRaw observed = observedMerchant("existing.example", "gid://shopify/Shop/3");
+        observed.linkMerchant(merchant);
+        repository.save(observed);
+        merchantIdentityRepository.save(MerchantIdentity.builder()
+                .merchant(merchant)
+                .namespace(MerchantIdentityNamespace.DOMAIN)
+                .normalizedValue("existing.example")
+                .role(MerchantIdentityRole.STOREFRONT_DOMAIN)
+                .source(MerchantRawSource.SHOPIFY_OBSERVATION)
+                .verifiedAt(Instant.parse("2026-04-02T09:00:15Z"))
+                .build());
+        saveActiveCatalogIntegration(merchant);
+
+        service.importMerchants();
+
+        assertThat(merchantRepository.findById(merchant.getId()))
+                .hasValueSatisfying(savedMerchant -> assertThat(savedMerchant.isActive()).isTrue());
+    }
+
+    private void saveActiveCatalogIntegration(Merchant merchant) {
+        Instant capturedAt = Instant.parse("2026-04-02T09:00:15Z");
+        merchantIntegrationRepository.save(MerchantIntegration.builder()
+                .merchant(merchant)
+                .provider(MerchantIntegrationProvider.GENERIC_UCP)
+                .kind(MerchantIntegrationKind.MERCHANT_CONNECTION)
+                .roles(EnumSet.of(MerchantIntegrationRole.STOREFRONT_CATALOG))
+                .endpoint("https://existing.example/api/ucp/mcp")
+                .protocolVersion("2026-01-23")
+                .authStrategy(MerchantIntegrationAuthStrategy.NONE)
+                .status(MerchantIntegrationStatus.ACTIVE)
+                .source(MerchantIntegrationSource.DISCOVERY)
+                .capturedAt(capturedAt)
+                .createdAt(capturedAt)
+                .updatedAt(capturedAt)
+                .build());
+    }
+
+    private MerchantRaw huggingFaceMerchant(String domain) {
+        return repository.findBySourceAndDomain(MerchantRawSource.HUGGING_FACE, domain).orElseThrow();
+    }
+
     private MerchantRaw existingMerchant() {
         return MerchantRaw.builder()
+                .source(MerchantRawSource.HUGGING_FACE)
                 .datasetRowIdx(100)
                 .domain("existing.example")
                 .status("verified")
@@ -209,6 +365,25 @@ class UcpMerchantImportServiceIT extends PostgresIntegrationTestSupport {
                 .sourceHash("existing-source-hash")
                 .active(true)
                 .lastSeenAt(Instant.parse("2026-04-02T09:00:15Z"))
+                .build();
+    }
+
+    private MerchantRaw observedMerchant(String domain, String externalMerchantId) {
+        Instant observedAt = Instant.parse("2026-04-02T09:00:15Z");
+        return MerchantRaw.builder()
+                .source(MerchantRawSource.SHOPIFY_OBSERVATION)
+                .observedProvider(MerchantIntegrationProvider.SHOPIFY)
+                .observedExternalMerchantId(externalMerchantId)
+                .domain(domain)
+                .status("observed")
+                .ucpUrl("https://%s/.well-known/ucp".formatted(domain))
+                .capabilityCount(0)
+                .transports("mcp")
+                .fetchedAt(observedAt)
+                .processed(false)
+                .sourceHash("observed-source-hash-" + externalMerchantId)
+                .active(true)
+                .lastSeenAt(observedAt)
                 .build();
     }
 

@@ -22,6 +22,7 @@ class UserDiscoverConversationSnapshotSanitizerTest {
                 {
                   "id": "thread-1",
                   "title": "SENTINEL PRODUCT TITLE",
+                  "merchantId": "00000000-0000-4000-8000-000000000088",
                   "autoTitleSource": "similar-product-search",
                   "unrelated": {"text": "keep this value"},
                   "messages": [
@@ -96,6 +97,8 @@ class UserDiscoverConversationSnapshotSanitizerTest {
 
         JsonNode root = objectMapper.readTree(sanitized.threadJson());
         assertThat(root.path("title").asText()).isEqualTo("Similar products");
+        assertThat(root.path("merchantId").asText())
+                .isEqualTo("00000000-0000-4000-8000-000000000088");
         assertThat(root.has("unrelated")).isFalse();
         assertThat(root.path("messages").get(0).path("text").asText())
                 .isEqualTo("Show me similar products.");

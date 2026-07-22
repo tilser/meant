@@ -150,7 +150,11 @@ class ShopifyOfferCartRoutingTest {
         assertThat(second.merchantProvider().advertisedMcpEndpoint())
                 .isEqualTo(first.merchantProvider().advertisedMcpEndpoint());
         verify(profiles).fetchProfileResult(eq("shop.example"), any());
-        verify(enrichmentCandidates).enqueue("shop.example");
+        verify(enrichmentCandidates).enqueue(
+                "shop.example",
+                MerchantIntegrationProvider.SHOPIFY,
+                "gid://shopify/Shop/1"
+        );
     }
 
     @Test

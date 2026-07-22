@@ -1,5 +1,6 @@
 package com.meant.api.module.merchant.repository;
 
+import com.meant.api.module.merchant.constant.MerchantIdentityNamespace;
 import com.meant.api.module.merchant.entity.Merchant;
 import java.time.Instant;
 import java.util.Collection;
@@ -17,6 +18,18 @@ public interface MerchantRepository extends JpaRepository<Merchant, UUID> {
     Optional<Merchant> findByDomain(String domain);
 
     Optional<Merchant> findByDomainAndActiveTrue(String domain);
+
+    @Query("""
+            select identity.merchant
+            from MerchantIdentity identity
+            where identity.namespace = :namespace
+              and identity.normalizedValue = :normalizedValue
+              and identity.merchant.active = true
+            """)
+    Optional<Merchant> findActiveByIdentity(
+            @Param("namespace") MerchantIdentityNamespace namespace,
+            @Param("normalizedValue") String normalizedValue
+    );
 
     Optional<Merchant> findByIdAndActiveTrue(UUID id);
 
@@ -46,6 +59,61 @@ public interface MerchantRepository extends JpaRepository<Merchant, UUID> {
               and merchant.domain in :domains
             """)
     int markInactiveByDomainIn(@Param("domains") Collection<String> domains, @Param("updatedAt") Instant updatedAt);
+
+    @Modifying
+    @Query(value = """
+            with desired_state as (
+                select candidate.id,
+                       exists (
+                            select 1
+                            from merchant_raw source
+                            where source.active = true
+                              and source.merchant_id = candidate.id
+                       )
+                       and (
+                            exists (
+                                select 1
+                                from merchant_identity identity
+                                where identity.merchant_id = candidate.id
+                                  and identity.namespace = 'DOMAIN'
+                                  and identity.role = 'STOREFRONT_DOMAIN'
+                            )
+                            or (
+                                exists (
+                                    select 1
+                                    from merchant_raw source
+                                    where source.active = true
+                                      and source.merchant_id = candidate.id
+                                      and source.source = 'HUGGING_FACE'
+                                      and lower(trim(trailing '.' from btrim(source.domain))) <> 'myshopify.com'
+                                      and lower(trim(trailing '.' from btrim(source.domain))) not like '%.myshopify.com'
+                                )
+                            )
+                       )
+                       and 1 = (
+                            select count(*)
+                            from merchant_integration integration
+                            where integration.merchant_id = candidate.id
+                              and integration.provider = 'GENERIC_UCP'
+                              and integration.status = 'ACTIVE'
+                              and integration.endpoint ~* '^https://'
+                              and exists (
+                                  select 1
+                                  from merchant_integration_role integration_role
+                                  where integration_role.merchant_integration_id = integration.id
+                                    and integration_role.role = 'STOREFRONT_CATALOG'
+                              )
+                       ) as should_be_active
+                from merchant candidate
+            )
+            update merchant
+            set active = desired_state.should_be_active,
+                updated_at = :updatedAt
+            from desired_state
+            where merchant.id = desired_state.id
+              and merchant.active is distinct from desired_state.should_be_active
+            """, nativeQuery = true)
+    int synchronizeActiveWithSources(@Param("updatedAt") Instant updatedAt);
 
     @Query(value = """
             select merchant.*

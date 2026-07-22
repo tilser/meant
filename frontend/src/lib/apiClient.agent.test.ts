@@ -96,6 +96,7 @@ beforeEach(() => {
     }
     return Response.json({
       conversationId: 'conversation-1',
+      merchantId: '00000000-0000-4000-8000-000000000088',
       title: 'Trail shoes',
       status: 'ACTIVE',
       activeMissionId: null,
@@ -117,7 +118,11 @@ afterEach(() => {
 
 describe('agent conversation API', () => {
   test('uses the authenticated v1 lifecycle routes and explicit patch fields', async () => {
-    await createAgentConversation({ title: 'Trail shoes', expectedUserId: 'user-a' })
+    await createAgentConversation({
+      title: 'Trail shoes',
+      merchantId: '00000000-0000-4000-8000-000000000088',
+      expectedUserId: 'user-a',
+    })
     await getAgentConversations({ expectedUserId: 'user-a' })
     await getAgentConversation('conversation/1', { expectedUserId: 'user-a' })
     await updateAgentConversation({
@@ -138,7 +143,10 @@ describe('agent conversation API', () => {
     expect(
       requests.every((request) => request.headers.get('Authorization') === 'Bearer agent-token'),
     ).toBe(true)
-    expect(await requests[0]?.json()).toEqual({ title: 'Trail shoes' })
+    expect(await requests[0]?.json()).toEqual({
+      title: 'Trail shoes',
+      merchantId: '00000000-0000-4000-8000-000000000088',
+    })
     expect(await requests[3]?.json()).toEqual({ title: 'Running shoes', archived: false })
   })
 

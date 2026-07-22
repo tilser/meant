@@ -1,8 +1,15 @@
 package com.meant.api.module.merchant.entity;
 
+import com.meant.api.module.merchant.constant.MerchantIntegrationProvider;
+import com.meant.api.module.merchant.constant.MerchantRawSource;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.time.Instant;
@@ -21,7 +28,7 @@ import lombok.NoArgsConstructor;
 @Table(
         name = "merchant_raw",
         uniqueConstraints = {
-                @UniqueConstraint(name = "uk_merchant_raw_domain", columnNames = "domain")
+                @UniqueConstraint(name = "uk_merchant_raw_source_domain", columnNames = {"source", "domain"})
         }
 )
 public class MerchantRaw {
@@ -30,6 +37,20 @@ public class MerchantRaw {
     @Builder.Default
     @Column(nullable = false, updatable = false)
     private UUID id = UUID.randomUUID();
+
+    @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, updatable = false)
+    private MerchantRawSource source = MerchantRawSource.HUGGING_FACE;
+
+    @Enumerated(EnumType.STRING)
+    private MerchantIntegrationProvider observedProvider;
+
+    private String observedExternalMerchantId;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "merchant_id")
+    private Merchant merchant;
 
     private Integer datasetRowIdx;
 
@@ -92,6 +113,18 @@ public class MerchantRaw {
     private boolean active;
 
     private Instant lastSeenAt;
+
+    public void observeProviderIdentity(
+            MerchantIntegrationProvider provider,
+            String externalMerchantId
+    ) {
+        this.observedProvider = provider;
+        this.observedExternalMerchantId = externalMerchantId;
+    }
+
+    public void linkMerchant(Merchant merchant) {
+        this.merchant = merchant;
+    }
 
     public void updateFromImport(
             Integer datasetRowIdx,

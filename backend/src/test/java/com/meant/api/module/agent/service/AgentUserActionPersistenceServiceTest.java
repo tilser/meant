@@ -44,6 +44,7 @@ class AgentUserActionPersistenceServiceTest {
     private AgentUserActionPersistenceService service;
     private AgentConversation conversation;
     private UUID userId;
+    private UUID merchantId;
 
     @BeforeEach
     void setUp() {
@@ -65,7 +66,8 @@ class AgentUserActionPersistenceServiceTest {
                 Clock.fixed(NOW, ZoneOffset.UTC)
         );
         userId = UUID.randomUUID();
-        conversation = AgentConversation.create(userId, "Test", NOW);
+        merchantId = UUID.randomUUID();
+        conversation = AgentConversation.create(userId, "Test", merchantId, NOW);
         when(conversationRepository.findOwnedForUpdate(conversation.getId(), userId))
                 .thenReturn(Optional.of(conversation));
     }
@@ -81,6 +83,7 @@ class AgentUserActionPersistenceServiceTest {
 
         assertThat(reservation.execute()).isTrue();
         assertThat(reservation.actionId()).isEqualTo(action.getId());
+        assertThat(reservation.merchantId()).isEqualTo(merchantId);
         assertThat(action.getStatus()).isEqualTo(AgentUserActionStatus.RESERVED);
         assertThat(action.getSafeMessage()).isNull();
         assertThat(action.getCompletedAt()).isNull();

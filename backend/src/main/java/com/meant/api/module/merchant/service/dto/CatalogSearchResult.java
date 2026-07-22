@@ -8,11 +8,20 @@ import java.util.List;
 public record CatalogSearchResult(
         String endpoint,
         List<CatalogSearchResponse.Product> products,
-        NegotiatedCapabilities negotiatedCapabilities
+        NegotiatedCapabilities negotiatedCapabilities,
+        CatalogSearchResponse.Pagination pagination
 ) {
 
     public CatalogSearchResult(String endpoint, List<CatalogSearchResponse.Product> products) {
-        this(endpoint, products, NegotiatedCapabilities.none());
+        this(endpoint, products, NegotiatedCapabilities.none(), null);
+    }
+
+    public CatalogSearchResult(
+            String endpoint,
+            List<CatalogSearchResponse.Product> products,
+            NegotiatedCapabilities negotiatedCapabilities
+    ) {
+        this(endpoint, products, negotiatedCapabilities, null);
     }
 
     public CatalogSearchResult {

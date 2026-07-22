@@ -94,6 +94,8 @@ class UcpProfileParsingTest {
                 .isTrue();
         assertThat(profile.paymentHandlers().get("com.google.pay").getFirst().schema().url())
                 .isEqualTo("https://pay.example/schema");
+        assertThat(profile.paymentHandlers().get("com.google.pay").getFirst().config().path("ignored").asBoolean())
+                .isTrue();
     }
 
     @Test

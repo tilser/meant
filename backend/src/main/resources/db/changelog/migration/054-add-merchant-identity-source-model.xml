@@ -1,0 +1,770 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="001-add-merchant-source-and-routing-identity" author="codex">
+        <validCheckSum>9:3df876368cbdc688fce2515888ee3101</validCheckSum>
+        <addColumn tableName="merchant_raw">
+            <column name="source" type="text"/>
+            <column name="observed_provider" type="text"/>
+            <column name="observed_external_merchant_id" type="text"/>
+            <column name="merchant_id" type="uuid"/>
+        </addColumn>
+        <sql dbms="postgresql" splitStatements="false"><![CDATA[
+            UPDATE merchant_raw
+            SET source = CASE
+                WHEN dataset_row_idx IS NOT NULL THEN 'HUGGING_FACE'
+                ELSE 'SHOPIFY_OBSERVATION'
+            END;
+
+            UPDATE merchant_raw raw
+            SET merchant_id = merchant.id
+            FROM merchant
+            WHERE merchant.merchant_raw_id = raw.id;
+        ]]></sql>
+
+        <addNotNullConstraint tableName="merchant_raw" columnName="source" columnDataType="text"/>
+        <dropUniqueConstraint tableName="merchant_raw" constraintName="uk_merchant_raw_domain"/>
+        <addUniqueConstraint
+                tableName="merchant_raw"
+                columnNames="source, domain"
+                constraintName="uk_merchant_raw_source_domain"/>
+
+        <addForeignKeyConstraint
+                baseTableName="merchant_raw"
+                baseColumnNames="merchant_id"
+                constraintName="fk_merchant_raw_merchant"
+                referencedTableName="merchant"
+                referencedColumnNames="id"
+                onDelete="SET NULL"/>
+        <createIndex tableName="merchant_raw" indexName="idx_merchant_raw_merchant">
+            <column name="merchant_id"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="002-create-merchant-identity" author="codex">
+        <createTable tableName="merchant_identity">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="merchant_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="namespace" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="normalized_value" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="role" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="source" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="verified_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addForeignKeyConstraint
+                baseTableName="merchant_identity"
+                baseColumnNames="merchant_id"
+                constraintName="fk_merchant_identity_merchant"
+                referencedTableName="merchant"
+                referencedColumnNames="id"
+                onDelete="CASCADE"/>
+        <addUniqueConstraint
+                tableName="merchant_identity"
+                columnNames="namespace, normalized_value"
+                constraintName="uk_merchant_identity_claim"/>
+        <createIndex tableName="merchant_identity" indexName="idx_merchant_identity_merchant">
+            <column name="merchant_id"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="003-backfill-merchant-identities-and-integrations" author="codex" runOnChange="true">
+        <sql dbms="postgresql" splitStatements="false"><![CDATA[
+            -- Only an explicit, absolute UCP service endpoint is executable. The public storefront
+            -- domain, profile URL, and profile helper endpoint are never routing fallbacks.
+            CREATE TEMPORARY TABLE merchant_verified_mcp_endpoint ON COMMIT DROP AS
+            WITH endpoint_values AS (
+                SELECT
+                    merchant.id AS merchant_id,
+                    nullif(btrim(merchant.advertised_mcp_endpoint), '') AS endpoint
+                FROM merchant
+            ),
+            endpoint_hosts AS (
+                SELECT
+                    merchant_id,
+                    endpoint,
+                    lower(trim(trailing '.' FROM split_part(
+                        split_part(
+                            split_part(substring(endpoint FROM 9), '/', 1),
+                            '#',
+                            1
+                        ),
+                        ':',
+                        1
+                    ))) AS endpoint_host
+                FROM endpoint_values
+                WHERE endpoint ~*
+                        '^https://[a-z0-9][a-z0-9.-]*($|:[0-9]{1,5}$|/[^[:space:]]*$|:[0-9]{1,5}/[^[:space:]]*$)'
+                  AND endpoint !~ '@'
+                  AND endpoint IS DISTINCT FROM (
+                      SELECT nullif(btrim(merchant.ucp_url), '')
+                      FROM merchant
+                      WHERE merchant.id = endpoint_values.merchant_id
+                  )
+            ),
+            valid_endpoint_hosts AS (
+                SELECT
+                    merchant_id,
+                    endpoint,
+                    endpoint_host,
+                    row_number() OVER (
+                        PARTITION BY merchant_id
+                        ORDER BY endpoint
+                    ) AS host_rank
+                FROM endpoint_hosts
+                WHERE length(endpoint_host) BETWEEN 3 AND 253
+                  AND endpoint_host LIKE '%.%'
+                  AND endpoint_host !~ '[^a-z0-9.-]'
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM unnest(string_to_array(endpoint_host, '.')) AS label(value)
+                    WHERE label.value = ''
+                       OR length(label.value) > 63
+                       OR label.value !~ '^[a-z0-9-]+$'
+                       OR label.value ~ '^-'
+                       OR label.value ~ '-$'
+                  )
+            )
+            SELECT merchant_id, endpoint
+            FROM valid_endpoint_hosts
+            WHERE host_rank = 1;
+
+            -- Shopify profiles commonly expose the public storefront as a bare host even though it is
+            -- used as an HTTPS origin. Explicit schemes are accepted only when they are HTTPS. A shop
+            -- identity is usable only when every Shopify identity advertised by the profile agrees.
+            CREATE TEMPORARY TABLE merchant_profile_identity_evidence ON COMMIT DROP AS
+            WITH shop_identity_values AS (
+                SELECT
+                    merchant.id AS merchant_id,
+                    btrim(shop_pay_handler #>> '{config,shop_id}') AS shop_id
+                FROM merchant
+                CROSS JOIN LATERAL jsonb_array_elements(
+                    CASE
+                        WHEN jsonb_typeof(merchant.profile_raw #> '{payment_handlers,dev.shopify.shop_pay}') = 'array'
+                            THEN merchant.profile_raw #> '{payment_handlers,dev.shopify.shop_pay}'
+                        ELSE '[]'::jsonb
+                    END
+                ) shop_pay_handler
+                WHERE nullif(btrim(shop_pay_handler #>> '{config,shop_id}'), '') IS NOT NULL
+
+                UNION ALL
+
+                SELECT
+                    merchant.id AS merchant_id,
+                    btrim(payment_method #>> '{tokenization_specification,parameters,gatewayMerchantId}') AS shop_id
+                FROM merchant
+                CROSS JOIN LATERAL jsonb_array_elements(
+                    CASE
+                        WHEN jsonb_typeof(merchant.profile_raw #> '{payment_handlers,com.google.pay}') = 'array'
+                            THEN merchant.profile_raw #> '{payment_handlers,com.google.pay}'
+                        ELSE '[]'::jsonb
+                    END
+                ) google_pay_handler
+                CROSS JOIN LATERAL jsonb_array_elements(
+                    CASE
+                        WHEN jsonb_typeof(google_pay_handler #> '{config,allowed_payment_methods}') = 'array'
+                            THEN google_pay_handler #> '{config,allowed_payment_methods}'
+                        ELSE '[]'::jsonb
+                    END
+                ) payment_method
+                WHERE lower(coalesce(
+                        payment_method #>> '{tokenization_specification,parameters,gateway}',
+                        ''
+                    )) = 'shopify'
+                  AND nullif(btrim(
+                        payment_method #>> '{tokenization_specification,parameters,gatewayMerchantId}'
+                    ), '') IS NOT NULL
+            ),
+            consistent_shop_id AS (
+                SELECT
+                    merchant_id,
+                    min(shop_id) AS shop_id
+                FROM shop_identity_values
+                GROUP BY merchant_id
+                HAVING count(*) > 0
+                   AND bool_and(shop_id ~ '^[1-9][0-9]*$')
+                   AND count(DISTINCT shop_id) = 1
+            ),
+            profile_origin_values AS (
+                SELECT
+                    merchant.id AS merchant_id,
+                    btrim(google_pay_handler #>> '{config,merchant_info,merchant_origin}') AS origin_value,
+                    nullif(btrim(google_pay_handler #>> '{config,merchant_info,merchant_name}'), '') AS merchant_name
+                FROM merchant
+                CROSS JOIN LATERAL jsonb_array_elements(
+                    CASE
+                        WHEN jsonb_typeof(merchant.profile_raw #> '{payment_handlers,com.google.pay}') = 'array'
+                            THEN merchant.profile_raw #> '{payment_handlers,com.google.pay}'
+                        ELSE '[]'::jsonb
+                    END
+                ) google_pay_handler
+                WHERE nullif(btrim(
+                        google_pay_handler #>> '{config,merchant_info,merchant_origin}'
+                    ), '') IS NOT NULL
+            ),
+            origin_evidence_count AS (
+                SELECT merchant_id, count(*) AS evidence_count
+                FROM profile_origin_values
+                GROUP BY merchant_id
+            ),
+            origin_without_scheme AS (
+                SELECT
+                    merchant_id,
+                    merchant_name,
+                    CASE
+                        WHEN origin_value ~* '^https://'
+                            THEN regexp_replace(substring(origin_value FROM 9), '/$', '')
+                        WHEN origin_value ~* '^[a-z][a-z0-9+.-]*://'
+                            THEN NULL
+                        ELSE origin_value
+                    END AS host_value
+                FROM profile_origin_values
+            ),
+            normalized_origin AS (
+                SELECT
+                    merchant_id,
+                    merchant_name,
+                    trim(trailing '.' FROM lower(btrim(host_value))) AS origin_host
+                FROM origin_without_scheme
+                WHERE host_value IS NOT NULL
+            ),
+            valid_origin AS (
+                SELECT
+                    merchant_id,
+                    merchant_name,
+                    regexp_replace(origin_host, '^www\.', '') AS canonical_domain
+                FROM normalized_origin
+                WHERE length(origin_host) BETWEEN 3 AND 253
+                  AND origin_host LIKE '%.%'
+                  AND origin_host !~ '[^a-z0-9.-]'
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM unnest(string_to_array(origin_host, '.')) AS label(value)
+                    WHERE label.value = ''
+                       OR length(label.value) > 63
+                       OR label.value !~ '^[a-z0-9-]+$'
+                       OR label.value ~ '^-'
+                       OR label.value ~ '-$'
+                  )
+            ),
+            consistent_origin AS (
+                SELECT
+                    merchant_id,
+                    min(canonical_domain) AS canonical_domain,
+                    CASE
+                        WHEN count(DISTINCT merchant_name) FILTER (WHERE merchant_name IS NOT NULL) = 1
+                            THEN min(merchant_name) FILTER (WHERE merchant_name IS NOT NULL)
+                        ELSE NULL
+                    END AS merchant_name
+                FROM valid_origin
+                JOIN origin_evidence_count USING (merchant_id)
+                GROUP BY merchant_id
+                HAVING count(*) = max(origin_evidence_count.evidence_count)
+                   AND count(DISTINCT canonical_domain) = 1
+            )
+            SELECT
+                merchant.id AS merchant_id,
+                origin.canonical_domain,
+                origin.merchant_name,
+                shop.shop_id,
+                coalesce(
+                    merchant.profile_captured_at,
+                    merchant.last_profiled_at,
+                    merchant.updated_at,
+                    merchant.created_at,
+                    CURRENT_TIMESTAMP
+                ) AS verified_at
+            FROM merchant
+            JOIN consistent_origin origin ON origin.merchant_id = merchant.id
+            JOIN consistent_shop_id shop ON shop.merchant_id = merchant.id;
+
+            -- Treat verified storefront and Shopify shop identities as ownership keys. Existing merchant
+            -- domains participate only when they match a verified storefront claim; they are never promoted
+            -- to storefront identities merely because they were present in the legacy domain column.
+            CREATE TEMPORARY TABLE merchant_identity_owner_map ON COMMIT DROP AS
+            WITH RECURSIVE verified_identity_claims AS (
+                SELECT merchant_id, 'DOMAIN' AS namespace, canonical_domain AS normalized_value
+                FROM merchant_profile_identity_evidence
+
+                UNION
+
+                SELECT
+                    merchant_id,
+                    'SHOPIFY_SHOP' AS namespace,
+                    lower('gid://shopify/Shop/' || shop_id) AS normalized_value
+                FROM merchant_profile_identity_evidence
+            ),
+            matching_legacy_domain_claims AS (
+                SELECT
+                    merchant.id AS merchant_id,
+                    'DOMAIN' AS namespace,
+                    evidence.canonical_domain AS normalized_value
+                FROM merchant
+                JOIN (
+                    SELECT DISTINCT canonical_domain
+                    FROM merchant_profile_identity_evidence
+                ) evidence ON evidence.canonical_domain = regexp_replace(
+                    lower(trim(trailing '.' FROM btrim(merchant.domain))),
+                    '^www\.',
+                    ''
+                )
+            ),
+            identity_claims AS (
+                SELECT * FROM verified_identity_claims
+                UNION
+                SELECT * FROM matching_legacy_domain_claims
+            ),
+            identity_nodes AS (
+                SELECT DISTINCT merchant_id
+                FROM identity_claims
+            ),
+            identity_edges AS (
+                SELECT DISTINCT
+                    left_claim.merchant_id,
+                    right_claim.merchant_id AS adjacent_merchant_id
+                FROM identity_claims left_claim
+                JOIN identity_claims right_claim
+                  ON right_claim.namespace = left_claim.namespace
+                 AND right_claim.normalized_value = left_claim.normalized_value
+                 AND right_claim.merchant_id <> left_claim.merchant_id
+            ),
+            reachability AS (
+                SELECT merchant_id, merchant_id AS reachable_merchant_id
+                FROM identity_nodes
+
+                UNION
+
+                SELECT
+                    reachability.merchant_id,
+                    edge.adjacent_merchant_id
+                FROM reachability
+                JOIN identity_edges edge
+                  ON edge.merchant_id = reachability.reachable_merchant_id
+            ),
+            components AS (
+                SELECT
+                    merchant_id,
+                    min(reachable_merchant_id::text) AS component_id
+                FROM reachability
+                GROUP BY merchant_id
+            ),
+            ranked_owners AS (
+                SELECT
+                    component.merchant_id,
+                    first_value(component.merchant_id) OVER (
+                        PARTITION BY component.component_id
+                        ORDER BY
+                            CASE WHEN EXISTS (
+                                SELECT 1
+                                FROM merchant_profile_identity_evidence evidence
+                                WHERE merchant.domain = evidence.canonical_domain
+                            ) THEN 1 ELSE 0 END DESC,
+                            CASE WHEN EXISTS (
+                                SELECT 1
+                                FROM merchant_profile_identity_evidence evidence
+                                WHERE evidence.canonical_domain = regexp_replace(
+                                    lower(trim(trailing '.' FROM btrim(merchant.domain))),
+                                    '^www\.',
+                                    ''
+                                )
+                            ) THEN 1 ELSE 0 END DESC,
+                            merchant.active DESC,
+                            (evidence.merchant_id IS NOT NULL) DESC,
+                            coalesce(
+                                evidence.verified_at,
+                                merchant.updated_at,
+                                merchant.created_at
+                            ) DESC NULLS LAST,
+                            merchant.id
+                    ) AS owner_id
+                FROM components component
+                JOIN merchant ON merchant.id = component.merchant_id
+                LEFT JOIN merchant_profile_identity_evidence evidence
+                  ON evidence.merchant_id = merchant.id
+            )
+            SELECT merchant_id, owner_id
+            FROM ranked_owners;
+
+            -- Route the canonical owner through one exact endpoint explicitly advertised by any member
+            -- of its verified identity component. Never reconstruct an endpoint from a host name.
+            CREATE TEMPORARY TABLE merchant_safe_mcp_endpoint ON COMMIT DROP AS
+            WITH owned_endpoint AS (
+                SELECT
+                    endpoint_source.merchant_id AS source_merchant_id,
+                    coalesce(owner.owner_id, endpoint_source.merchant_id) AS merchant_id,
+                    endpoint_source.endpoint
+                FROM merchant_verified_mcp_endpoint endpoint_source
+                LEFT JOIN merchant_identity_owner_map owner
+                  ON owner.merchant_id = endpoint_source.merchant_id
+            ),
+            ranked_endpoint AS (
+                SELECT
+                    owned_endpoint.merchant_id,
+                    owned_endpoint.endpoint,
+                    row_number() OVER (
+                        PARTITION BY owned_endpoint.merchant_id
+                        ORDER BY
+                            (owned_endpoint.source_merchant_id = owned_endpoint.merchant_id) DESC,
+                            coalesce(
+                                source_merchant.profile_captured_at,
+                                source_merchant.last_profiled_at,
+                                source_merchant.updated_at,
+                                source_merchant.created_at
+                            ) DESC NULLS LAST,
+                            owned_endpoint.source_merchant_id
+                    ) AS endpoint_rank
+                FROM owned_endpoint
+                JOIN merchant source_merchant ON source_merchant.id = owned_endpoint.source_merchant_id
+            )
+            SELECT merchant_id, endpoint
+            FROM ranked_endpoint
+            WHERE endpoint_rank = 1;
+
+            -- Multiple source rows may safely point at one canonical merchant. Loser merchant rows remain as
+            -- inactive tombstones so commercial and user-owned children keep stable foreign keys.
+            UPDATE merchant_raw raw
+            SET merchant_id = owner.owner_id
+            FROM merchant_identity_owner_map owner
+            WHERE raw.merchant_id = owner.merchant_id
+              AND owner.merchant_id <> owner.owner_id;
+
+            UPDATE merchant_integration integration
+            SET status = 'INACTIVE',
+                external_merchant_id = NULL,
+                verified_domain = NULL,
+                verified_shop_identity = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            FROM merchant_identity_owner_map owner
+            WHERE integration.merchant_id = owner.merchant_id
+              AND owner.merchant_id <> owner.owner_id;
+
+            UPDATE merchant loser
+            SET active = false,
+                updated_at = CURRENT_TIMESTAMP
+            FROM merchant_identity_owner_map owner
+            WHERE loser.id = owner.merchant_id
+              AND owner.merchant_id <> owner.owner_id;
+
+            UPDATE merchant winner
+            SET active = EXISTS (
+                    SELECT 1
+                    FROM merchant_raw raw
+                    WHERE raw.merchant_id = winner.id
+                      AND raw.active = true
+                ),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE winner.id IN (
+                SELECT DISTINCT owner_id
+                FROM merchant_identity_owner_map
+            );
+
+            CREATE TEMPORARY TABLE merchant_profile_identity_backfill ON COMMIT DROP AS
+            SELECT DISTINCT ON (owner.owner_id)
+                owner.owner_id AS merchant_id,
+                evidence.canonical_domain,
+                evidence.merchant_name,
+                evidence.shop_id,
+                evidence.verified_at
+            FROM merchant_identity_owner_map owner
+            JOIN merchant_profile_identity_evidence evidence
+              ON evidence.merchant_id = owner.merchant_id
+            ORDER BY
+                owner.owner_id,
+                (evidence.merchant_id = owner.owner_id) DESC,
+                evidence.verified_at DESC,
+                evidence.merchant_id;
+
+            UPDATE merchant
+            SET domain = identity_backfill.canonical_domain,
+                name = coalesce(identity_backfill.merchant_name, merchant.name),
+                updated_at = CURRENT_TIMESTAMP
+            FROM merchant_profile_identity_backfill identity_backfill
+            WHERE merchant.id = identity_backfill.merchant_id;
+
+            UPDATE merchant_raw
+            SET observed_provider = 'SHOPIFY',
+                observed_external_merchant_id = 'gid://shopify/Shop/' || identity_backfill.shop_id
+            FROM merchant_profile_identity_backfill identity_backfill
+            WHERE merchant_raw.merchant_id = identity_backfill.merchant_id
+              AND merchant_raw.source = 'SHOPIFY_OBSERVATION';
+
+            WITH storefront_claims AS (
+                SELECT
+                    identity_backfill.merchant_id,
+                    identity_backfill.canonical_domain AS normalized_value,
+                    raw.source AS identity_source,
+                    identity_backfill.verified_at
+                FROM merchant_profile_identity_backfill identity_backfill
+                JOIN merchant ON merchant.id = identity_backfill.merchant_id
+                JOIN merchant_raw raw ON raw.id = merchant.merchant_raw_id
+            )
+            INSERT INTO merchant_identity (
+                id,
+                merchant_id,
+                namespace,
+                normalized_value,
+                role,
+                source,
+                verified_at
+            )
+            SELECT
+                gen_random_uuid(),
+                claim.merchant_id,
+                'DOMAIN',
+                claim.normalized_value,
+                'STOREFRONT_DOMAIN',
+                claim.identity_source,
+                claim.verified_at
+            FROM storefront_claims claim
+            WHERE nullif(claim.normalized_value, '') IS NOT NULL
+            ON CONFLICT (namespace, normalized_value) DO NOTHING;
+
+            INSERT INTO merchant_identity (
+                id,
+                merchant_id,
+                namespace,
+                normalized_value,
+                role,
+                source,
+                verified_at
+            )
+            SELECT
+                gen_random_uuid(),
+                identity_backfill.merchant_id,
+                'SHOPIFY_SHOP',
+                lower('gid://shopify/Shop/' || identity_backfill.shop_id),
+                'PROVIDER_ID',
+                raw.source,
+                identity_backfill.verified_at
+            FROM merchant_profile_identity_backfill identity_backfill
+            JOIN merchant ON merchant.id = identity_backfill.merchant_id
+            JOIN merchant_raw raw ON raw.id = merchant.merchant_raw_id
+            ON CONFLICT (namespace, normalized_value) DO NOTHING;
+
+            -- Runtime observations are not storefront evidence. Keep observation-only owners inactive
+            -- until a verified storefront claim exists. Hugging Face remains a trusted storefront source
+            -- only for non-Shopify-technical domains. Every active merchant must also have one exact,
+            -- validated endpoint explicitly advertised by its profile.
+            UPDATE merchant
+            SET active = false,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE (
+                    NOT EXISTS (
+                        SELECT 1
+                        FROM merchant_identity identity
+                        WHERE identity.merchant_id = merchant.id
+                          AND identity.namespace = 'DOMAIN'
+                          AND identity.role = 'STOREFRONT_DOMAIN'
+                    )
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM merchant_raw source
+                        WHERE source.merchant_id = merchant.id
+                          AND source.active = true
+                          AND source.source = 'HUGGING_FACE'
+                          AND lower(trim(trailing '.' FROM btrim(source.domain))) <> 'myshopify.com'
+                          AND lower(trim(trailing '.' FROM btrim(source.domain))) NOT LIKE '%.myshopify.com'
+                    )
+                )
+               OR NOT EXISTS (
+                    SELECT 1
+                    FROM merchant_safe_mcp_endpoint safe_endpoint
+                    WHERE safe_endpoint.merchant_id = merchant.id
+               );
+
+            -- Retain prior connections for audit history, but make every generic UCP connection
+            -- non-routable unless it equals the exact validated endpoint selected above.
+            UPDATE merchant_integration integration
+            SET status = 'INACTIVE',
+                verified_domain = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            FROM merchant
+            LEFT JOIN merchant_safe_mcp_endpoint safe_endpoint
+              ON safe_endpoint.merchant_id = merchant.id
+            WHERE integration.merchant_id = merchant.id
+              AND integration.provider = 'GENERIC_UCP'
+              AND integration.endpoint IS DISTINCT FROM safe_endpoint.endpoint;
+
+            -- Legacy domains were not storefront verification. Rebuild generic UCP domain ownership only
+            -- from the verified profile evidence captured above.
+            UPDATE merchant_integration
+            SET verified_domain = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE provider = 'GENERIC_UCP'
+              AND verified_domain IS NOT NULL;
+
+            INSERT INTO merchant_integration (
+                id,
+                merchant_id,
+                provider,
+                kind,
+                external_merchant_id,
+                verified_domain,
+                verified_shop_identity,
+                endpoint,
+                protocol_version,
+                auth_strategy,
+                status,
+                source,
+                raw_metadata,
+                captured_at,
+                created_at,
+                updated_at
+            )
+            SELECT
+                gen_random_uuid(),
+                candidate.id,
+                'GENERIC_UCP',
+                'MERCHANT_CONNECTION',
+                NULL,
+                NULL,
+                NULL,
+                safe_endpoint.endpoint,
+                nullif(btrim(candidate.ucp_version), ''),
+                'NONE',
+                'ACTIVE',
+                'DISCOVERY',
+                candidate.profile_raw,
+                coalesce(
+                    candidate.profile_captured_at,
+                    candidate.last_profiled_at,
+                    candidate.updated_at,
+                    candidate.created_at,
+                    CURRENT_TIMESTAMP
+                ),
+                coalesce(candidate.created_at, CURRENT_TIMESTAMP),
+                coalesce(candidate.updated_at, candidate.created_at, CURRENT_TIMESTAMP)
+            FROM merchant candidate
+            JOIN merchant_safe_mcp_endpoint safe_endpoint
+              ON safe_endpoint.merchant_id = candidate.id
+            WHERE candidate.active = true
+              AND safe_endpoint.endpoint IS NOT NULL
+              AND NOT EXISTS (
+                SELECT 1
+                FROM merchant_integration existing
+                WHERE existing.merchant_id = candidate.id
+                  AND existing.provider = 'GENERIC_UCP'
+                  AND existing.endpoint = safe_endpoint.endpoint
+              )
+            ON CONFLICT (merchant_id, provider, endpoint) DO NOTHING;
+
+            UPDATE merchant_integration integration
+            SET status = CASE WHEN merchant.active THEN 'ACTIVE' ELSE 'INACTIVE' END,
+                verified_domain = identity_backfill.canonical_domain,
+                updated_at = CURRENT_TIMESTAMP
+            FROM merchant_safe_mcp_endpoint safe_endpoint
+            JOIN merchant ON merchant.id = safe_endpoint.merchant_id
+            LEFT JOIN merchant_profile_identity_backfill identity_backfill
+              ON identity_backfill.merchant_id = merchant.id
+            WHERE integration.merchant_id = merchant.id
+              AND integration.provider = 'GENERIC_UCP'
+              AND integration.endpoint = safe_endpoint.endpoint;
+
+            INSERT INTO merchant_integration_role (merchant_integration_id, role)
+            SELECT integration.id, 'STOREFRONT_CATALOG'
+            FROM merchant_integration integration
+            WHERE integration.provider = 'GENERIC_UCP'
+              AND integration.status = 'ACTIVE'
+            ON CONFLICT DO NOTHING;
+
+            INSERT INTO merchant_integration_role (merchant_integration_id, role)
+            SELECT integration.id, 'CART'
+            FROM merchant_integration integration
+            WHERE integration.provider = 'GENERIC_UCP'
+              AND integration.status = 'ACTIVE'
+              AND (
+                EXISTS (
+                    SELECT 1
+                    FROM merchant_raw raw
+                    WHERE raw.merchant_id = integration.merchant_id
+                      AND raw.has_cart_management
+                )
+                OR EXISTS (
+                    SELECT 1
+                    FROM merchant
+                    WHERE merchant.id = integration.merchant_id
+                      AND jsonb_exists(
+                            coalesce(merchant.profile_raw -> 'capabilities', '{}'::jsonb),
+                            'dev.ucp.shopping.cart'
+                      )
+                )
+              )
+            ON CONFLICT DO NOTHING;
+
+            INSERT INTO merchant_integration_role (merchant_integration_id, role)
+            SELECT integration.id, 'CHECKOUT'
+            FROM merchant_integration integration
+            WHERE integration.provider = 'GENERIC_UCP'
+              AND integration.status = 'ACTIVE'
+              AND (
+                EXISTS (
+                    SELECT 1
+                    FROM merchant_raw raw
+                    WHERE raw.merchant_id = integration.merchant_id
+                      AND raw.has_checkout
+                )
+                OR EXISTS (
+                    SELECT 1
+                    FROM merchant
+                    WHERE merchant.id = integration.merchant_id
+                      AND jsonb_exists(
+                            coalesce(merchant.profile_raw -> 'capabilities', '{}'::jsonb),
+                            'dev.ucp.shopping.checkout'
+                      )
+                )
+              )
+            ON CONFLICT DO NOTHING;
+
+            INSERT INTO merchant_integration_role (merchant_integration_id, role)
+            SELECT integration.id, 'ORDERS'
+            FROM merchant_integration integration
+            WHERE integration.provider = 'GENERIC_UCP'
+              AND integration.status = 'ACTIVE'
+              AND (
+                EXISTS (
+                    SELECT 1
+                    FROM merchant_raw raw
+                    WHERE raw.merchant_id = integration.merchant_id
+                      AND raw.has_order
+                )
+                OR EXISTS (
+                    SELECT 1
+                    FROM merchant
+                    WHERE merchant.id = integration.merchant_id
+                      AND jsonb_exists(
+                            coalesce(merchant.profile_raw -> 'capabilities', '{}'::jsonb),
+                            'dev.ucp.shopping.order'
+                      )
+                )
+              )
+            ON CONFLICT DO NOTHING;
+        ]]></sql>
+    </changeSet>
+
+    <changeSet id="004-remove-obsolete-routing-domain" author="codex">
+        <sql dbms="postgresql" splitStatements="false"><![CDATA[
+            DELETE FROM merchant_identity
+            WHERE role = 'ROUTING_DOMAIN';
+
+            ALTER TABLE merchant
+            DROP COLUMN IF EXISTS routing_domain;
+        ]]></sql>
+    </changeSet>
+</databaseChangeLog>

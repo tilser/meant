@@ -21,6 +21,7 @@ public final class AgentResultMapper {
                 source.getId(),
                 source.getTitle(),
                 source.getStatus(),
+                source.getMerchantId(),
                 source.getActiveMissionId(),
                 source.getLastSequenceNumber(),
                 source.getCreatedAt(),

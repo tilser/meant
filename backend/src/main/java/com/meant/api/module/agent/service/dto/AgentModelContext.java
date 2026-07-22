@@ -1,12 +1,14 @@
 package com.meant.api.module.agent.service.dto;
 
 import java.util.List;
+import java.util.UUID;
 
 public record AgentModelContext(
         List<AgentModelMessage> messages,
         String triggeringUserText,
         AgentVisibleProductContext visibleProductContext,
-        AgentProductClarification pendingProductClarification
+        AgentProductClarification pendingProductClarification,
+        UUID merchantId
 ) {
 
     public AgentModelContext {
@@ -14,7 +16,7 @@ public record AgentModelContext(
     }
 
     public AgentModelContext(List<AgentModelMessage> messages, String triggeringUserText) {
-        this(messages, triggeringUserText, null, null);
+        this(messages, triggeringUserText, null, null, null);
     }
 
     public AgentModelContext(
@@ -22,6 +24,15 @@ public record AgentModelContext(
             String triggeringUserText,
             AgentVisibleProductContext visibleProductContext
     ) {
-        this(messages, triggeringUserText, visibleProductContext, null);
+        this(messages, triggeringUserText, visibleProductContext, null, null);
+    }
+
+    public AgentModelContext(
+            List<AgentModelMessage> messages,
+            String triggeringUserText,
+            AgentVisibleProductContext visibleProductContext,
+            AgentProductClarification pendingProductClarification
+    ) {
+        this(messages, triggeringUserText, visibleProductContext, pendingProductClarification, null);
     }
 }

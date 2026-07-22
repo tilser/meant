@@ -21,6 +21,7 @@ import {
   type AgentConversationSummaryProfile,
   type AgentDirectActionProfile,
   type AgentRunSnapshotProfile,
+  type MerchantProfile,
 } from '../../../lib/apiClient'
 import { AskComposer } from '../ask/AskComposer'
 import type {
@@ -228,6 +229,9 @@ export interface AgentDiscoverViewProps {
   profile: typeof PROFILE
   greeting: string
   prompts: readonly string[]
+  merchants: readonly MerchantProfile[]
+  merchantsLoading: boolean
+  merchantsError: string | null
   deliveryLocations: readonly UserLocation[]
   preferences: readonly Preference[]
   cart: readonly CartItem[]
@@ -285,6 +289,9 @@ export function AgentDiscoverView({
   profile,
   greeting,
   prompts,
+  merchants,
+  merchantsLoading,
+  merchantsError,
   deliveryLocations,
   preferences,
   cart,
@@ -334,6 +341,7 @@ export function AgentDiscoverView({
     AgentConversationSummaryProfile[]
   >([])
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null)
+  const [draftMerchantId, setDraftMerchantId] = useState<string | null>(null)
   const [conversation, setConversation] = useState<AgentConversationDetailProfile | null>(null)
   const [activeRunId, setActiveRunId] = useState<string | null>(null)
   const [runSnapshot, setRunSnapshot] = useState<AgentRunSnapshotProfile | null>(null)
@@ -1070,7 +1078,10 @@ export function AgentDiscoverView({
         let targetConversationId = activeConversationId
         let targetConversation = selectedConversation
         if (!targetConversationId || !targetConversation) {
-          const created = await createAgentConversation({ expectedUserId })
+          const created = await createAgentConversation({
+            merchantId: draftMerchantId,
+            expectedUserId,
+          })
           targetConversationId = created.conversationId
           targetConversation = emptyConversationFromSummary(created)
           setConversations((current) => [
@@ -1155,6 +1166,7 @@ export function AgentDiscoverView({
       onCaptureAgentCartRevision,
       onAgentRunSubmitted,
       selectedConversation,
+      draftMerchantId,
       shelf,
       submitting,
       updateActiveConversationId,
@@ -1492,6 +1504,7 @@ export function AgentDiscoverView({
     setLoading(false)
     setError(null)
     setShareNotice(null)
+    setDraftMerchantId(null)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }, [updateActiveConversationId, updateActiveRunId, updateConversationState])
 
@@ -1676,6 +1689,11 @@ export function AgentDiscoverView({
             prompts={prompts}
             onSubmit={(text) => void submit(text)}
             loading={loading || submitting}
+            merchants={merchants}
+            selectedMerchantId={draftMerchantId}
+            merchantsLoading={merchantsLoading}
+            merchantsError={merchantsError}
+            onMerchant={setDraftMerchantId}
             historyThreads={historyThreads}
             activeThreadId=""
             onHistorySelect={(id) => void selectConversation(id)}

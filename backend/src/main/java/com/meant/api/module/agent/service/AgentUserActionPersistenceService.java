@@ -78,7 +78,8 @@ public class AgentUserActionPersistenceService {
                                 artifactRepository.findByMessageIdOrderByOrdinalAsc(message.getId()).stream()
                                         .map(AgentResultMapper::artifact)
                                         .toList()
-                        )
+                        ),
+                        conversation.getMerchantId()
                 );
             }
             if (!action.getToolVersion().equals(toolVersion)) {
@@ -98,7 +99,8 @@ public class AgentUserActionPersistenceService {
             }
             if (action.getStatus() == AgentUserActionStatus.UNCERTAIN) {
                 action.retry();
-                return new AgentUserActionReservation(action.getId(), true, null);
+                return new AgentUserActionReservation(
+                        action.getId(), true, null, conversation.getMerchantId());
             }
             if (action.getStatus() == AgentUserActionStatus.RESERVED
                     || action.getStatus() == AgentUserActionStatus.RUNNING) {
@@ -116,7 +118,8 @@ public class AgentUserActionPersistenceService {
                 .status(AgentUserActionStatus.RESERVED)
                 .createdAt(clock.instant())
                 .build());
-        return new AgentUserActionReservation(action.getId(), true, null);
+        return new AgentUserActionReservation(
+                action.getId(), true, null, conversation.getMerchantId());
     }
 
     @Transactional

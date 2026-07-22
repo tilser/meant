@@ -58,7 +58,7 @@ class MerchantCatalogPluginDispatchServiceTest {
                             "content": [
                               {
                                 "type": "text",
-                                "text": "{\\"products\\":[{\\"id\\":\\"gid://shopify/Product/1\\",\\"title\\":\\"Trail Runner\\"}]}"
+                                "text": "{\\"products\\":[{\\"id\\":\\"gid://shopify/Product/1\\",\\"title\\":\\"Trail Runner\\"}],\\"pagination\\":{\\"has_next_page\\":true,\\"cursor\\":\\"cursor-next\\"}}"
                               }
                             ],
                             "structuredContent": {
@@ -145,6 +145,10 @@ class MerchantCatalogPluginDispatchServiceTest {
         );
 
         assertThat(searchResult.products()).extracting("id").containsExactly("gid://shopify/Product/1");
+        assertThat(searchResult.pagination()).satisfies(pagination -> {
+            assertThat(pagination.hasNextPage()).isTrue();
+            assertThat(pagination.cursor()).isEqualTo("cursor-next");
+        });
         assertThat(searchResult.negotiatedCapabilities().supports(ShopifyCatalogExtensionCapability.ID)).isTrue();
         assertThat(lookupResult.productId()).isEqualTo("gid://shopify/Product/1");
         assertThat(productResult.product().productId()).isEqualTo("gid://shopify/Product/1");

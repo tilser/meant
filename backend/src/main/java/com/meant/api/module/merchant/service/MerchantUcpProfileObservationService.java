@@ -2,6 +2,7 @@ package com.meant.api.module.merchant.service;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import com.meant.api.module.merchant.constant.MerchantIntegrationProvider;
 import com.meant.api.module.merchant.properties.MerchantUcpProfileObservationProperties;
 import com.meant.api.module.merchant.service.dto.MerchantUcpProfileObservation;
 import com.meant.api.module.merchant.service.dto.UcpProfile;
@@ -18,7 +19,7 @@ import org.springframework.stereotype.Service;
 public class MerchantUcpProfileObservationService {
     private final UcpProfileClient profileClient;
     private final MerchantEnrichmentCandidateService enrichmentCandidates;
-    private final Cache<String, ObservationEntry> observations;
+    private final Cache<ObservationKey, ObservationEntry> observations;
 
     @Autowired
     public MerchantUcpProfileObservationService(
@@ -34,17 +35,29 @@ public class MerchantUcpProfileObservationService {
                 .build();
     }
 
-    public MerchantUcpProfileObservation observe(String domain, URI profileEndpoint) {
-        ObservationEntry entry = observations.get(domain, ignored -> new ObservationEntry(fetch(domain, profileEndpoint)));
-        enqueueOnce(domain, entry);
+    public MerchantUcpProfileObservation observe(
+            String domain,
+            URI profileEndpoint,
+            MerchantIntegrationProvider provider,
+            String externalMerchantId
+    ) {
+        ObservationKey key = new ObservationKey(domain, provider, externalMerchantId);
+        ObservationEntry entry = observations.get(key, ignored -> new ObservationEntry(fetch(domain, profileEndpoint)));
+        enqueueOnce(key, entry);
         return entry.observation();
     }
 
-    public MerchantUcpProfileObservation refresh(String domain, URI profileEndpoint) {
-        observations.invalidate(domain);
+    public MerchantUcpProfileObservation refresh(
+            String domain,
+            URI profileEndpoint,
+            MerchantIntegrationProvider provider,
+            String externalMerchantId
+    ) {
+        ObservationKey key = new ObservationKey(domain, provider, externalMerchantId);
+        observations.invalidate(key);
         ObservationEntry entry = new ObservationEntry(fetch(domain, profileEndpoint));
-        observations.put(domain, entry);
-        enqueueOnce(domain, entry);
+        observations.put(key, entry);
+        enqueueOnce(key, entry);
         return entry.observation();
     }
 
@@ -60,12 +73,12 @@ public class MerchantUcpProfileObservationService {
         );
     }
 
-    private void enqueueOnce(String domain, ObservationEntry entry) {
+    private void enqueueOnce(ObservationKey key, ObservationEntry entry) {
         if (!entry.enrichmentQueued().compareAndSet(false, true)) {
             return;
         }
         try {
-            enrichmentCandidates.enqueue(domain);
+            enrichmentCandidates.enqueue(key.domain(), key.provider(), key.externalMerchantId());
         } catch (RuntimeException exception) {
             entry.enrichmentQueued().set(false);
             throw exception;
@@ -79,5 +92,12 @@ public class MerchantUcpProfileObservationService {
         private ObservationEntry(MerchantUcpProfileObservation observation) {
             this(observation, new AtomicBoolean());
         }
+    }
+
+    private record ObservationKey(
+            String domain,
+            MerchantIntegrationProvider provider,
+            String externalMerchantId
+    ) {
     }
 }

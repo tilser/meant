@@ -1033,7 +1033,7 @@ class MerchantSemanticProductSearchServiceTest {
         private final Map<UUID, MerchantSemanticSearchResult> results = new HashMap<>();
 
         FakeMerchantLookupService() {
-            super(null);
+            super(null, null);
         }
 
         @Override

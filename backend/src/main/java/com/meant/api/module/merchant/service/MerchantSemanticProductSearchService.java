@@ -113,7 +113,8 @@ public class MerchantSemanticProductSearchService {
                         productLimit,
                         query.context(),
                         query.filters(),
-                        candidateConsumer)
+                        candidateConsumer),
+                catalogSearchOutcomes.stream().anyMatch(MerchantCatalogSearchOutcome::hasNextPage)
         );
     }
 

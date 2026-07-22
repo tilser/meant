@@ -43,6 +43,7 @@ class UserSimilarProductSearchServiceTest {
     private static final UUID OTHER_USER_ID = UUID.fromString("10000000-0000-0000-0000-000000000002");
     private static final UUID QUALIFICATION_ID = UUID.fromString("10000000-0000-0000-0000-000000000003");
     private static final UUID CONVERSATION_ID = UUID.fromString("10000000-0000-0000-0000-000000000004");
+    private static final UUID MERCHANT_ID = UUID.fromString("10000000-0000-0000-0000-000000000005");
     private static final ProviderIdentity PROVIDER = new ProviderIdentity("GENERIC_UCP");
     private static final ProviderIdentity SHOPIFY = new ProviderIdentity("SHOPIFY");
     private static final Instant OBSERVED_AT = Instant.parse("2026-07-18T08:00:00Z");
@@ -173,6 +174,88 @@ class UserSimilarProductSearchServiceTest {
         assertThat(grouped.command.query()).isEqualTo("blue jeans");
         assertThat(grouped.discoveryFilters).isSameAs(filters);
         assertThat(grouped.discoveryFilters.price().max()).isEqualTo(5_000L);
+    }
+
+    @Test
+    void keepsMerchantScopedSimilarityOnTheDirectStorefrontSource() {
+        UserCanonicalProductSessionStore store = store();
+        CanonicalProduct anchor = product(false, true, false);
+        store.remember(USER_ID, List.of(anchor), Map.of(), Map.of(), Map.of(), List.of());
+        UserQualifiedProductSearchResolver resolver = new UserQualifiedProductSearchResolver(null, null, null) {
+            @Override
+            public UserQualifiedProductSearchInput resolve(UUID userId, UUID qualificationId) {
+                assertThat(userId).isEqualTo(USER_ID);
+                assertThat(qualificationId).isEqualTo(QUALIFICATION_ID);
+                return new UserQualifiedProductSearchInput(
+                        QUALIFICATION_ID,
+                        CONVERSATION_ID,
+                        MERCHANT_ID,
+                        "blue jeans",
+                        null
+                );
+            }
+        };
+        CapturingGroupedProductSearchService grouped = new CapturingGroupedProductSearchService();
+        UserSimilarProductSearchService service = new UserSimilarProductSearchService(
+                store,
+                persistence(Optional.empty()),
+                grouped,
+                product -> {
+                    throw new AssertionError("Scoped similarity must not resolve a provider-catalog reference");
+                },
+                resolver
+        );
+
+        service.search(
+                profile(USER_ID),
+                new SearchSimilarUserProductsCommand(
+                        USER_ID,
+                        anchor.key(),
+                        "blue jeans",
+                        QUALIFICATION_ID,
+                        "192.0.2.10",
+                        "test-agent"
+                )
+        );
+
+        assertThat(grouped.command.merchantId()).isEqualTo(MERCHANT_ID);
+        assertThat(grouped.command.query()).isEqualTo("blue jeans");
+        assertThat(grouped.reference).isNull();
+    }
+
+    @Test
+    void acceptsAServerOwnedMerchantScopeWithoutAQualification() {
+        UserCanonicalProductSessionStore store = store();
+        CanonicalProduct anchor = product(false, true, false);
+        store.remember(USER_ID, List.of(anchor), Map.of(), Map.of(), Map.of(), List.of());
+        CapturingGroupedProductSearchService grouped = new CapturingGroupedProductSearchService();
+        UserSimilarProductSearchService service = new UserSimilarProductSearchService(
+                store,
+                persistence(Optional.empty()),
+                grouped,
+                product -> {
+                    throw new AssertionError("Direct merchant similarity must not resolve a global reference");
+                },
+                null
+        );
+
+        service.search(
+                profile(USER_ID),
+                new SearchSimilarUserProductsCommand(
+                        USER_ID,
+                        anchor.key(),
+                        "blue jeans",
+                        null,
+                        MERCHANT_ID,
+                        "192.0.2.10",
+                        "test-agent"
+                )
+        );
+
+        assertThat(grouped.command.merchantId()).isEqualTo(MERCHANT_ID);
+        assertThat(grouped.command.query()).isEqualTo("blue jeans");
+        assertThat(grouped.discoveryFilters).isNull();
+        assertThat(grouped.reference).isNull();
     }
 
     @Test

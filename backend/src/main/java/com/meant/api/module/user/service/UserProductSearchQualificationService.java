@@ -39,11 +39,6 @@ public class UserProductSearchQualificationService {
         if (!profileCommand.id().equals(command.userId())) {
             throw UserException.forbidden("Product-search qualification user does not match authenticated user");
         }
-        if (command.merchantId() != null) {
-            throw new UserException(
-                    "Merchant-scoped search is unavailable until the merchant has a trusted Shopify Shop GID"
-            );
-        }
         conversationService.requireOwned(new GetUserDiscoverConversationQuery(
                 command.userId(), command.conversationId()));
 

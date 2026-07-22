@@ -1,5 +1,6 @@
 package com.meant.api.module.merchant.service;
 
+import com.meant.api.module.merchant.constant.MerchantIdentityNamespace;
 import com.meant.api.module.merchant.entity.Merchant;
 import com.meant.api.module.merchant.repository.MerchantCapabilityRepository;
 import com.meant.api.module.merchant.repository.MerchantIntegrationRepository;
@@ -7,9 +8,9 @@ import com.meant.api.module.merchant.repository.MerchantRepository;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.module.merchant.service.dto.MerchantExecutionPolicy;
 import com.meant.api.module.merchant.service.dto.MerchantIntegrationRouting;
-import java.util.Optional;
 import java.net.IDN;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -45,7 +46,25 @@ public class MerchantCartProviderLookupService {
         if (merchantDomain == null || merchantDomain.isBlank()) {
             return Optional.empty();
         }
-        return merchantRepository.findByDomainAndActiveTrue(normalizeDomain(merchantDomain)).map(this::toProvider);
+        String normalizedDomain = normalizeDomain(merchantDomain);
+        Optional<Merchant> merchant = merchantRepository.findByDomainAndActiveTrue(normalizedDomain)
+                .or(() -> merchantRepository.findActiveByIdentity(
+                                MerchantIdentityNamespace.DOMAIN,
+                                normalizedDomain
+                        ));
+        return merchant.map(this::toProvider);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<MerchantCartProvider> findActiveByShopifyShopId(String externalMerchantId) {
+        if (externalMerchantId == null || externalMerchantId.isBlank()) {
+            return Optional.empty();
+        }
+        return merchantRepository.findActiveByIdentity(
+                        MerchantIdentityNamespace.SHOPIFY_SHOP,
+                        externalMerchantId.trim().toLowerCase(Locale.ROOT)
+                )
+                .map(this::toProvider);
     }
 
     private String normalizeDomain(String domain) {

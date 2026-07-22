@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="053-add-agent-conversation-merchant-scope" author="codex">
+        <addColumn tableName="agent_conversation">
+            <column name="merchant_id" type="uuid"/>
+        </addColumn>
+        <addForeignKeyConstraint baseTableName="agent_conversation"
+                                 baseColumnNames="merchant_id"
+                                 referencedTableName="merchant"
+                                 referencedColumnNames="id"
+                                 constraintName="fk_agent_conversation_merchant"/>
+    </changeSet>
+
+</databaseChangeLog>

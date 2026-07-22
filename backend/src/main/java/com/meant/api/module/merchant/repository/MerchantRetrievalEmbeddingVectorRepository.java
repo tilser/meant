@@ -88,12 +88,26 @@ public class MerchantRetrievalEmbeddingVectorRepository {
                 select merchant.id,
                        merchant.domain,
                        merchant.name,
-                       merchant.advertised_mcp_endpoint,
-                       merchant.profile_mcp_endpoint,
+                       catalog_integration.endpoint as advertised_mcp_endpoint,
+                       cast(null as text) as profile_mcp_endpoint,
                        embedding.retrieval_content,
                        1 - (embedding.retrieval_embedding <=> cast(:queryEmbedding as vector)) as score
                 from merchant_retrieval_embedding embedding
                 join merchant merchant on merchant.id = embedding.merchant_id
+                join lateral (
+                    select min(integration.endpoint) as endpoint
+                    from merchant_integration integration
+                    where integration.merchant_id = merchant.id
+                      and integration.provider = 'GENERIC_UCP'
+                      and integration.status = 'ACTIVE'
+                      and exists (
+                          select 1
+                          from merchant_integration_role integration_role
+                          where integration_role.merchant_integration_id = integration.id
+                            and integration_role.role = 'STOREFRONT_CATALOG'
+                      )
+                    having count(*) = 1
+                ) catalog_integration on true
                 where embedding.active = true
                   and embedding.embedding_model = :embeddingModel
                   and merchant.active = true

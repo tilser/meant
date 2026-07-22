@@ -241,11 +241,6 @@ public class UserGroupedProductSearchV1Controller {
     ) {
         UserQualifiedProductSearchInput qualified = qualifiedSearchResolver.resolve(
                 authenticatedUser.id(), request.qualificationId());
-        if (qualified.merchantId() != null) {
-            throw new UserException(
-                    "Merchant-scoped search is unavailable until the merchant has a trusted Shopify Shop GID"
-            );
-        }
         if (!Objects.equals(qualified.merchantId(), request.merchantId())) {
             throw new UserException("Product-search qualification merchant scope does not match the request");
         }

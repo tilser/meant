@@ -661,6 +661,8 @@ export function MeantApp() {
   const [accountStateVersion, setAccountStateVersion] = useState(0)
   const [searchSuggestions, setSearchSuggestions] = useState<string[]>([])
   const [merchants, setMerchants] = useState<MerchantProfile[]>([])
+  const [merchantsLoading, setMerchantsLoading] = useState(false)
+  const [merchantsError, setMerchantsError] = useState<string | null>(null)
   const [merchantIdentityLinks, setMerchantIdentityLinks] = useState<MerchantIdentityLinkProfile[]>(
     [],
   )
@@ -855,6 +857,8 @@ export function MeantApp() {
     setProductDetailChatRequest(null)
     setSearchSuggestions([])
     setMerchants([])
+    setMerchantsLoading(false)
+    setMerchantsError(null)
     setMerchantIdentityLinks([])
     setMerchantIdentityLinksLoading(false)
     setMerchantIdentityLinksError(null)
@@ -1264,17 +1268,28 @@ export function MeantApp() {
     const requestedUserId = userId
     if (!requestedUserId) {
       setMerchants([])
+      setMerchantsLoading(false)
+      setMerchantsError(null)
       return
     }
     let active = true
+    setMerchantsLoading(true)
+    setMerchantsError(null)
     getMerchants({ expectedUserId: requestedUserId })
       .then((result) => {
         if (!active || activeUserIdRef.current !== requestedUserId) return
         setMerchants(result)
+        setMerchantsLoading(false)
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (!active || activeUserIdRef.current !== requestedUserId) return
         setMerchants([])
+        setMerchantsLoading(false)
+        setMerchantsError(
+          error instanceof Error && error.message.trim()
+            ? error.message
+            : 'Failed to load merchants',
+        )
       })
     return () => {
       active = false
@@ -2493,7 +2508,7 @@ export function MeantApp() {
     if (!submittedMessage) {
       throw new Error('Tell Meant what you want to find.')
     }
-    const merchantId = null
+    const merchantId = turn.merchantId ?? null
     const searchUserId = userId
     if (!searchUserId) {
       throw new Error('Sign in before starting a product search.')
@@ -3154,6 +3169,9 @@ export function MeantApp() {
             profile={liveProfile}
             greeting={greeting}
             prompts={currentSearchSuggestions}
+            merchants={currentMerchants}
+            merchantsLoading={merchantsLoading}
+            merchantsError={merchantsError}
             deliveryLocations={deliveryLocations}
             preferences={allPreferences}
             cart={cart}
@@ -3213,6 +3231,9 @@ export function MeantApp() {
             deliveryLocations={deliveryLocations}
             prompts={currentSearchSuggestions}
             preferences={allPreferences}
+            merchants={currentMerchants}
+            merchantsLoading={merchantsLoading}
+            merchantsError={merchantsError}
             savedProducts={savedListProducts}
             cart={cart}
             cartProducts={allKnownProducts}

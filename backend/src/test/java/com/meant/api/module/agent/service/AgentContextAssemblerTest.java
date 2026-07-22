@@ -42,6 +42,7 @@ class AgentContextAssemblerTest {
     private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
     private static final UUID CONVERSATION_ID = UUID.fromString("00000000-0000-0000-0000-000000000002");
     private static final UUID RUN_ID = UUID.fromString("00000000-0000-0000-0000-000000000003");
+    private static final UUID MERCHANT_ID = UUID.fromString("00000000-0000-0000-0000-000000000004");
     private static final UUID SEARCH_MESSAGE_ID = UUID.fromString("00000000-0000-0000-0000-000000000010");
     private static final UUID CART_MESSAGE_ID = UUID.fromString("00000000-0000-0000-0000-000000000011");
     private static final UUID OLD_CART_MESSAGE_ID = UUID.fromString("00000000-0000-0000-0000-000000000012");
@@ -103,6 +104,7 @@ class AgentContextAssemblerTest {
         AgentModelContext context = assembler.assemble(RUN_ID);
 
         assertThat(context.triggeringUserText()).isEqualTo("Please remove it from the cart.");
+        assertThat(context.merchantId()).isEqualTo(MERCHANT_ID);
         assertThat(context.messages()).extracting(AgentModelMessage::role)
                 .containsSubsequence(
                         AgentModelRole.USER,
@@ -432,6 +434,7 @@ class AgentContextAssemblerTest {
         AgentConversation conversation = AgentConversation.builder()
                 .id(CONVERSATION_ID)
                 .userId(USER_ID)
+                .merchantId(MERCHANT_ID)
                 .title("Jackets")
                 .status(AgentConversationStatus.ACTIVE)
                 .createdAt(BASE)

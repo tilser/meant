@@ -87,13 +87,7 @@ public class MerchantMcpToolClient {
             String toolName,
             Object arguments
     ) {
-        return callTool(
-                merchant.domain(),
-                merchant.advertisedMcpEndpoint(),
-                merchant.profileMcpEndpoint(),
-                toolName,
-                arguments
-        );
+        return callToolExactEndpoint(merchant.domain(), merchant.advertisedMcpEndpoint(), toolName, arguments);
     }
 
     public MerchantMcpToolCallResult callTool(Merchant merchant, String toolName, Object arguments) {
@@ -127,6 +121,19 @@ public class MerchantMcpToolClient {
                 endpoint -> ucpMcpClient.listTools(restClient, endpoint)
         );
         return new MerchantMcpToolsListFetchResult(result.endpoint(), result.value());
+    }
+
+    public MerchantMcpToolsListFetchResult listToolsExactEndpoint(String domain, String endpoint) {
+        try {
+            URI endpointUri = merchantOutboundUrlValidator.validateOutboundUrl(endpoint);
+            return new MerchantMcpToolsListFetchResult(
+                    endpointUri.toString(),
+                    ucpMcpClient.listTools(restClient, endpointUri)
+            );
+        } catch (RestClientException | MerchantOutboundUrlException | UcpMcpException exception) {
+            logEndpointFailure(domain, "exact MCP tools/list", exception);
+            throw new MerchantMcpToolException("Exact MCP tools/list failed", exception);
+        }
     }
 
     public MerchantMcpToolCallResult callTool(MerchantCartProvider provider, String toolName, Object arguments) {
@@ -259,6 +266,27 @@ public class MerchantMcpToolClient {
                 response.structuredContent(),
                 response.negotiatedCapabilities()
         );
+    }
+
+    private MerchantMcpToolCallResult callToolExactEndpoint(
+            String domain,
+            String endpoint,
+            String toolName,
+            Object arguments
+    ) {
+        try {
+            URI endpointUri = merchantOutboundUrlValidator.validateOutboundUrl(endpoint);
+            UcpToolResponse response = ucpMcpClient.callTool(restClient, endpointUri, toolName, arguments, Map.of());
+            return new MerchantMcpToolCallResult(
+                    endpointUri.toString(),
+                    response.textContent(),
+                    response.structuredContent(),
+                    response.negotiatedCapabilities()
+            );
+        } catch (RestClientException | MerchantOutboundUrlException | UcpMcpException exception) {
+            logEndpointFailure(domain, "exact MCP tool " + toolName, exception);
+            throw new MerchantMcpToolException("Exact MCP tool " + toolName + " failed", exception);
+        }
     }
 
     private <T> EndpointResult<T> executeWithEndpointFallback(

@@ -49,6 +49,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 class MerchantSemanticCatalogDiscoverySourceTest {
 
@@ -103,6 +104,26 @@ class MerchantSemanticCatalogDiscoverySourceTest {
     }
 
     @Test
+    void requestsTheEntireScopedWindowAndPreservesUpstreamTruncation() {
+        MerchantIntegrationLookupService integrationLookup = mock(MerchantIntegrationLookupService.class);
+        when(integrationLookup.listByMerchant(any())).thenReturn(List.of(integration()));
+        MerchantCatalogSearchExecutor catalogExecutor = mock(MerchantCatalogSearchExecutor.class);
+        MerchantSemanticCatalogDiscoverySource source = source(integrationLookup, catalogExecutor, true);
+
+        FederatedCatalogDiscoveryResult result = federation(source).search(
+                new CatalogDiscoveryRequest("linen shirt", MERCHANT_ID, 100, null, null, null)
+        );
+
+        ArgumentCaptor<Integer> productsPerMerchant = ArgumentCaptor.forClass(Integer.class);
+        verify(catalogExecutor).search(
+                any(), any(), any(), any(), productsPerMerchant.capture(), anyList());
+        assertThat(productsPerMerchant.getValue()).isEqualTo(100);
+        assertThat(result.truncated()).isTrue();
+        assertThat(result.sources()).singleElement()
+                .satisfies(sourceResult -> assertThat(sourceResult.truncated()).isTrue());
+    }
+
+    @Test
     void cachesAnUnresolvedIntegrationOnceForAllRequestObservations() {
         MerchantIntegrationLookupService integrationLookup = mock(MerchantIntegrationLookupService.class);
         when(integrationLookup.listByMerchant(any())).thenReturn(List.of());
@@ -141,10 +162,17 @@ class MerchantSemanticCatalogDiscoverySourceTest {
     private MerchantSemanticCatalogDiscoverySource source(
             MerchantIntegrationLookupService integrationLookup
     ) {
+        return source(integrationLookup, mock(MerchantCatalogSearchExecutor.class), false);
+    }
+
+    private MerchantSemanticCatalogDiscoverySource source(
+            MerchantIntegrationLookupService integrationLookup,
+            MerchantCatalogSearchExecutor catalogExecutor,
+            boolean hasNextPage
+    ) {
         MerchantSemanticSearchService semanticSearch = mock(MerchantSemanticSearchService.class);
         VoyageRerankClient rerankClient = mock(VoyageRerankClient.class);
         MerchantLookupService merchantLookup = mock(MerchantLookupService.class);
-        MerchantCatalogSearchExecutor catalogExecutor = mock(MerchantCatalogSearchExecutor.class);
         MerchantProductDetailsEnricher detailsEnricher = mock(MerchantProductDetailsEnricher.class);
         MerchantProductFilterMatcher filterMatcher = mock(MerchantProductFilterMatcher.class);
         MerchantCatalogProductCandidate catalogCandidate = mock(MerchantCatalogProductCandidate.class);
@@ -158,7 +186,8 @@ class MerchantSemanticCatalogDiscoverySourceTest {
         when(catalogExecutor.search(any(), any(), any(), any(), any(Integer.class), anyList()))
                 .thenReturn(List.of(new MerchantCatalogSearchOutcome(
                         MerchantCatalogSearchAttemptResult.success(merchant, merchant.advertisedMcpEndpoint(), 1),
-                        List.of(catalogCandidate)
+                        List.of(catalogCandidate),
+                        hasNextPage
                 )));
         when(filterMatcher.filterCatalogProducts(any(), any(), any(), anyList()))
                 .thenReturn(List.of(catalogCandidate));

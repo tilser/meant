@@ -12,7 +12,8 @@ public record AgentToolExecutionContext(
         UUID executionOwner,
         String buyerIp,
         AgentVisibleProductContext visibleProductContext,
-        AgentProductClarification pendingProductClarification
+        AgentProductClarification pendingProductClarification,
+        UUID merchantId
 ) {
 
     public AgentToolExecutionContext {
@@ -27,7 +28,7 @@ public record AgentToolExecutionContext(
             String triggeringUserText
     ) {
         this(userId, conversationId, runId, triggeringMessageId, triggeringUserText,
-                null, null, null, null, null);
+                null, null, null, null, null, null);
     }
 
     public AgentToolExecutionContext(
@@ -39,7 +40,7 @@ public record AgentToolExecutionContext(
             UUID idempotencyKey
     ) {
         this(userId, conversationId, runId, triggeringMessageId, triggeringUserText,
-                idempotencyKey, null, null, null, null);
+                idempotencyKey, null, null, null, null, null);
     }
 
     public AgentToolExecutionContext(
@@ -52,7 +53,7 @@ public record AgentToolExecutionContext(
             UUID executionOwner
     ) {
         this(userId, conversationId, runId, triggeringMessageId, triggeringUserText,
-                idempotencyKey, executionOwner, null, null, null);
+                idempotencyKey, executionOwner, null, null, null, null);
     }
 
     public AgentToolExecutionContext(
@@ -66,7 +67,7 @@ public record AgentToolExecutionContext(
             String buyerIp
     ) {
         this(userId, conversationId, runId, triggeringMessageId, triggeringUserText,
-                idempotencyKey, executionOwner, buyerIp, null, null);
+                idempotencyKey, executionOwner, buyerIp, null, null, null);
     }
 
     public AgentToolExecutionContext(
@@ -81,7 +82,24 @@ public record AgentToolExecutionContext(
             AgentVisibleProductContext visibleProductContext
     ) {
         this(userId, conversationId, runId, triggeringMessageId, triggeringUserText,
-                idempotencyKey, executionOwner, buyerIp, visibleProductContext, null);
+                idempotencyKey, executionOwner, buyerIp, visibleProductContext, null, null);
+    }
+
+    public AgentToolExecutionContext(
+            UUID userId,
+            UUID conversationId,
+            UUID runId,
+            UUID triggeringMessageId,
+            String triggeringUserText,
+            UUID idempotencyKey,
+            UUID executionOwner,
+            String buyerIp,
+            AgentVisibleProductContext visibleProductContext,
+            AgentProductClarification pendingProductClarification
+    ) {
+        this(userId, conversationId, runId, triggeringMessageId, triggeringUserText,
+                idempotencyKey, executionOwner, buyerIp, visibleProductContext,
+                pendingProductClarification, null);
     }
 
     public AgentToolExecutionContext withIdempotencyKey(UUID value) {
@@ -95,7 +113,8 @@ public record AgentToolExecutionContext(
                 executionOwner,
                 buyerIp,
                 visibleProductContext,
-                pendingProductClarification
+                pendingProductClarification,
+                merchantId
         );
     }
 
@@ -110,7 +129,8 @@ public record AgentToolExecutionContext(
                 value,
                 buyerIp,
                 visibleProductContext,
-                pendingProductClarification
+                pendingProductClarification,
+                merchantId
         );
     }
 
@@ -125,7 +145,8 @@ public record AgentToolExecutionContext(
                 executionOwner,
                 value,
                 visibleProductContext,
-                pendingProductClarification
+                pendingProductClarification,
+                merchantId
         );
     }
 
@@ -140,7 +161,8 @@ public record AgentToolExecutionContext(
                 executionOwner,
                 buyerIp,
                 value,
-                pendingProductClarification
+                pendingProductClarification,
+                merchantId
         );
     }
 
@@ -155,6 +177,23 @@ public record AgentToolExecutionContext(
                 executionOwner,
                 buyerIp,
                 visibleProductContext,
+                value,
+                merchantId
+        );
+    }
+
+    public AgentToolExecutionContext withMerchantId(UUID value) {
+        return new AgentToolExecutionContext(
+                userId,
+                conversationId,
+                runId,
+                triggeringMessageId,
+                triggeringUserText,
+                idempotencyKey,
+                executionOwner,
+                buyerIp,
+                visibleProductContext,
+                pendingProductClarification,
                 value
         );
     }

@@ -24,7 +24,7 @@ public record SemanticProductSearchQuery(
         Integer merchantLimit,
 
         @Positive
-        @Max(50)
+        @Max(100)
         Integer productsPerMerchant,
 
         @Positive
