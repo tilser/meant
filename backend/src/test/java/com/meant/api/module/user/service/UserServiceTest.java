@@ -64,6 +64,19 @@ class UserServiceTest {
     }
 
     @Test
+    void ensureProfileBackfillsANameMissingFromAHistoricalProfile() {
+        UUID id = UUID.randomUUID();
+        userService.ensureProfile(new EnsureUserProfileCommand(id, "ada@example.com", null, null));
+
+        User updated = userService.ensureProfile(
+                new EnsureUserProfileCommand(id, "ada@example.com", "Ada", "Lovelace"));
+
+        assertThat(updated.getFirstName()).isEqualTo("Ada");
+        assertThat(updated.getSurname()).isEqualTo("Lovelace");
+        assertThat(userRepository.insertCount).isEqualTo(1);
+    }
+
+    @Test
     void updateProfileMutatesNamesOnExistingUser() {
         UUID id = UUID.randomUUID();
         userService.ensureProfile(new EnsureUserProfileCommand(id, "ada@example.com", "Ada", "Lovelace"));

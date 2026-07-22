@@ -1491,7 +1491,7 @@ export function MeantApp() {
         const fullName = [profile.firstName, profile.surname].filter(Boolean).join(' ').trim()
         setUser((current) => ({
           ...current,
-          name: fullName || current.name,
+          name: fullName || DEFAULT_USER.name,
           email: profile.email || current.email,
           avatar,
           avatarPath: profile.profilePicturePath ?? null,

@@ -958,13 +958,13 @@ export const PREFERENCES: readonly Preference[] = [
 ]
 
 export const PROFILE: Profile = {
-  name: 'Mara',
+  name: 'Meant',
   summary: 'organic food, natural-material clothing, and products people actually love.',
 }
 
 export const DEFAULT_USER: UserAccount = {
   name: PROFILE.name,
-  email: 'mara@meant.app',
+  email: '',
   avatar: null,
   avatarPath: null,
   newsletter: false,
