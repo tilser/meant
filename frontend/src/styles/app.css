@@ -12027,10 +12027,9 @@ body.mt-shelf-resizing .mt-shelf {
   left: 0;
   z-index: 40;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 5px;
-  padding: 13px 8px;
+  gap: 7px;
+  padding: 11px 12px 11px 8px;
   transform: translateY(-50%);
   border: 1px solid var(--line);
   border-left: 0;
@@ -12048,6 +12047,13 @@ body.mt-shelf-resizing .mt-shelf {
   color: var(--ink);
 }
 
+.mt-ins-tab-label {
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
 .mt-ins-tab-count {
   display: grid;
   min-width: 16px;
@@ -12062,6 +12068,12 @@ body.mt-shelf-resizing .mt-shelf {
 
 body.insights-open .mt-ins-tab {
   left: var(--ins-w, 360px);
+  gap: 0;
+  padding-right: 8px;
+}
+
+body.insights-open .mt-ins-tab-label {
+  display: none;
 }
 
 .mt-ins {

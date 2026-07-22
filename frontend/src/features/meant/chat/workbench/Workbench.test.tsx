@@ -7,6 +7,7 @@ describe('Workbench availability', () => {
   test('describes the future feature without rendering insights or agent controls', () => {
     const markup = renderToStaticMarkup(<Workbench />)
 
+    expect(markup).toContain('mt-ins-tab-label')
     expect(markup).toContain('Coming soon')
     expect(markup).toContain('start your own sub-agents')
     expect(markup).toContain('automatically collect their findings')

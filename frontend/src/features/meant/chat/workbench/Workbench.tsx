@@ -87,6 +87,9 @@ export function Workbench() {
         aria-expanded={open}
       >
         <SparkMark size={15} />
+        <span className="mt-ins-tab-label mt-mono" aria-hidden="true">
+          Workbench
+        </span>
       </button>
 
       <aside className={`mt-ins ${open ? 'open' : ''}`} style={{ width: `${safeWidth}px` }}>
