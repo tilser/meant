@@ -1704,212 +1704,214 @@ export function AgentDiscoverView({
   }
 
   return (
-    <main className="mt-feed mt-ct-feed">
+    <>
       <Workbench />
-      {activeThreads.length > 0 && activeConversationId ? (
-        <DiscoverThreadTabs
-          threads={activeThreads}
-          activeId={activeConversationId}
-          onSelect={(id) => void selectConversation(id)}
-          onDelete={(id) => void archiveConversation(id)}
-          onNew={returnHome}
-          onRename={(id, title) => void renameConversation(id, title)}
-          onShare={() => {
-            void navigator.clipboard?.writeText(window.location.href)
-            setShareNotice('Link copied. This private conversation still requires your account.')
-          }}
-          onReorder={(fromIndex, toIndex) =>
-            setConversations((current) => {
-              const next = [...current]
-              const [moved] = next.splice(fromIndex, 1)
-              if (moved) next.splice(toIndex, 0, moved)
-              return next
-            })
-          }
-          onDeleteHistory={(id) => void deleteConversation(id)}
-          historyThreads={historyThreads}
-        />
-      ) : null}
-      {error || shareNotice ? (
-        <div className="mt-ct-history-error" role={error ? 'alert' : 'status'}>
-          <span>{error ?? shareNotice}</span>
-          <button
-            type="button"
-            onClick={() => {
-              setError(null)
-              setShareNotice(null)
+      <main className="mt-feed mt-ct-feed">
+        {activeThreads.length > 0 && activeConversationId ? (
+          <DiscoverThreadTabs
+            threads={activeThreads}
+            activeId={activeConversationId}
+            onSelect={(id) => void selectConversation(id)}
+            onDelete={(id) => void archiveConversation(id)}
+            onNew={returnHome}
+            onRename={(id, title) => void renameConversation(id, title)}
+            onShare={() => {
+              void navigator.clipboard?.writeText(window.location.href)
+              setShareNotice('Link copied. This private conversation still requires your account.')
             }}
-          >
-            Dismiss
-          </button>
-        </div>
-      ) : null}
-      <div className="mt-ct-thread">
-        <div className="mt-ct-msg mt-ct-meant mt-ct-greeting">
-          <span className="mt-ct-av">
-            <SparkMark size={13} />
-          </span>
-          <div className="mt-ct-meant-body">
-            <p className="mt-ct-intro">
-              {greeting}, {profile.name}. I can search, compare, inspect what you own, build carts,
-              and prepare merchant checkout while keeping every step in this conversation.
-            </p>
-          </div>
-        </div>
-        {!loading && messages.length === 0 ? (
-          <div className="mt-ct-empty-prompts">
-            {prompts.map((prompt) => (
-              <button
-                key={prompt}
-                className="mt-ct-suggchip"
-                type="button"
-                onClick={() => void submit(prompt)}
-              >
-                {prompt}
-              </button>
-            ))}
-          </div>
-        ) : null}
-        {messages.map((message) => (
-          <DiscoverChatMessageRow
-            key={message.id}
-            threadId={activeConversationId ?? 'agent'}
-            message={message}
-            deliveryLocations={deliveryLocations}
-            preferences={preferences}
-            cart={visibleCart}
-            cartProducts={allProducts}
-            savedSet={savedSet}
-            savePendingSet={savePendingSet}
-            pinnedSet={interactionState.pinned}
-            watchedSet={watchedSet}
-            shelfMessageSet={shelfMessageSet}
-            shelfProductSet={shelfProductSet}
-            flash={shelfFlashMessageId === message.id}
-            celebrateArrival={false}
-            immutable
-            useLiveCart={message.id === liveCartMessageId}
-            deletable
-            removing={autoRemovingMessageKeys.has(
-              `${activeConversationId ?? 'agent'}:${message.id}`,
-            )}
-            onOpen={onOpen}
-            onToggleSave={onToggleSave}
-            onAddCart={addToCart}
-            onPin={togglePin}
-            onWatch={toggleWatch}
-            onDig={dig}
-            onJustPick={justPick}
-            onCompareHere={(items) => void compareHere(items)}
-            onOpenFullCompare={(items) => void compareHere(items, true)}
-            onOpenSaved={onOpenSaved}
-            onOpenOrders={onOpenOrders}
-            onOpenPrefs={onOpenPrefs}
-            onOpenCart={onOpenCart}
-            onReviewCartHere={() => undefined}
-            onRestoreCartLine={addToCart}
-            onCartQty={updateCartQuantity}
-            onCartRemove={removeCartLine}
-            onCheckout={onCheckout}
-            activeCheckout={message.id === checkoutHostMessageId ? conversationCheckout : null}
-            checkoutBusy={checkoutBusy}
-            checkoutError={checkoutError}
-            onCheckoutAssistant={onCheckoutAssistant}
-            onRefreshCheckout={onRefreshCheckout}
-            onReleaseCheckout={onReleaseCheckout}
-            onCheckoutHere={() => void prepareCheckout()}
-            newsletter={newsletter}
-            newsletterPending={newsletterPending}
-            onNewsletterSignup={() => void subscribeToNewsletter()}
-            onDelete={removeMessage}
-            onShelfAddMessage={(item) => addMessageToShelf(item)}
-            onShelfAddProduct={(product) => addProductToShelf(product)}
-            onDragMessage={dragMessage}
-            onDragProduct={dragProduct}
-            onRetryProductResultSet={() => undefined}
-            onVisibleProductContextChange={captureVisibleProductContext}
+            onReorder={(fromIndex, toIndex) =>
+              setConversations((current) => {
+                const next = [...current]
+                const [moved] = next.splice(fromIndex, 1)
+                if (moved) next.splice(toIndex, 0, moved)
+                return next
+              })
+            }
+            onDeleteHistory={(id) => void deleteConversation(id)}
+            historyThreads={historyThreads}
           />
-        ))}
-        {workingStage ? <AgentWorkingIndicator stage={workingStage} /> : null}
-        {toolActivities.length > 0 && isRunning ? (
-          <AgentActivityPanel activities={toolActivities} />
         ) : null}
-        {loading ? (
-          <div className="mt-ct-system">
-            <span className="mt-scan-pulse" /> Loading your agent conversation…
+        {error || shareNotice ? (
+          <div className="mt-ct-history-error" role={error ? 'alert' : 'status'}>
+            <span>{error ?? shareNotice}</span>
+            <button
+              type="button"
+              onClick={() => {
+                setError(null)
+                setShareNotice(null)
+              }}
+            >
+              Dismiss
+            </button>
           </div>
         ) : null}
-        {actionPending.size > 0 ? (
-          <div className="mt-ct-system" aria-live="polite">
-            <span className="mt-scan-pulse" /> Applying your action…
+        <div className="mt-ct-thread">
+          <div className="mt-ct-msg mt-ct-meant mt-ct-greeting">
+            <span className="mt-ct-av">
+              <SparkMark size={13} />
+            </span>
+            <div className="mt-ct-meant-body">
+              <p className="mt-ct-intro">
+                {greeting}, {profile.name}. I can search, compare, inspect what you own, build
+                carts, and prepare merchant checkout while keeping every step in this conversation.
+              </p>
+            </div>
           </div>
-        ) : null}
-        <div ref={bottomRef} className="mt-ct-bottom-sentinel" aria-hidden="true" />
-      </div>
-
-      {pinnedProducts.length > 0 ? (
-        <div className="mt-ct-tray">
-          <span className="mt-mono mt-ct-tray-label">Compare tray</span>
-          <div className="mt-ct-tray-items">
-            {pinnedProducts.map((product) => (
-              <span className="mt-ct-tray-chip" key={product.id}>
-                <span className="mt-ct-tray-thumb">
-                  <ProductArtwork product={product} label={product.category.toLowerCase()} />
-                </span>
-                {product.name}
+          {!loading && messages.length === 0 ? (
+            <div className="mt-ct-empty-prompts">
+              {prompts.map((prompt) => (
                 <button
-                  className="mt-ct-tray-x"
+                  key={prompt}
+                  className="mt-ct-suggchip"
                   type="button"
-                  aria-label={`Unpin ${product.name}`}
-                  disabled={trayClearing}
-                  onClick={() => togglePin(product)}
+                  onClick={() => void submit(prompt)}
                 >
-                  ×
+                  {prompt}
                 </button>
-              </span>
-            ))}
-          </div>
-          <button
-            className="mt-ct-tray-mini"
-            type="button"
-            disabled={pinnedProducts.length < 2 || trayClearing}
-            onClick={() => void compareHere(pinnedProducts)}
-          >
-            Compare here
-          </button>
-          <button
-            className="mt-ct-tray-go"
-            type="button"
-            disabled={pinnedProducts.length < 2 || trayClearing}
-            onClick={() => void compareHere(pinnedProducts, true)}
-          >
-            Full compare
-          </button>
-          <button
-            className="mt-ct-tray-clear"
-            type="button"
-            onClick={() => void clearCompareTray()}
-            disabled={trayClearing}
-          >
-            Clear
-          </button>
+              ))}
+            </div>
+          ) : null}
+          {messages.map((message) => (
+            <DiscoverChatMessageRow
+              key={message.id}
+              threadId={activeConversationId ?? 'agent'}
+              message={message}
+              deliveryLocations={deliveryLocations}
+              preferences={preferences}
+              cart={visibleCart}
+              cartProducts={allProducts}
+              savedSet={savedSet}
+              savePendingSet={savePendingSet}
+              pinnedSet={interactionState.pinned}
+              watchedSet={watchedSet}
+              shelfMessageSet={shelfMessageSet}
+              shelfProductSet={shelfProductSet}
+              flash={shelfFlashMessageId === message.id}
+              celebrateArrival={false}
+              immutable
+              useLiveCart={message.id === liveCartMessageId}
+              deletable
+              removing={autoRemovingMessageKeys.has(
+                `${activeConversationId ?? 'agent'}:${message.id}`,
+              )}
+              onOpen={onOpen}
+              onToggleSave={onToggleSave}
+              onAddCart={addToCart}
+              onPin={togglePin}
+              onWatch={toggleWatch}
+              onDig={dig}
+              onJustPick={justPick}
+              onCompareHere={(items) => void compareHere(items)}
+              onOpenFullCompare={(items) => void compareHere(items, true)}
+              onOpenSaved={onOpenSaved}
+              onOpenOrders={onOpenOrders}
+              onOpenPrefs={onOpenPrefs}
+              onOpenCart={onOpenCart}
+              onReviewCartHere={() => undefined}
+              onRestoreCartLine={addToCart}
+              onCartQty={updateCartQuantity}
+              onCartRemove={removeCartLine}
+              onCheckout={onCheckout}
+              activeCheckout={message.id === checkoutHostMessageId ? conversationCheckout : null}
+              checkoutBusy={checkoutBusy}
+              checkoutError={checkoutError}
+              onCheckoutAssistant={onCheckoutAssistant}
+              onRefreshCheckout={onRefreshCheckout}
+              onReleaseCheckout={onReleaseCheckout}
+              onCheckoutHere={() => void prepareCheckout()}
+              newsletter={newsletter}
+              newsletterPending={newsletterPending}
+              onNewsletterSignup={() => void subscribeToNewsletter()}
+              onDelete={removeMessage}
+              onShelfAddMessage={(item) => addMessageToShelf(item)}
+              onShelfAddProduct={(product) => addProductToShelf(product)}
+              onDragMessage={dragMessage}
+              onDragProduct={dragProduct}
+              onRetryProductResultSet={() => undefined}
+              onVisibleProductContextChange={captureVisibleProductContext}
+            />
+          ))}
+          {workingStage ? <AgentWorkingIndicator stage={workingStage} /> : null}
+          {toolActivities.length > 0 && isRunning ? (
+            <AgentActivityPanel activities={toolActivities} />
+          ) : null}
+          {loading ? (
+            <div className="mt-ct-system">
+              <span className="mt-scan-pulse" /> Loading your agent conversation…
+            </div>
+          ) : null}
+          {actionPending.size > 0 ? (
+            <div className="mt-ct-system" aria-live="polite">
+              <span className="mt-scan-pulse" /> Applying your action…
+            </div>
+          ) : null}
+          <div ref={bottomRef} className="mt-ct-bottom-sentinel" aria-hidden="true" />
         </div>
-      ) : null}
 
-      <div className="mt-ct-dock">
-        <div className="mt-ct-dock-inner">
-          <AskComposer
-            placeholder="Ask Meant to search, compare, inspect inventory, or build your cart…"
-            suggestions={suggestedReplies}
-            suggestionValues={suggestedReplySubmissions}
-            showChips={suggestedReplies.length > 0}
-            onAsk={submit}
-            running={isRunning}
-            onStop={stop}
-            disabled={loading || submitting || !activeConversationId}
-          />
+        {pinnedProducts.length > 0 ? (
+          <div className="mt-ct-tray">
+            <span className="mt-mono mt-ct-tray-label">Compare tray</span>
+            <div className="mt-ct-tray-items">
+              {pinnedProducts.map((product) => (
+                <span className="mt-ct-tray-chip" key={product.id}>
+                  <span className="mt-ct-tray-thumb">
+                    <ProductArtwork product={product} label={product.category.toLowerCase()} />
+                  </span>
+                  {product.name}
+                  <button
+                    className="mt-ct-tray-x"
+                    type="button"
+                    aria-label={`Unpin ${product.name}`}
+                    disabled={trayClearing}
+                    onClick={() => togglePin(product)}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+            <button
+              className="mt-ct-tray-mini"
+              type="button"
+              disabled={pinnedProducts.length < 2 || trayClearing}
+              onClick={() => void compareHere(pinnedProducts)}
+            >
+              Compare here
+            </button>
+            <button
+              className="mt-ct-tray-go"
+              type="button"
+              disabled={pinnedProducts.length < 2 || trayClearing}
+              onClick={() => void compareHere(pinnedProducts, true)}
+            >
+              Full compare
+            </button>
+            <button
+              className="mt-ct-tray-clear"
+              type="button"
+              onClick={() => void clearCompareTray()}
+              disabled={trayClearing}
+            >
+              Clear
+            </button>
+          </div>
+        ) : null}
+
+        <div className="mt-ct-dock">
+          <div className="mt-ct-dock-inner">
+            <AskComposer
+              placeholder="Ask Meant to search, compare, inspect inventory, or build your cart…"
+              suggestions={suggestedReplies}
+              suggestionValues={suggestedReplySubmissions}
+              showChips={suggestedReplies.length > 0}
+              onAsk={submit}
+              running={isRunning}
+              onStop={stop}
+              disabled={loading || submitting || !activeConversationId}
+            />
+          </div>
         </div>
-      </div>
-    </main>
+      </main>
+    </>
   )
 }
