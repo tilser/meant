@@ -135,7 +135,7 @@ function DiscoverChatProduct({
             onDig('code', product)
           }}
         >
-          Find a code
+          Find a discount
         </button>
         <button
           className="mt-ct-askchip"

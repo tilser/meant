@@ -1353,11 +1353,7 @@ export function AgentDiscoverView({
         `Loaded reviews for ${product.name}`,
       )
     } else if (kind === 'code') {
-      void performAction(
-        'find_discount_codes',
-        { canonicalProductKey: key, selectedOfferKey: offerKey, quantity: 1 },
-        `Searched discount codes for ${product.name}`,
-      )
+      appendUnavailableFeatureMessage()
     } else {
       void performAction(
         'find_similar_products',

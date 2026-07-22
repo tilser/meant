@@ -1587,7 +1587,7 @@ export function ChatDiscoverView({
   )
 
   const appendDiscountCodeSearch = useCallback(
-    (product: Product, question = `Find a code for ${product.name}.`) => {
+    (product: Product, question = `Find a discount for ${product.name}.`) => {
       const threadId = activeThreadIdSafe
       const aiId = nextDiscoverChatMessageId()
       appendMessagesToActiveThread(
@@ -2566,7 +2566,7 @@ export function ChatDiscoverView({
       return
     }
     if (kind === 'code') {
-      appendDiscountCodeSearch(product)
+      appendUnavailableFeatureMessage(product)
       return
     }
     if (kind === 'similar') {

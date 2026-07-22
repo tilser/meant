@@ -531,7 +531,7 @@ describe('agent commerce artifacts reuse the established components', () => {
     expect(markup).toContain('>Pin<')
     expect(markup).toContain('>Watch<')
     expect(markup).toContain('>Reviews<')
-    expect(markup).toContain('Find a code')
+    expect(markup).toContain('Find a discount')
     expect(markup).toContain('>Similar<')
     expect(markup).toContain('Compare here')
     expect(markup).toContain('Just pick one')
