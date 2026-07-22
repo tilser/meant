@@ -1,0 +1,50 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://127.0.0.1:54322/postgres
+    username: postgres
+    password: postgres
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: http://127.0.0.1:54321/auth/v1/.well-known/jwks.json
+          issuer-uri: http://127.0.0.1:54321/auth/v1
+
+app:
+  cors:
+    allowed-origins:
+      - http://localhost:3000
+      - http://127.0.0.1:3000
+
+ai:
+  openrouter:
+    api-key: ""
+
+commerce:
+  agent:
+    api-key: ""
+    site-url: http://localhost:3000
+
+shopify:
+  agent-auth:
+    enabled: false
+    environment: local
+    client-id: ""
+    client-secret: ""
+
+merchant:
+  identity-linking:
+    client-id: meant-local
+    client-secret: ""
+    redirect-uri: http://localhost:3000/oauth/merchant-callback
+    token-encryption-secret: replace-with-a-local-development-secret
+  embedding:
+    api-key: ""
+
+ucp:
+  agent:
+    profile-url: http://localhost:8080/.well-known/ucp-agent.json
+
+order:
+  webhook:
+    shopify-secret: ""

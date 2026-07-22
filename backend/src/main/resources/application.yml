@@ -1,6 +1,4 @@
 spring:
-  config:
-    import: optional:file:.env[.properties]
   application:
     name: meant-api
   datasource:
@@ -35,7 +33,9 @@ management:
         include: health,info,metrics
 
 server:
-  port: ${MEANT_API_PORT:8080}
+  # Railway supplies PORT dynamically. MEANT_API_PORT remains available for local development and
+  # deployments that do not provide the conventional platform port variable.
+  port: ${PORT:${MEANT_API_PORT:8080}}
   # Controls whether forwarded headers (X-Forwarded-For/Forwarded) influence the resolved client IP.
   # Defaults to "none" so direct (non-proxied) deployments ignore client-supplied forwarding headers
   # entirely. Behind a trusted reverse proxy, set to "native" so Tomcat's RemoteIpValve honors those

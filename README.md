@@ -129,16 +129,21 @@ plans/     Product and engineering implementation plans
 
 ## Local Development
 
-Start PostgreSQL:
+Start the local Supabase stack (PostgreSQL, Auth, and Storage):
 
 ```sh
-docker compose up -d postgres
+supabase start
 ```
 
-Optional environment files:
+For backend-only development without Supabase Auth or Storage, PostgreSQL is also available with
+`docker compose up -d postgres`; in that case, use the defaults from `application.yml` instead of
+the local Supabase profile below.
+
+Optional local configuration files:
 
 ```sh
-cp backend/.env.example backend/.env
+cp backend/src/main/resources/application-example.yml \
+  backend/src/main/resources/application-local.yml
 cp frontend/.env.example frontend/.env
 ```
 
@@ -146,7 +151,7 @@ Run the backend:
 
 ```sh
 cd backend
-mvn spring-boot:run
+mvn spring-boot:run -Dspring-boot.run.profiles=local
 ```
 
 Run the frontend:
@@ -202,3 +207,12 @@ bun test
 npm run typecheck
 npm run build
 ```
+
+## Deployment
+
+Production uses Supabase for PostgreSQL, Auth, and Storage, Railway for the Spring Boot API, and
+Vercel for the TanStack Start frontend. Pushes to `main` run CI, apply Supabase migrations, and can
+then be deployed automatically by the Railway and Vercel GitHub integrations.
+
+See [Production deployment](docs/deployment.md) for the required project settings, secrets, and
+environment variables.

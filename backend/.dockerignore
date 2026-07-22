@@ -1,0 +1,14 @@
+.env
+.env.*
+
+target
+*.log
+
+.git
+.idea
+.vscode
+
+# Local-only Spring profiles do not belong in the production image. The ignored local profile can
+# contain developer credentials.
+src/main/resources/application-example.yml
+src/main/resources/application-local.yml
