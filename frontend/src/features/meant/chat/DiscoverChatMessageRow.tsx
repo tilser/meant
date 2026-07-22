@@ -417,7 +417,7 @@ export function DiscoverChatMessageRow({
           <div className="mt-ct-meant-body">
             {message.blocks?.map((block, index) => (
               <DiscoverChatBlockView
-                key={`${message.id}-${index}`}
+                key={`${message.id}-${block.type}-${index}`}
                 threadId={threadId}
                 block={block}
                 researchQuery={discoverProductResearchQuery(block, message.query)}
