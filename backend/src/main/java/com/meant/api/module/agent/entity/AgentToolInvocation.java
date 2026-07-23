@@ -1,5 +1,6 @@
 package com.meant.api.module.agent.entity;
 
+import com.meant.api.common.entity.AssignedIdEntity;
 import com.meant.api.module.agent.constant.AgentMutationAdmission;
 import com.meant.api.module.agent.constant.AgentToolInvocationStatus;
 import com.meant.api.module.agent.constant.AgentToolRisk;
@@ -23,7 +24,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Table(name = "agent_tool_invocation")
-public class AgentToolInvocation {
+public class AgentToolInvocation extends AssignedIdEntity<UUID> {
 
     @Id
     @Builder.Default

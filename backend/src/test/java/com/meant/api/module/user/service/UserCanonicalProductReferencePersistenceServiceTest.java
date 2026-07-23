@@ -73,7 +73,7 @@ class UserCanonicalProductReferencePersistenceServiceTest {
             assertThat(reference.getSelectedOptionsJson()).contains("Color", "Blue");
             assertThat(reference.getRetentionPolicyKey()).isEqualTo("policy-v1");
         });
-        verify(repository).deleteByUserIdAndCanonicalProductKey(USER_ID, product.key());
+        verify(repository).deleteByUserIdAndCanonicalProductKeyIn(USER_ID, List.of(product.key()));
 
         when(repository.findByUserIdAndCanonicalProductKeyOrderByOfferRankAscIdAsc(
                 USER_ID, product.key())).thenReturn(saved.get());
@@ -126,6 +126,11 @@ class UserCanonicalProductReferencePersistenceServiceTest {
         CanonicalProduct first = product("grouped-product-v3_first", "1");
         CanonicalProduct second = product("grouped-product-v3_second", "2");
         service.replace(USER_ID, List.of(first, second));
+        verify(repository).deleteByUserIdAndCanonicalProductKeyIn(
+                USER_ID,
+                List.of(first.key(), second.key())
+        );
+        verify(repository).saveAll(any());
         List<UserCanonicalProductReference> reversed = List.of(saved.get().get(1), saved.get().get(0));
         when(repository
                 .findByUserIdAndCanonicalProductKeyInOrderByCanonicalProductKeyAscOfferRankAscIdAsc(

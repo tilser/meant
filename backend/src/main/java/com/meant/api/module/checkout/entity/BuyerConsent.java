@@ -1,5 +1,6 @@
 package com.meant.api.module.checkout.entity;
 
+import com.meant.api.common.entity.AssignedIdEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -29,7 +30,7 @@ import lombok.NoArgsConstructor;
                 })
         }
 )
-public class BuyerConsent {
+public class BuyerConsent extends AssignedIdEntity<UUID> {
 
     @Id
     @Builder.Default

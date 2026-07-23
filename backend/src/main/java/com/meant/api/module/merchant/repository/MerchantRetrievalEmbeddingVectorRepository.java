@@ -3,6 +3,7 @@ package com.meant.api.module.merchant.repository;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticSearchCandidate;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -10,77 +11,83 @@ import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.jdbc.core.namedparam.SqlParameterSource;
 import org.springframework.stereotype.Repository;
 
 @Repository
 @RequiredArgsConstructor
 public class MerchantRetrievalEmbeddingVectorRepository {
 
+    private static final String UPSERT_SQL = """
+            insert into merchant_retrieval_embedding (
+                id,
+                merchant_id,
+                retrieval_content,
+                retrieval_content_hash,
+                retrieval_embedding,
+                embedding_model,
+                embedded_at,
+                created_at,
+                updated_at,
+                active
+            )
+            values (
+                :id,
+                :merchantId,
+                :retrievalContent,
+                :retrievalContentHash,
+                cast(:retrievalEmbedding as vector),
+                :embeddingModel,
+                :embeddedAt,
+                :createdAt,
+                :updatedAt,
+                true
+            )
+            on conflict (merchant_id) do update set
+                retrieval_content = excluded.retrieval_content,
+                retrieval_content_hash = excluded.retrieval_content_hash,
+                retrieval_embedding = excluded.retrieval_embedding,
+                embedding_model = excluded.embedding_model,
+                embedded_at = excluded.embedded_at,
+                updated_at = excluded.updated_at,
+                active = true
+            """;
+
     private final NamedParameterJdbcTemplate jdbcTemplate;
 
-    public void upsert(
-            UUID merchantId,
-            String retrievalContent,
-            String retrievalContentHash,
-            List<Double> retrievalEmbedding,
-            String embeddingModel,
-            Instant now
-    ) {
-        jdbcTemplate.update("""
-                insert into merchant_retrieval_embedding (
-                    id,
-                    merchant_id,
-                    retrieval_content,
-                    retrieval_content_hash,
-                    retrieval_embedding,
-                    embedding_model,
-                    embedded_at,
-                    created_at,
-                    updated_at,
-                    active
-                )
-                values (
-                    :id,
-                    :merchantId,
-                    :retrievalContent,
-                    :retrievalContentHash,
-                    cast(:retrievalEmbedding as vector),
-                    :embeddingModel,
-                    :embeddedAt,
-                    :createdAt,
-                    :updatedAt,
-                    true
-                )
-                on conflict (merchant_id) do update set
-                    retrieval_content = excluded.retrieval_content,
-                    retrieval_content_hash = excluded.retrieval_content_hash,
-                    retrieval_embedding = excluded.retrieval_embedding,
-                    embedding_model = excluded.embedding_model,
-                    embedded_at = excluded.embedded_at,
-                    updated_at = excluded.updated_at,
-                    active = true
-                """, new MapSqlParameterSource()
-                .addValue("id", UUID.randomUUID())
-                .addValue("merchantId", merchantId)
-                .addValue("retrievalContent", retrievalContent)
-                .addValue("retrievalContentHash", retrievalContentHash)
-                .addValue("retrievalEmbedding", vectorLiteral(retrievalEmbedding))
-                .addValue("embeddingModel", embeddingModel)
-                .addValue("embeddedAt", timestamp(now))
-                .addValue("createdAt", timestamp(now))
-                .addValue("updatedAt", timestamp(now)));
+    public void upsertAll(List<MerchantRetrievalEmbeddingUpsert> embeddings) {
+        if (embeddings.isEmpty()) {
+            return;
+        }
+
+        SqlParameterSource[] batchParameters = embeddings.stream()
+                .map(embedding -> new MapSqlParameterSource()
+                        .addValue("id", UUID.randomUUID())
+                        .addValue("merchantId", embedding.merchantId())
+                        .addValue("retrievalContent", embedding.retrievalContent())
+                        .addValue("retrievalContentHash", embedding.retrievalContentHash())
+                        .addValue("retrievalEmbedding", vectorLiteral(embedding.retrievalEmbedding()))
+                        .addValue("embeddingModel", embedding.embeddingModel())
+                        .addValue("embeddedAt", timestamp(embedding.now()))
+                        .addValue("createdAt", timestamp(embedding.now()))
+                        .addValue("updatedAt", timestamp(embedding.now())))
+                .toArray(SqlParameterSource[]::new);
+        jdbcTemplate.batchUpdate(UPSERT_SQL, batchParameters);
     }
 
-    public void deactivate(UUID merchantId, Instant now) {
+    public void deactivateAll(Collection<UUID> merchantIds, Instant now) {
+        if (merchantIds.isEmpty()) {
+            return;
+        }
+
         jdbcTemplate.update("""
                 update merchant_retrieval_embedding
                 set active = false,
                     updated_at = :updatedAt
-                where merchant_id = :merchantId
-                """, Map.of(
-                "merchantId", merchantId,
-                "updatedAt", timestamp(now)
-        ));
+                where merchant_id in (:merchantIds)
+                """, new MapSqlParameterSource()
+                .addValue("merchantIds", merchantIds)
+                .addValue("updatedAt", timestamp(now)));
     }
 
     public List<MerchantSemanticSearchCandidate> search(List<Double> queryEmbedding, String embeddingModel, int limit) {
@@ -136,5 +143,15 @@ public class MerchantRetrievalEmbeddingVectorRepository {
 
     private Timestamp timestamp(Instant instant) {
         return Timestamp.from(instant);
+    }
+
+    public record MerchantRetrievalEmbeddingUpsert(
+            UUID merchantId,
+            String retrievalContent,
+            String retrievalContentHash,
+            List<Double> retrievalEmbedding,
+            String embeddingModel,
+            Instant now
+    ) {
     }
 }

@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -50,7 +51,25 @@ public class UserProductSearchPreferenceService {
         }
         preferenceRepository.lockUserPreferenceWrites(command.userId());
         Instant now = Instant.now();
-        preferences.forEach(preference -> upsert(command.userId(), preference, now));
+        Map<PreferenceKey, UserProductSearchPreference> storedByKey = preferenceRepository
+                .findByUserIdAndScopeInAndAttributeNameIn(
+                        command.userId(),
+                        preferences.stream().map(UserProductSearchPreferenceCommand::scope).collect(
+                                Collectors.toCollection(LinkedHashSet::new)),
+                        preferences.stream().map(UserProductSearchPreferenceCommand::attributeName).collect(
+                                Collectors.toCollection(LinkedHashSet::new))
+                )
+                .stream()
+                .collect(Collectors.toMap(
+                        stored -> new PreferenceKey(stored.getScope(), stored.getAttributeName()),
+                        stored -> stored,
+                        (left, right) -> left,
+                        LinkedHashMap::new
+                ));
+        List<UserProductSearchPreference> changed = preferences.stream()
+                .map(preference -> upsert(command.userId(), preference, storedByKey, now))
+                .toList();
+        preferenceRepository.saveAll(changed);
     }
 
     @Transactional
@@ -64,18 +83,26 @@ public class UserProductSearchPreferenceService {
                 command.userId(), scope, command.attributeName());
     }
 
-    private void upsert(UUID userId, UserProductSearchPreferenceCommand preference, Instant now) {
-        UserProductSearchPreference stored = preferenceRepository.findByUserIdAndScopeAndAttributeName(
-                        userId, preference.scope(), preference.attributeName())
-                .orElseGet(() -> UserProductSearchPreference.create(
+    private UserProductSearchPreference upsert(
+            UUID userId,
+            UserProductSearchPreferenceCommand preference,
+            Map<PreferenceKey, UserProductSearchPreference> storedByKey,
+            Instant now
+    ) {
+        PreferenceKey key = new PreferenceKey(preference.scope(), preference.attributeName());
+        String valuesJson = encode(preference.values());
+        UserProductSearchPreference stored = storedByKey.computeIfAbsent(
+                key,
+                ignored -> UserProductSearchPreference.create(
                         userId,
                         preference.scope(),
                         preference.attributeName(),
-                        encode(preference.values()),
+                        valuesJson,
                         now
-                ));
-        stored.replaceValues(encode(preference.values()), now);
-        preferenceRepository.save(stored);
+                )
+        );
+        stored.replaceValues(valuesJson, now);
+        return stored;
     }
 
     private List<UserProductSearchPreferenceCommand> normalized(
@@ -136,5 +163,11 @@ public class UserProductSearchPreferenceService {
         } catch (JacksonException exception) {
             throw new IllegalStateException("Could not deserialize product-search preference", exception);
         }
+    }
+
+    private record PreferenceKey(
+            String scope,
+            UserProductSearchAttributeName attributeName
+    ) {
     }
 }

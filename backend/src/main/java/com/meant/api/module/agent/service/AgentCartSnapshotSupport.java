@@ -1,5 +1,8 @@
 package com.meant.api.module.agent.service;
 
+import static com.meant.api.module.agent.service.AgentArtifactEvidenceSupport.sameResultSet;
+import static com.meant.api.module.agent.service.AgentTargetJsonSupport.text;
+
 import com.meant.api.module.agent.constant.AgentArtifactType;
 import com.meant.api.module.agent.entity.AgentArtifactReference;
 import java.util.ArrayList;
@@ -327,28 +330,12 @@ final class AgentCartSnapshotSupport {
         return left.offerKey() != null && left.offerKey().equals(right.offerKey());
     }
 
-    private boolean sameResultSet(AgentArtifactReference left, AgentArtifactReference right) {
-        if (left.getMessageId() != null || right.getMessageId() != null) {
-            return Objects.equals(left.getMessageId(), right.getMessageId());
-        }
-        if (left.getToolInvocationId() != null || right.getToolInvocationId() != null) {
-            return Objects.equals(left.getToolInvocationId(), right.getToolInvocationId());
-        }
-        return Objects.equals(left.getRunId(), right.getRunId())
-                && Objects.equals(left.getCreatedAt(), right.getCreatedAt());
-    }
-
     private JsonNode readPayload(AgentArtifactReference artifact) {
         try {
             return objectMapper.readTree(artifact.getPayloadJson());
         } catch (RuntimeException exception) {
             return null;
         }
-    }
-
-    private String text(JsonNode node, String field) {
-        JsonNode value = node == null ? null : node.get(field);
-        return value != null && value.isTextual() ? value.asText() : null;
     }
 
     private UUID uuid(String value) {

@@ -1,5 +1,6 @@
 package com.meant.api.module.agent.entity;
 
+import com.meant.api.common.entity.AssignedIdEntity;
 import com.meant.api.module.agent.constant.AgentContentKind;
 import com.meant.api.module.agent.constant.AgentMessageRole;
 import jakarta.persistence.Column;
@@ -22,7 +23,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Table(name = "agent_message")
-public class AgentMessage {
+public class AgentMessage extends AssignedIdEntity<UUID> {
 
     @Id
     @Builder.Default

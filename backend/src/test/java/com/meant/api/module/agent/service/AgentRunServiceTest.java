@@ -21,6 +21,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -275,6 +276,51 @@ class AgentRunServiceTest {
         assertThat(objectMapper.readTree(payloadJson).at("/artifact/payloadJson").asText())
                 .isEqualTo(artifactPayload);
         assertThat(objectMapper.readTree(payloadJson).has("truncated")).isFalse();
+    }
+
+    @Test
+    void appendsAnOwnedEventBatchWithOneRunLockAndOrderedCursorsAndNotifications() {
+        UUID runId = UUID.randomUUID();
+        UUID executionOwner = UUID.randomUUID();
+        AgentRun run = AgentRun.builder()
+                .id(runId)
+                .conversationId(UUID.randomUUID())
+                .userId(UUID.randomUUID())
+                .triggeringMessageId(UUID.randomUUID())
+                .status(AgentRunStatus.RUNNING)
+                .model("test-model")
+                .promptVersion("test-v1")
+                .createdAt(NOW.minusSeconds(30))
+                .startedAt(NOW.minusSeconds(30))
+                .executionOwner(executionOwner)
+                .heartbeatAt(NOW)
+                .leaseExpiresAt(NOW.plusSeconds(30))
+                .build();
+        Fixture fixture = fixture(run);
+
+        var results = fixture.service().appendAll(
+                runId,
+                executionOwner,
+                AgentRunEventType.ARTIFACT_UPSERTED,
+                List.of(
+                        AgentEventPayload.text("first"),
+                        AgentEventPayload.text("second"),
+                        AgentEventPayload.text("third")
+                )
+        );
+
+        verify(fixture.runs(), times(1)).findForUpdate(runId);
+        ArgumentCaptor<AgentRunEvent> events = ArgumentCaptor.forClass(AgentRunEvent.class);
+        verify(fixture.events(), times(3)).save(events.capture());
+        assertThat(events.getAllValues())
+                .extracting(AgentRunEvent::getCursor)
+                .containsExactly(1L, 2L, 3L);
+        assertThat(results)
+                .extracting(result -> result.cursor())
+                .containsExactly(1L, 2L, 3L);
+        verify(fixture.eventNotifier()).signalAfterCommit(runId, 1L);
+        verify(fixture.eventNotifier()).signalAfterCommit(runId, 2L);
+        verify(fixture.eventNotifier()).signalAfterCommit(runId, 3L);
     }
 
     private Fixture fixture(AgentRun run) {

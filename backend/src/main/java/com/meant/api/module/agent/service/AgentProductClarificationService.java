@@ -3,14 +3,17 @@ package com.meant.api.module.agent.service;
 import com.meant.api.module.agent.exception.AgentException;
 import com.meant.api.module.agent.service.dto.AgentModelToolCall;
 import com.meant.api.module.agent.service.dto.AgentProductClarification;
+import com.meant.api.module.agent.service.dto.AgentProductClarificationEvaluation;
 import com.meant.api.module.agent.service.dto.AgentToolDescriptor;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
 import com.meant.api.module.agent.service.dto.AgentVisibleProductReference;
 import com.meant.api.module.agent.service.tool.AgentToolAuthorizationPolicy;
 import com.meant.api.module.agent.service.tool.AgentToolRegistry;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -70,6 +73,7 @@ public class AgentProductClarificationService {
         if (context == null || calls == null || calls.isEmpty()) {
             return Optional.empty();
         }
+        List<String> eligibleTools = new ArrayList<>();
         for (AgentModelToolCall call : calls) {
             if (call == null || !PRODUCT_SELECTION_TOOLS.contains(call.name())) {
                 continue;
@@ -84,14 +88,23 @@ public class AgentProductClarificationService {
             if (authorizationPolicy.isUnqualifiedDelegatedCartAddition(context, call.name())) {
                 continue;
             }
-            if (!mutationTargetPolicy.requiresProductClarification(context, call.name())) {
+            eligibleTools.add(call.name());
+        }
+        if (eligibleTools.isEmpty()) {
+            return Optional.empty();
+        }
+        Map<String, AgentProductClarificationEvaluation> evaluations =
+                mutationTargetPolicy.evaluateProductClarifications(context, eligibleTools);
+        for (String toolName : eligibleTools) {
+            AgentProductClarificationEvaluation evaluation = evaluations.get(toolName);
+            if (evaluation == null || !evaluation.clarificationRequired()) {
                 continue;
             }
-            List<AgentVisibleProductReference> products = candidates(context, call.name());
+            List<AgentVisibleProductReference> products = validCandidates(evaluation.candidates());
             if (products.isEmpty()) {
                 continue;
             }
-            return Optional.of(clarification(context, call.name(), products));
+            return Optional.of(clarification(context, toolName, products));
         }
         return Optional.empty();
     }
@@ -104,21 +117,32 @@ public class AgentProductClarificationService {
         if (context == null) {
             return Optional.empty();
         }
-        return PRODUCT_SELECTION_TOOL_PRIORITY.stream()
+        List<AgentToolDescriptor> eligibleDescriptors = PRODUCT_SELECTION_TOOL_PRIORITY.stream()
                 .map(this::descriptor)
                 .flatMap(Optional::stream)
                 .filter(descriptor -> authorizationPolicy.authorized(context, descriptor))
                 .filter(descriptor -> !authorizationPolicy.isUnqualifiedDelegatedCartAddition(
                         context, descriptor.name()))
-                .filter(descriptor -> mutationTargetPolicy.requiresProductClarification(
-                        context, descriptor.name()))
-                .findFirst()
-                .flatMap(descriptor -> {
-                    List<AgentVisibleProductReference> products = candidates(context, descriptor.name());
-                    return products.isEmpty()
-                            ? Optional.empty()
-                            : Optional.of(clarification(context, descriptor.name(), products));
-                });
+                .toList();
+        if (eligibleDescriptors.isEmpty()) {
+            return Optional.empty();
+        }
+        Map<String, AgentProductClarificationEvaluation> evaluations =
+                mutationTargetPolicy.evaluateProductClarifications(
+                        context,
+                        eligibleDescriptors.stream().map(AgentToolDescriptor::name).toList()
+                );
+        for (AgentToolDescriptor descriptor : eligibleDescriptors) {
+            AgentProductClarificationEvaluation evaluation = evaluations.get(descriptor.name());
+            if (evaluation == null || !evaluation.clarificationRequired()) {
+                continue;
+            }
+            List<AgentVisibleProductReference> products = validCandidates(evaluation.candidates());
+            if (!products.isEmpty()) {
+                return Optional.of(clarification(context, descriptor.name(), products));
+            }
+        }
+        return Optional.empty();
     }
 
     public String question(AgentProductClarification clarification) {
@@ -143,10 +167,6 @@ public class AgentProductClarificationService {
                 ? pending.originalUserText()
                 : context.triggeringUserText();
         return new AgentProductClarification(toolName, originalUserText, products);
-    }
-
-    private List<AgentVisibleProductReference> candidates(AgentToolExecutionContext context, String toolName) {
-        return validCandidates(mutationTargetPolicy.productClarificationCandidates(context, toolName));
     }
 
     private List<AgentVisibleProductReference> validCandidates(List<AgentVisibleProductReference> products) {

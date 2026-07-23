@@ -1,5 +1,6 @@
 package com.meant.api.module.user.entity;
 
+import com.meant.api.common.entity.AssignedIdEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -35,7 +36,7 @@ import lombok.NoArgsConstructor;
                 )
         }
 )
-public class UserProductRecommendationExplanation {
+public class UserProductRecommendationExplanation extends AssignedIdEntity<UUID> {
 
     @Id
     @Column(nullable = false, updatable = false)

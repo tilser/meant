@@ -1,5 +1,6 @@
 package com.meant.api.module.user.entity;
 
+import com.meant.api.common.entity.AssignedIdEntity;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticProductResult;
 import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
 import com.meant.api.module.catalog.service.dto.ProviderIdentity;
@@ -32,7 +33,7 @@ import lombok.NoArgsConstructor;
                 )
         }
 )
-public class UserProductSearchResultItem {
+public class UserProductSearchResultItem extends AssignedIdEntity<UUID> {
 
     @Id
     @Column(nullable = false, updatable = false)

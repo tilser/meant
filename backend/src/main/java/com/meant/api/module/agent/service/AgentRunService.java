@@ -143,6 +143,44 @@ public class AgentRunService {
     }
 
     @Transactional
+    public List<AgentRunEventResult> appendAll(
+            UUID runId,
+            AgentRunEventType type,
+            List<AgentEventPayload> payloads
+    ) {
+        if (payloads == null || payloads.isEmpty()) {
+            return List.of();
+        }
+        AgentRun run = runningForUpdate(runId);
+        return appendAllLocked(run, type, payloads);
+    }
+
+    @Transactional
+    public List<AgentRunEventResult> appendAll(
+            UUID runId,
+            UUID executionOwner,
+            AgentRunEventType type,
+            List<AgentEventPayload> payloads
+    ) {
+        if (payloads == null || payloads.isEmpty()) {
+            return List.of();
+        }
+        AgentRun run = runningForUpdate(runId, executionOwner);
+        return appendAllLocked(run, type, payloads);
+    }
+
+    private List<AgentRunEventResult> appendAllLocked(
+            AgentRun run,
+            AgentRunEventType type,
+            List<AgentEventPayload> payloads
+    ) {
+        return payloads.stream()
+                .map(payload -> appendLocked(run, type, payload, clock.instant()))
+                .map(AgentResultMapper::event)
+                .toList();
+    }
+
+    @Transactional
     public void complete(UUID runId) {
         AgentRun run = runningForUpdate(runId);
         completeLocked(run);

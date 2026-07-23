@@ -21,6 +21,7 @@ import com.meant.api.module.user.service.dto.UserInventoryItemResult;
 import com.meant.api.module.user.service.dto.UserInventoryCommerceReference;
 import com.meant.api.module.user.service.dto.UserInventoryRecommendationSignal;
 import com.meant.api.module.user.service.dto.UserInventorySelectedOption;
+import com.meant.api.module.user.service.dto.UserInventoryProfileSummary;
 import com.meant.api.module.user.service.dto.UserProductSearchProductSnapshot;
 import com.meant.api.module.user.service.query.ExportUserInventoryQuery;
 import com.meant.api.module.user.service.query.ListUserInventoryItemsQuery;
@@ -404,12 +405,14 @@ class UserInventoryServiceTest {
     @Test
     void inventoryProfileHashUsesRepositorySignature() {
         assertThat(service.inventoryProfileHash(USER_ID)).isEqualTo("inventory:none");
+        assertThat(repository.profileSummaryLookupCount).isEqualTo(1);
 
         service.create(profileCommand(), uploadedItem("Olive Oil", UserInventoryCategory.PANTRY, true));
 
         assertThat(service.inventoryProfileHash(USER_ID))
                 .startsWith("inventory:1:")
                 .isNotEqualTo("inventory:none");
+        assertThat(repository.profileSummaryLookupCount).isEqualTo(2);
     }
 
     @Test
@@ -665,6 +668,7 @@ class UserInventoryServiceTest {
         private int batchSourceProductLookupCount;
         private int saveAllCount;
         private int savedInLastSaveAll;
+        private int profileSummaryLookupCount;
 
         UserInventoryItemRepository proxy() {
             return (UserInventoryItemRepository) Proxy.newProxyInstance(
@@ -693,10 +697,7 @@ class UserInventoryServiceTest {
                                                 .toList(),
                                         args);
                         case "countByUserId" -> (long) byUser((UUID) args[0]).size();
-                        case "findMaxUpdatedAtByUserId" ->
-                                byUser((UUID) args[0]).stream()
-                                        .map(UserInventoryItem::getUpdatedAt)
-                                        .max(Comparator.naturalOrder());
+                        case "summarizeProfileByUserId" -> summarizeProfileByUserId((UUID) args[0]);
                         case "findByIdAndUserId" ->
                                 items.stream()
                                         .filter(item -> item.getId().equals(args[0]) && item.getUserId().equals(args[1]))
@@ -722,6 +723,18 @@ class UserInventoryServiceTest {
             batchSourceProductLookupCount = 0;
             saveAllCount = 0;
             savedInLastSaveAll = 0;
+        }
+
+        private UserInventoryProfileSummary summarizeProfileByUserId(UUID userId) {
+            profileSummaryLookupCount++;
+            List<UserInventoryItem> userItems = byUser(userId);
+            return new UserInventoryProfileSummary(
+                    userItems.size(),
+                    userItems.stream()
+                            .map(UserInventoryItem::getUpdatedAt)
+                            .max(Comparator.naturalOrder())
+                            .orElse(null)
+            );
         }
 
         private UserInventoryItem save(UserInventoryItem item) {

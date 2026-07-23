@@ -13,10 +13,12 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
 
 @Service
+@Lazy
 @Validated
 @RequiredArgsConstructor
 public class ReviewProviderDiscoveryService {

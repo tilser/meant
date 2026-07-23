@@ -1,5 +1,6 @@
 package com.meant.api.module.order.entity;
 
+import com.meant.api.common.entity.AssignedIdEntity;
 import com.meant.api.module.order.constant.OrderState;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -36,7 +37,7 @@ import lombok.NoArgsConstructor;
                 )
         }
 )
-public class MerchantOrder {
+public class MerchantOrder extends AssignedIdEntity<UUID> {
 
     @Id
     @Builder.Default

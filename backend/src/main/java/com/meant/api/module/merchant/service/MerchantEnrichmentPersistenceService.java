@@ -38,6 +38,7 @@ import com.meant.api.module.merchant.service.dto.UcpProfile;
 import com.meant.api.module.merchant.service.dto.UcpServiceDefinition;
 import com.meant.api.module.merchant.service.dto.UcpVersionRange;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -300,8 +301,10 @@ public class MerchantEnrichmentPersistenceService {
 
     private void saveCapabilities(Merchant merchant, UcpProfile ucpProfile) {
         Map<CapabilityKey, MerchantCapability> capabilitiesByNameVersion = new LinkedHashMap<>();
+        List<MerchantCapability> capabilities = new ArrayList<>();
+        List<MerchantCapabilityRequirement> requirements = new ArrayList<>();
         safeMap(ucpProfile.capabilities()).forEach((name, capabilityDefinitions) -> safeNonNullList(capabilityDefinitions).forEach(capabilityDefinition -> {
-            MerchantCapability capability = merchantCapabilityRepository.save(MerchantCapability.builder()
+            MerchantCapability capability = MerchantCapability.builder()
                     .merchant(merchant)
                     .name(name)
                     .capabilityId(capabilityDefinition.id())
@@ -310,19 +313,21 @@ public class MerchantEnrichmentPersistenceService {
                     .schemaUrl(resourceUrl(capabilityDefinition.schema()))
                     .requiresProtocolMin(protocolMin(capabilityDefinition))
                     .requiresProtocolMax(protocolMax(capabilityDefinition))
-                    .build());
+                    .build();
+            capabilities.add(capability);
             capabilitiesByNameVersion.put(new CapabilityKey(name, valueOrEmpty(capabilityDefinition.version())), capability);
 
-            List<MerchantCapabilityRequirement> requirements = safeMap(requiresCapabilities(capabilityDefinition)).entrySet().stream()
+            requirements.addAll(safeMap(requiresCapabilities(capabilityDefinition)).entrySet().stream()
                     .map(entry -> MerchantCapabilityRequirement.builder()
                             .merchantCapability(capability)
                             .requiredCapabilityName(entry.getKey())
                             .minVersion(entry.getValue() == null ? null : entry.getValue().min())
                             .maxVersion(entry.getValue() == null ? null : entry.getValue().max())
                             .build())
-                    .toList();
-            merchantCapabilityRequirementRepository.saveAll(requirements);
+                    .toList());
         }));
+        merchantCapabilityRepository.saveAll(capabilities);
+        merchantCapabilityRequirementRepository.saveAll(requirements);
         List<MerchantCapabilityExtension> extensions = safeMap(ucpProfile.capabilities()).entrySet().stream()
                 .flatMap(entry -> safeNonNullList(entry.getValue()).stream()
                         .flatMap(capabilityDefinition -> safeNonNullList(capabilityDefinition.extendsCapabilities()).stream()

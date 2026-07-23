@@ -6,7 +6,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /** Owns the one lightweight application-wide scheduler used for discovery deadlines. */
-@Configuration
+@Configuration(proxyBeanMethods = false)
 class FederatedCatalogExecutorConfiguration {
 
     @Bean(destroyMethod = "shutdown")

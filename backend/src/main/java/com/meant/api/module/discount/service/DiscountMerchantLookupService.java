@@ -6,9 +6,12 @@ import com.meant.api.module.merchant.entity.Merchant;
 import com.meant.api.module.merchant.repository.MerchantRepository;
 import java.util.LinkedHashSet;
 import java.util.Locale;
-import java.util.Optional;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,9 +31,12 @@ public class DiscountMerchantLookupService {
         }
         String normalizedDomain = normalizeDomain(merchantDomain);
         if (normalizedDomain != null) {
-            return domainCandidates(normalizedDomain).stream()
-                    .map(merchantRepository::findByDomain)
-                    .flatMap(Optional::stream)
+            Set<String> candidates = domainCandidates(normalizedDomain);
+            Map<String, Merchant> merchantsByDomain = merchantRepository.findByDomainIn(candidates).stream()
+                    .collect(Collectors.toMap(Merchant::getDomain, Function.identity()));
+            return candidates.stream()
+                    .map(merchantsByDomain::get)
+                    .filter(Objects::nonNull)
                     .findFirst()
                     .map(this::toResult)
                     .orElseThrow(() -> DiscountCodeException.notFound("Merchant not found: " + normalizedDomain));

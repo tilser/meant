@@ -18,7 +18,11 @@ public class AgentMaintenanceTask {
         maintenanceService.recoverAfterRestart();
     }
 
-    @Scheduled(fixedDelayString = "${commerce.agent.stale-run-age}")
+    // The ready-event listener already performs this recovery once during startup.
+    @Scheduled(
+            fixedDelayString = "${commerce.agent.stale-run-age}",
+            initialDelayString = "${commerce.agent.stale-run-age}"
+    )
     public void recoverStaleRuns() {
         maintenanceService.recoverStaleRuns();
     }

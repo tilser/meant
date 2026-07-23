@@ -1,5 +1,6 @@
 package com.meant.api.module.checkout.entity;
 
+import com.meant.api.common.entity.AssignedIdEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -26,7 +27,7 @@ import lombok.NoArgsConstructor;
                 @UniqueConstraint(name = "uk_checkout_completion_state_hash", columnNames = "checkout_id_hash")
         }
 )
-public class CheckoutCompletionState {
+public class CheckoutCompletionState extends AssignedIdEntity<UUID> {
 
     @Id
     @Builder.Default

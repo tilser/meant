@@ -1,5 +1,6 @@
 package com.meant.api.module.user.entity;
 
+import com.meant.api.common.entity.AssignedIdEntity;
 import com.meant.api.module.user.service.dto.UserProductSearchQueryIntentResult;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -29,7 +30,7 @@ import lombok.NoArgsConstructor;
                 )
         }
 )
-public class UserProductSearchQueryIntent {
+public class UserProductSearchQueryIntent extends AssignedIdEntity<UUID> {
 
     @Id
     @Column(nullable = false, updatable = false)

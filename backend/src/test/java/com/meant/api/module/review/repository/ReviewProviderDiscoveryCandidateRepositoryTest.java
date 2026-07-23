@@ -17,7 +17,6 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -29,7 +28,7 @@ class ReviewProviderDiscoveryCandidateRepositoryTest {
         Instant now = Instant.parse("2026-07-03T12:00:00Z");
         Instant claimExpiresAt = Instant.parse("2026-07-03T12:05:00Z");
         CandidateQuery candidateQuery = new CandidateQuery(List.of(merchant(merchantId, "merchant.example", now)));
-        ProviderRepositoryStub providerRepository = new ProviderRepositoryStub(Optional.empty());
+        ProviderRepositoryStub providerRepository = new ProviderRepositoryStub(List.of());
         ReviewProviderDiscoveryCandidateRepository repository =
                 new ReviewProviderDiscoveryCandidateRepository(candidateQuery.entityManager(), providerRepository.proxy());
 
@@ -43,6 +42,8 @@ class ReviewProviderDiscoveryCandidateRepositoryTest {
         assertThat(candidateQuery.maxResults()).isEqualTo(10);
         assertThat(candidateQuery.lockMode()).isEqualTo(LockModeType.PESSIMISTIC_WRITE);
         assertThat(candidateQuery.hints()).containsEntry("jakarta.persistence.lock.timeout", -2);
+        assertThat(providerRepository.findAllCalls()).isOne();
+        assertThat(providerRepository.saveAllCalls()).isOne();
         ReviewProvider provider = providerRepository.savedProvider();
         assertThat(provider.getMerchantId()).isEqualTo(merchantId);
         assertThat(provider.getMerchantDomain()).isEqualTo("merchant.example");
@@ -72,7 +73,7 @@ class ReviewProviderDiscoveryCandidateRepositoryTest {
                 .createdAt(now.minusSeconds(3600))
                 .updatedAt(now.minusSeconds(60))
                 .build();
-        ProviderRepositoryStub providerRepository = new ProviderRepositoryStub(Optional.of(provider));
+        ProviderRepositoryStub providerRepository = new ProviderRepositoryStub(List.of(provider));
         ReviewProviderDiscoveryCandidateRepository repository =
                 new ReviewProviderDiscoveryCandidateRepository(candidateQuery.entityManager(), providerRepository.proxy());
 
@@ -88,6 +89,30 @@ class ReviewProviderDiscoveryCandidateRepositoryTest {
         assertThat(provider.getErrorMessage()).isNull();
         assertThat(provider.getNextCheckAt()).isEqualTo(claimExpiresAt);
         assertThat(providerRepository.savedProvider()).isNull();
+        assertThat(providerRepository.findAllCalls()).isOne();
+        assertThat(providerRepository.saveAllCalls()).isZero();
+    }
+
+    @Test
+    void claimCandidatesBatchLoadsExistingProvidersAndBatchSavesNewLeases() {
+        Instant now = Instant.parse("2026-07-03T12:00:00Z");
+        Instant claimExpiresAt = Instant.parse("2026-07-03T12:05:00Z");
+        CandidateQuery candidateQuery = new CandidateQuery(List.of(
+                merchant(UUID.fromString("00000000-0000-0000-0000-000000000001"), "one.example", now),
+                merchant(UUID.fromString("00000000-0000-0000-0000-000000000002"), "two.example", now)
+        ));
+        ProviderRepositoryStub providerRepository = new ProviderRepositoryStub(List.of());
+        ReviewProviderDiscoveryCandidateRepository repository =
+                new ReviewProviderDiscoveryCandidateRepository(candidateQuery.entityManager(), providerRepository.proxy());
+
+        var claimed = repository.claimCandidates(now, claimExpiresAt, 10);
+
+        assertThat(claimed).hasSize(2);
+        assertThat(providerRepository.findAllCalls()).isOne();
+        assertThat(providerRepository.saveAllCalls()).isOne();
+        assertThat(providerRepository.savedProviders())
+                .extracting(ReviewProvider::getMerchantDomain)
+                .containsExactly("one.example", "two.example");
     }
 
     private Merchant merchant(UUID id, String domain, Instant updatedAt) {
@@ -189,12 +214,14 @@ class ReviewProviderDiscoveryCandidateRepositoryTest {
 
     private static class ProviderRepositoryStub {
 
-        private final Optional<ReviewProvider> provider;
+        private final List<ReviewProvider> providers;
         private final ReviewProviderRepository proxy;
-        private ReviewProvider savedProvider;
+        private List<ReviewProvider> savedProviders = List.of();
+        private int findAllCalls;
+        private int saveAllCalls;
 
-        private ProviderRepositoryStub(Optional<ReviewProvider> provider) {
-            this.provider = provider;
+        private ProviderRepositoryStub(List<ReviewProvider> providers) {
+            this.providers = providers;
             this.proxy = repositoryProxy();
         }
 
@@ -203,7 +230,19 @@ class ReviewProviderDiscoveryCandidateRepositoryTest {
         }
 
         private ReviewProvider savedProvider() {
-            return savedProvider;
+            return savedProviders.isEmpty() ? null : savedProviders.getFirst();
+        }
+
+        private List<ReviewProvider> savedProviders() {
+            return savedProviders;
+        }
+
+        private int findAllCalls() {
+            return findAllCalls;
+        }
+
+        private int saveAllCalls() {
+            return saveAllCalls;
         }
 
         private ReviewProviderRepository repositoryProxy() {
@@ -216,10 +255,16 @@ class ReviewProviderDiscoveryCandidateRepositoryTest {
 
         private Object invokeRepository(Object proxy, Method method, Object[] args) {
             return switch (method.getName()) {
-                case "findByMerchantId" -> provider;
-                case "save" -> {
-                    savedProvider = (ReviewProvider) args[0];
-                    yield savedProvider;
+                case "findByMerchantIdIn" -> {
+                    findAllCalls++;
+                    yield providers;
+                }
+                case "saveAll" -> {
+                    saveAllCalls++;
+                    List<ReviewProvider> saved = new java.util.ArrayList<>();
+                    ((Iterable<ReviewProvider>) args[0]).forEach(saved::add);
+                    savedProviders = List.copyOf(saved);
+                    yield savedProviders;
                 }
                 default -> defaultValue(proxy, method);
             };

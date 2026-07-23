@@ -12,8 +12,10 @@ public interface MerchantIdentityLinkRepository extends JpaRepository<MerchantId
     @EntityGraph(attributePaths = "merchant")
     List<MerchantIdentityLink> findByUserIdOrderByUpdatedAtDesc(UUID userId);
 
+    @EntityGraph(attributePaths = "merchant")
     Optional<MerchantIdentityLink> findByUserIdAndMerchantId(UUID userId, UUID merchantId);
 
+    @EntityGraph(attributePaths = "merchant")
     Optional<MerchantIdentityLink> findByStateHash(String stateHash);
 
     void deleteByUserIdAndMerchantId(UUID userId, UUID merchantId);

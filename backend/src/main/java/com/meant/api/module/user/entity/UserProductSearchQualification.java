@@ -1,5 +1,6 @@
 package com.meant.api.module.user.entity;
 
+import com.meant.api.common.entity.AssignedIdEntity;
 import com.meant.api.module.user.constant.UserProductSearchQualificationStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -22,7 +23,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Table(name = "user_product_search_qualifications")
-public class UserProductSearchQualification {
+public class UserProductSearchQualification extends AssignedIdEntity<UUID> {
 
     @Id
     @Column(nullable = false, updatable = false)

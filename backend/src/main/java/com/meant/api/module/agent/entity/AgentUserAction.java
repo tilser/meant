@@ -1,5 +1,6 @@
 package com.meant.api.module.agent.entity;
 
+import com.meant.api.common.entity.AssignedIdEntity;
 import com.meant.api.module.agent.constant.AgentMutationAdmission;
 import com.meant.api.module.agent.constant.AgentUserActionStatus;
 import jakarta.persistence.Column;
@@ -22,7 +23,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Table(name = "agent_user_action")
-public class AgentUserAction {
+public class AgentUserAction extends AssignedIdEntity<UUID> {
 
     @Id
     @Builder.Default

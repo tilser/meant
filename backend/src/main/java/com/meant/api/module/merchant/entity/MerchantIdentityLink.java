@@ -1,5 +1,6 @@
 package com.meant.api.module.merchant.entity;
 
+import com.meant.api.common.entity.AssignedIdEntity;
 import com.meant.api.module.merchant.constant.MerchantIdentityLinkStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -34,7 +35,7 @@ import lombok.NoArgsConstructor;
                 @UniqueConstraint(name = "uk_merchant_identity_link_state_hash", columnNames = "state_hash")
         }
 )
-public class MerchantIdentityLink {
+public class MerchantIdentityLink extends AssignedIdEntity<UUID> {
 
     @Id
     @Builder.Default

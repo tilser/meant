@@ -16,11 +16,13 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Lazy;
 
-@Configuration
+@Configuration(proxyBeanMethods = false)
 public class AgentModelConfiguration {
 
     @Bean("agentChatModel")
+    @Lazy
     @ConditionalOnProperty(prefix = "commerce.agent", name = "enabled", havingValue = "true")
     ChatModel agentChatModel(AgentProperties properties, ObservationRegistry observationRegistry) {
         OpenAiChatOptions options = OpenAiChatOptions.builder()
@@ -51,7 +53,7 @@ public class AgentModelConfiguration {
     @Bean
     @ConditionalOnBean(name = "agentChatModel")
     AgentModelGateway springAiAgentModelGateway(
-            @Qualifier("agentChatModel") ChatModel chatModel,
+            @Lazy @Qualifier("agentChatModel") ChatModel chatModel,
             AgentProperties properties
     ) {
         return new SpringAiAgentModelGateway(chatModel, properties);

@@ -1,5 +1,6 @@
 package com.meant.api.module.checkout.entity;
 
+import com.meant.api.common.entity.AssignedIdEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -20,7 +21,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Table(name = "checkout_canary_event")
-public class CheckoutCanaryEvent {
+public class CheckoutCanaryEvent extends AssignedIdEntity<UUID> {
 
     @Id
     @Builder.Default

@@ -9,7 +9,6 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -18,7 +17,7 @@ class DiscountMerchantLookupServiceTest {
     @Test
     void domainLookupFallsBackFromWwwToRootDomain() {
         Merchant merchant = merchant("merchant.example");
-        List<String> calls = new ArrayList<>();
+        List<List<String>> calls = new ArrayList<>();
         MerchantRepository merchantRepository = merchantRepository(Map.of("merchant.example", merchant), calls);
         DiscountMerchantLookupService service = new DiscountMerchantLookupService(merchantRepository);
 
@@ -26,33 +25,50 @@ class DiscountMerchantLookupServiceTest {
 
         assertThat(result.id()).isEqualTo(merchant.getId());
         assertThat(result.domain()).isEqualTo("merchant.example");
-        assertThat(calls).containsExactly("www.merchant.example", "merchant.example");
+        assertThat(calls).containsExactly(List.of("www.merchant.example", "merchant.example"));
     }
 
     @Test
     void exactWwwDomainWinsBeforeFallback() {
         Merchant merchant = merchant("www.merchant.example");
-        List<String> calls = new ArrayList<>();
+        List<List<String>> calls = new ArrayList<>();
         MerchantRepository merchantRepository = merchantRepository(Map.of("www.merchant.example", merchant), calls);
         DiscountMerchantLookupService service = new DiscountMerchantLookupService(merchantRepository);
 
         var result = service.find(null, "www.merchant.example");
 
         assertThat(result.domain()).isEqualTo("www.merchant.example");
-        assertThat(calls).containsExactly("www.merchant.example");
+        assertThat(calls).containsExactly(List.of("www.merchant.example", "merchant.example"));
     }
 
     @Test
     void rootDomainLookupFallsBackToWwwDomain() {
         Merchant merchant = merchant("www.merchant.example");
-        List<String> calls = new ArrayList<>();
+        List<List<String>> calls = new ArrayList<>();
         MerchantRepository merchantRepository = merchantRepository(Map.of("www.merchant.example", merchant), calls);
         DiscountMerchantLookupService service = new DiscountMerchantLookupService(merchantRepository);
 
         var result = service.find(null, "merchant.example");
 
         assertThat(result.domain()).isEqualTo("www.merchant.example");
-        assertThat(calls).containsExactly("merchant.example", "www.merchant.example");
+        assertThat(calls).containsExactly(List.of("merchant.example", "www.merchant.example"));
+    }
+
+    @Test
+    void exactDomainWinsWhenTheBatchQueryReturnsCandidatesInAnotherOrder() {
+        Merchant exact = merchant("merchant.example");
+        Merchant fallback = merchant("www.merchant.example");
+        List<List<String>> calls = new ArrayList<>();
+        MerchantRepository merchantRepository = merchantRepository(
+                Map.of(exact.getDomain(), exact, fallback.getDomain(), fallback),
+                calls
+        );
+        DiscountMerchantLookupService service = new DiscountMerchantLookupService(merchantRepository);
+
+        var result = service.find(null, "merchant.example");
+
+        assertThat(result.id()).isEqualTo(exact.getId());
+        assertThat(calls).containsExactly(List.of("merchant.example", "www.merchant.example"));
     }
 
     private Merchant merchant(String domain) {
@@ -77,15 +93,22 @@ class DiscountMerchantLookupServiceTest {
                 .build();
     }
 
-    private MerchantRepository merchantRepository(Map<String, Merchant> merchants, List<String> calls) {
+    @SuppressWarnings("unchecked")
+    private MerchantRepository merchantRepository(
+            Map<String, Merchant> merchants,
+            List<List<String>> calls
+    ) {
         return (MerchantRepository) Proxy.newProxyInstance(
                 MerchantRepository.class.getClassLoader(),
                 new Class<?>[]{MerchantRepository.class},
                 (proxy, method, args) -> {
-                    if ("findByDomain".equals(method.getName())) {
-                        String domain = (String) args[0];
-                        calls.add(domain);
-                        return Optional.ofNullable(merchants.get(domain));
+                    if ("findByDomainIn".equals(method.getName())) {
+                        List<String> domains = List.copyOf((java.util.Collection<String>) args[0]);
+                        calls.add(domains);
+                        return domains.reversed().stream()
+                                .map(merchants::get)
+                                .filter(java.util.Objects::nonNull)
+                                .toList();
                     }
                     if ("toString".equals(method.getName())) {
                         return "FakeMerchantRepository";

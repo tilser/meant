@@ -1,5 +1,6 @@
 package com.meant.api.module.user.entity;
 
+import com.meant.api.common.entity.AssignedIdEntity;
 import com.meant.api.module.user.constant.UserInventoryCategory;
 import com.meant.api.module.user.constant.UserInventorySource;
 import jakarta.persistence.Column;
@@ -32,7 +33,7 @@ import lombok.NoArgsConstructor;
                 )
         }
 )
-public class UserInventoryItem {
+public class UserInventoryItem extends AssignedIdEntity<UUID> {
 
     @Id
     @Column(nullable = false, updatable = false)

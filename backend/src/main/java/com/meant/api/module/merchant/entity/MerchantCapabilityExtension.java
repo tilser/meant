@@ -1,5 +1,6 @@
 package com.meant.api.module.merchant.entity;
 
+import com.meant.api.common.entity.AssignedIdEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -27,7 +28,7 @@ import lombok.NoArgsConstructor;
                 columnNames = {"merchant_capability_id", "extension_capability_name"}
         )
 )
-public class MerchantCapabilityExtension {
+public class MerchantCapabilityExtension extends AssignedIdEntity<UUID> {
 
     @Id
     @Builder.Default

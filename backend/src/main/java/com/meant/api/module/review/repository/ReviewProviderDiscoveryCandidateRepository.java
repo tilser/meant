@@ -10,7 +10,11 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,11 +39,33 @@ public class ReviewProviderDiscoveryCandidateRepository {
             return List.of();
         }
         List<ReviewProviderDiscoveryCandidate> candidates = candidates(now, limit);
+        if (candidates.isEmpty()) {
+            return List.of();
+        }
+        Map<UUID, ReviewProvider> providersByMerchantId = reviewProviderRepository
+                .findByMerchantIdIn(candidates.stream()
+                        .map(ReviewProviderDiscoveryCandidate::merchantId)
+                        .toList())
+                .stream()
+                .collect(Collectors.toMap(
+                        ReviewProvider::getMerchantId,
+                        provider -> provider,
+                        (left, right) -> left,
+                        LinkedHashMap::new
+                ));
         List<ReviewProviderDiscoveryCandidate> claimed = new ArrayList<>();
+        List<ReviewProvider> newProviders = new ArrayList<>();
         for (ReviewProviderDiscoveryCandidate candidate : candidates) {
-            if (claim(candidate, now, claimExpiresAt)) {
+            ReviewProvider provider = providersByMerchantId.get(candidate.merchantId());
+            if (provider == null) {
+                newProviders.add(newProvider(candidate, now, claimExpiresAt));
+                claimed.add(candidate);
+            } else if (claimExisting(provider, candidate, now, claimExpiresAt)) {
                 claimed.add(candidate);
             }
+        }
+        if (!newProviders.isEmpty()) {
+            reviewProviderRepository.saveAll(newProviders);
         }
         return List.copyOf(claimed);
     }
@@ -70,16 +96,6 @@ public class ReviewProviderDiscoveryCandidateRepository {
                 .toList();
     }
 
-    private boolean claim(
-            ReviewProviderDiscoveryCandidate candidate,
-            Instant now,
-            Instant claimExpiresAt
-    ) {
-        return reviewProviderRepository.findByMerchantId(candidate.merchantId())
-                .map(provider -> claimExisting(provider, candidate, now, claimExpiresAt))
-                .orElseGet(() -> claimNew(candidate, now, claimExpiresAt));
-    }
-
     private boolean claimExisting(
             ReviewProvider provider,
             ReviewProviderDiscoveryCandidate candidate,
@@ -93,8 +109,12 @@ public class ReviewProviderDiscoveryCandidateRepository {
         return true;
     }
 
-    private boolean claimNew(ReviewProviderDiscoveryCandidate candidate, Instant now, Instant claimExpiresAt) {
-        ReviewProvider provider = ReviewProvider.builder()
+    private ReviewProvider newProvider(
+            ReviewProviderDiscoveryCandidate candidate,
+            Instant now,
+            Instant claimExpiresAt
+    ) {
+        return ReviewProvider.builder()
                 .merchantId(candidate.merchantId())
                 .merchantDomain(candidate.merchantDomain())
                 .provider(ReviewProviderType.UNKNOWN)
@@ -104,8 +124,6 @@ public class ReviewProviderDiscoveryCandidateRepository {
                 .createdAt(now)
                 .updatedAt(now)
                 .build();
-        reviewProviderRepository.save(provider);
-        return true;
     }
 
     private boolean claimable(ReviewProvider provider, Instant now) {

@@ -61,13 +61,21 @@ public class UserCanonicalProductReferencePersistenceService {
 
     @Transactional
     public void replace(UUID userId, List<CanonicalProduct> products) {
+        Map<String, CanonicalProduct> latestProductsByKey = new LinkedHashMap<>();
+        safeProducts(products).forEach(product -> latestProductsByKey.put(product.key(), product));
+        if (latestProductsByKey.isEmpty()) {
+            return;
+        }
         Instant now = Instant.now();
-        for (CanonicalProduct product : safeProducts(products)) {
-            repository.deleteByUserIdAndCanonicalProductKey(userId, product.key());
-            List<UserCanonicalProductReference> references = references(userId, product, now);
-            if (!references.isEmpty()) {
-                repository.saveAll(references);
-            }
+        repository.deleteByUserIdAndCanonicalProductKeyIn(
+                userId,
+                List.copyOf(latestProductsByKey.keySet())
+        );
+        List<UserCanonicalProductReference> replacements = latestProductsByKey.values().stream()
+                .flatMap(product -> references(userId, product, now).stream())
+                .toList();
+        if (!replacements.isEmpty()) {
+            repository.saveAll(replacements);
         }
     }
 

@@ -7,6 +7,7 @@ import com.meant.api.module.merchant.repository.MerchantRepository;
 import com.meant.api.module.merchant.repository.MerchantRetrievalEmbeddingRepository;
 import com.meant.api.module.merchant.repository.MerchantRetrievalEmbeddingRepository.MerchantRetrievalEmbeddingSummary;
 import com.meant.api.module.merchant.repository.MerchantRetrievalEmbeddingVectorRepository;
+import com.meant.api.module.merchant.repository.MerchantRetrievalEmbeddingVectorRepository.MerchantRetrievalEmbeddingUpsert;
 import com.meant.api.module.merchant.service.command.GenerateMerchantRetrievalEmbeddingsCommand;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -24,10 +25,12 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
 
 @Service
+@Lazy
 @Validated
 @RequiredArgsConstructor
 public class MerchantRetrievalEmbeddingService {
@@ -49,6 +52,7 @@ public class MerchantRetrievalEmbeddingService {
                 .toList();
         Map<UUID, Optional<String>> retrievalContentByMerchantId = merchantRetrievalContentBuilder.buildAll(merchants);
         Map<UUID, MerchantRetrievalEmbeddingSummary> embeddingsByMerchantId = currentEmbeddingsByMerchantId(merchantIds);
+        List<UUID> merchantIdsToDeactivate = new ArrayList<>();
         List<EmbeddingWorkItem> workItems = new ArrayList<>();
 
         for (Merchant merchant : merchants) {
@@ -57,7 +61,7 @@ public class MerchantRetrievalEmbeddingService {
                     Optional.empty()
             );
             if (retrievalContent.isEmpty()) {
-                merchantRetrievalEmbeddingVectorRepository.deactivate(merchant.getId(), Instant.now());
+                merchantIdsToDeactivate.add(merchant.getId());
                 continue;
             }
 
@@ -66,6 +70,10 @@ public class MerchantRetrievalEmbeddingService {
                 continue;
             }
             workItems.add(new EmbeddingWorkItem(merchant.getId(), retrievalContent.get(), retrievalContentHash));
+        }
+
+        if (!merchantIdsToDeactivate.isEmpty()) {
+            merchantRetrievalEmbeddingVectorRepository.deactivateAll(merchantIdsToDeactivate, Instant.now());
         }
 
         for (List<EmbeddingWorkItem> batch : batches(workItems, merchantEmbeddingProperties.batchSize())) {
@@ -97,17 +105,19 @@ public class MerchantRetrievalEmbeddingService {
         }
 
         Instant now = Instant.now();
+        List<MerchantRetrievalEmbeddingUpsert> upserts = new ArrayList<>(workItems.size());
         for (int index = 0; index < workItems.size(); index++) {
             EmbeddingWorkItem workItem = workItems.get(index);
-            merchantRetrievalEmbeddingVectorRepository.upsert(
+            upserts.add(new MerchantRetrievalEmbeddingUpsert(
                     workItem.merchantId(),
                     workItem.retrievalContent(),
                     workItem.retrievalContentHash(),
                     embeddings.get(index),
                     merchantEmbeddingProperties.model(),
                     now
-            );
+            ));
         }
+        merchantRetrievalEmbeddingVectorRepository.upsertAll(upserts);
     }
 
     private List<List<EmbeddingWorkItem>> batches(List<EmbeddingWorkItem> workItems, int batchSize) {

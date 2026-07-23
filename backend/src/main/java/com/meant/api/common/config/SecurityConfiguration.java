@@ -27,7 +27,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
  * {@code spring.security.oauth2.resourceserver.jwt.*}). Only explicit operational and API
  * documentation endpoints are public; business APIs require authentication by default.
  */
-@Configuration
+@Configuration(proxyBeanMethods = false)
 @RequiredArgsConstructor
 public class SecurityConfiguration {
 

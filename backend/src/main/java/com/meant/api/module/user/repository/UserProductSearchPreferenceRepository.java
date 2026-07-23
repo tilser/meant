@@ -2,8 +2,8 @@ package com.meant.api.module.user.repository;
 
 import com.meant.api.module.user.constant.UserProductSearchAttributeName;
 import com.meant.api.module.user.entity.UserProductSearchPreference;
+import java.util.Collection;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -19,10 +19,10 @@ public interface UserProductSearchPreferenceRepository extends JpaRepository<Use
 
     List<UserProductSearchPreference> findByUserIdOrderByScopeAscAttributeNameAsc(UUID userId);
 
-    Optional<UserProductSearchPreference> findByUserIdAndScopeAndAttributeName(
+    List<UserProductSearchPreference> findByUserIdAndScopeInAndAttributeNameIn(
             UUID userId,
-            String scope,
-            UserProductSearchAttributeName attributeName
+            Collection<String> scopes,
+            Collection<UserProductSearchAttributeName> attributeNames
     );
 
     void deleteByUserIdAndScopeAndAttributeName(

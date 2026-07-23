@@ -1,5 +1,6 @@
 package com.meant.api.module.user.entity;
 
+import com.meant.api.common.entity.AssignedIdEntity;
 import com.meant.api.module.user.constant.UserTasteSignalStatus;
 import com.meant.api.module.user.constant.UserTasteSignalType;
 import com.meant.api.module.user.constant.UserTasteSuggestionStatus;
@@ -32,7 +33,7 @@ import lombok.NoArgsConstructor;
                 )
         }
 )
-public class UserTasteSignal {
+public class UserTasteSignal extends AssignedIdEntity<UUID> {
 
     @Id
     @Column(nullable = false, updatable = false)

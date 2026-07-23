@@ -9,7 +9,6 @@ import com.meant.api.module.agent.service.dto.AgentArtifactResult;
 import com.meant.api.module.agent.service.dto.AgentEventPayload;
 import java.time.Clock;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -55,50 +54,56 @@ public class AgentArtifactService {
             UUID toolInvocationId,
             List<AgentArtifact> artifacts
     ) {
-        if (runId != null && executionOwner != null) {
-            runService.requireOwnedExecution(runId, executionOwner);
+        if (artifacts.isEmpty()) {
+            if (runId != null && executionOwner != null) {
+                runService.requireOwnedExecution(runId, executionOwner);
+            }
+            return List.of();
         }
         Instant now = clock.instant();
         boolean firstUsefulProposal = runId != null
                 && artifacts.stream().anyMatch(artifact -> USEFUL_PROPOSAL_TYPES.contains(artifact.type()))
                 && !artifactRepository.existsByRunIdAndArtifactTypeIn(runId, USEFUL_PROPOSAL_TYPES);
-        List<AgentArtifactResult> results = new ArrayList<>();
-        for (AgentArtifact artifact : artifacts) {
-            AgentArtifactReference stored = artifactRepository.save(AgentArtifactReference.builder()
-                    .conversationId(conversationId)
-                    .messageId(messageId)
-                    .runId(runId)
-                    .toolInvocationId(toolInvocationId)
-                    .artifactType(artifact.type())
-                    .ordinal(artifact.ordinal())
-                    .stableKey(artifact.stableKey())
-                    .label(artifact.label())
-                    .canonicalProductKey(artifact.canonicalProductKey())
-                    .offerKey(artifact.offerKey())
-                    .inventoryItemId(artifact.inventoryItemId())
-                    .cartId(artifact.cartId())
-                    .cartLineId(artifact.cartLineId())
-                    .checkoutAttemptId(artifact.checkoutAttemptId())
-                    .payloadJson(artifact.payloadJson())
-                    .createdAt(now)
-                    .build());
-            AgentArtifactResult result = AgentResultMapper.artifact(stored);
-            results.add(result);
-            if (runId != null) {
-                if (executionOwner == null) {
-                    runService.append(
-                            runId,
-                            AgentRunEventType.ARTIFACT_UPSERTED,
-                            AgentEventPayload.artifact(result)
-                    );
-                } else {
-                    runService.append(
-                            runId,
-                            executionOwner,
-                            AgentRunEventType.ARTIFACT_UPSERTED,
-                            AgentEventPayload.artifact(result)
-                    );
-                }
+        List<AgentArtifactReference> references = artifacts.stream()
+                .map(artifact -> AgentArtifactReference.builder()
+                        .conversationId(conversationId)
+                        .messageId(messageId)
+                        .runId(runId)
+                        .toolInvocationId(toolInvocationId)
+                        .artifactType(artifact.type())
+                        .ordinal(artifact.ordinal())
+                        .stableKey(artifact.stableKey())
+                        .label(artifact.label())
+                        .canonicalProductKey(artifact.canonicalProductKey())
+                        .offerKey(artifact.offerKey())
+                        .inventoryItemId(artifact.inventoryItemId())
+                        .cartId(artifact.cartId())
+                        .cartLineId(artifact.cartLineId())
+                        .checkoutAttemptId(artifact.checkoutAttemptId())
+                        .payloadJson(artifact.payloadJson())
+                        .createdAt(now)
+                        .build())
+                .toList();
+        List<AgentArtifactResult> results = artifactRepository.saveAll(references).stream()
+                .map(AgentResultMapper::artifact)
+                .toList();
+        if (runId != null && !results.isEmpty()) {
+            List<AgentEventPayload> payloads = results.stream()
+                    .map(AgentEventPayload::artifact)
+                    .toList();
+            if (executionOwner == null) {
+                runService.appendAll(
+                        runId,
+                        AgentRunEventType.ARTIFACT_UPSERTED,
+                        payloads
+                );
+            } else {
+                runService.appendAll(
+                        runId,
+                        executionOwner,
+                        AgentRunEventType.ARTIFACT_UPSERTED,
+                        payloads
+                );
             }
         }
         if (firstUsefulProposal) {

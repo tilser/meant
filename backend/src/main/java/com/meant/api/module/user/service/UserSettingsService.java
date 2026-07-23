@@ -5,12 +5,12 @@ import com.meant.api.module.user.constant.UserClothingFit;
 import com.meant.api.module.user.entity.ShoppingFilter;
 import com.meant.api.module.user.entity.UserSettings;
 import com.meant.api.module.user.entity.UserSettingsLocation;
-import com.meant.api.module.user.entity.UserShoppingFilter;
 import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.repository.ShoppingFilterRepository;
 import com.meant.api.module.user.repository.UserSettingsLocationRepository;
 import com.meant.api.module.user.repository.UserSettingsRepository;
 import com.meant.api.module.user.repository.UserShoppingFilterRepository;
+import com.meant.api.module.user.service.command.AddUserSettingsFilterCommand;
 import com.meant.api.module.user.service.command.UpdateUserSettingsCommand;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.command.UserLocationCommand;
@@ -54,7 +54,14 @@ public class UserSettingsService {
         UserSettings settings = findOrCreateSettings(profileCommand.id(), now);
         List<String> activeFilterIds = activeFilterIds(settings.getUserId());
         List<ShoppingFilter> availableFilters = shoppingFilterRepository.findAllByOrderByDisplayOrderAsc();
-        return result(settings, activeFilterIds, availableFilters, List.of(), List.of());
+        return result(
+                settings,
+                storedLocations(settings),
+                activeFilterIds,
+                availableFilters,
+                List.of(),
+                List.of()
+        );
     }
 
     @Transactional
@@ -76,10 +83,11 @@ public class UserSettingsService {
         if (command.clothingFit() != null) {
             settings.updateClothingFit(UserClothingFit.persistedValue(command.clothingFit()), now);
         }
+        List<UserLocationResult> locations = null;
         if (command.locations() != null) {
-            replaceLocations(settings, command.locations(), now);
+            locations = replaceLocations(settings, command.locations(), now);
         } else if (command.location() != null) {
-            replaceLocations(settings, List.of(command.location()), now);
+            locations = replaceLocations(settings, List.of(command.location()), now);
         }
         List<String> parsedFilterIds = List.copyOf(command.parsedFilterIds());
         List<String> currentActiveFilterIds = activeFilterIds(settings.getUserId());
@@ -91,7 +99,50 @@ public class UserSettingsService {
                 currentActiveFilterIds,
                 availableFilters,
                 now);
-        return result(settings, activeFilterIds, availableFilters, parsedFilterIds, command.unmappedPreferences());
+        return result(
+                settings,
+                locations == null ? storedLocations(settings) : locations,
+                activeFilterIds,
+                availableFilters,
+                parsedFilterIds,
+                command.unmappedPreferences()
+        );
+    }
+
+    @Transactional
+    public UserSettingsResult addActiveFilter(
+            @NotNull @Valid EnsureUserProfileCommand profileCommand,
+            @NotNull @Valid AddUserSettingsFilterCommand command
+    ) {
+        if (!profileCommand.id().equals(command.id())) {
+            throw UserException.forbidden("Settings user does not match authenticated user");
+        }
+        userService.ensureProfile(profileCommand);
+        Instant now = Instant.now();
+        UserSettings settings = findOrCreateSettings(command.id(), now);
+        List<String> currentActiveFilterIds = activeFilterIds(settings.getUserId());
+        List<ShoppingFilter> availableFilters = shoppingFilterRepository.findAllByOrderByDisplayOrderAsc();
+        if (availableFilters.stream().noneMatch(filter -> filter.getId().equals(command.filterId()))) {
+            throw new UserException("Unknown filter " + command.filterId());
+        }
+        LinkedHashSet<String> desiredFilterIds = new LinkedHashSet<>(currentActiveFilterIds);
+        desiredFilterIds.add(command.filterId());
+        List<String> activeFilterIds = replaceFilters(
+                settings,
+                desiredFilterIds,
+                List.of(),
+                currentActiveFilterIds,
+                availableFilters,
+                now
+        );
+        return result(
+                settings,
+                storedLocations(settings),
+                activeFilterIds,
+                availableFilters,
+                List.of(),
+                List.of()
+        );
     }
 
     private UserSettings findOrCreateSettings(UUID userId, Instant now) {
@@ -109,14 +160,21 @@ public class UserSettingsService {
                 });
     }
 
-    private void replaceLocations(
+    private List<UserLocationResult> replaceLocations(
             UserSettings settings,
             List<UserLocationCommand> locations,
             Instant now
     ) {
         List<UserLocationCommand> desiredLocations = normalizedLocations(locations);
+        List<UserLocationResult> desiredResults = desiredLocations.stream()
+                .map(location -> new UserLocationResult(
+                        location.country(),
+                        location.code(),
+                        location.city()
+                ))
+                .toList();
         if (sameLocations(storedLocations(settings), desiredLocations)) {
-            return;
+            return desiredResults;
         }
 
         userSettingsLocationRepository.deleteByIdUserId(settings.getUserId());
@@ -131,6 +189,7 @@ public class UserSettingsService {
         userSettingsLocationRepository.saveAll(replacementLocations);
         settings.updatePrimaryLocation(desiredLocations.isEmpty() ? null : desiredLocations.get(0), now);
         settings.touch(now);
+        return desiredResults;
     }
 
     private List<UserLocationResult> storedLocations(UserSettings settings) {
@@ -212,9 +271,9 @@ public class UserSettingsService {
         }
 
         userShoppingFilterRepository.deleteByIdUserId(settings.getUserId());
-        userShoppingFilterRepository.saveAll(desiredFilterIds.stream()
-                .map(filterId -> UserShoppingFilter.create(settings.getUserId(), filterId, now))
-                .toList());
+        if (!desiredFilterIds.isEmpty()) {
+            userShoppingFilterRepository.insertIfMissing(settings.getUserId(), desiredFilterIds, now);
+        }
         settings.touch(now);
         return List.copyOf(desiredFilterIds);
     }
@@ -236,6 +295,7 @@ public class UserSettingsService {
 
     private UserSettingsResult result(
             UserSettings settings,
+            List<UserLocationResult> locations,
             List<String> activeFilterIds,
             List<ShoppingFilter> availableFilters,
             List<String> parsedFilterIds,
@@ -248,7 +308,7 @@ public class UserSettingsService {
                 .toList();
         return UserSettingsResult.from(
                 settings,
-                storedLocations(settings),
+                locations,
                 activeFilters,
                 availableFilters.stream().map(ShoppingFilterResult::from).toList(),
                 parsedFilterIds,

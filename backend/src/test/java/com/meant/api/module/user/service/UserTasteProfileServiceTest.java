@@ -4,10 +4,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 
 import com.meant.api.module.user.constant.UserTasteSignalType;
+import com.meant.api.module.user.constant.UserTasteSuggestionStatus;
 import com.meant.api.module.user.entity.ShoppingFilter;
+import com.meant.api.module.user.entity.User;
 import com.meant.api.module.user.entity.UserTasteSignal;
 import com.meant.api.module.user.repository.ShoppingFilterRepository;
 import com.meant.api.module.user.repository.UserTasteSignalRepository;
+import com.meant.api.module.user.service.command.AcceptUserTasteSuggestionCommand;
+import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.command.SaveUserProductCommand;
 import com.meant.api.module.user.service.dto.ShoppingFilterResult;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
@@ -96,6 +100,30 @@ class UserTasteProfileServiceTest {
                     assertThat(signal.weight()).isCloseTo(2.52d, within(0.0001d));
                     assertThat(signal.positiveCount()).isEqualTo(2);
                 });
+    }
+
+    @Test
+    void rejectsAllMatchingSuggestionsWithOneBulkUpdate() {
+        FakeTasteSignalRepository signals = new FakeTasteSignalRepository();
+        UserTasteProfileService service = new UserTasteProfileService(
+                new FakeUserService(),
+                null,
+                signals.proxy(),
+                shoppingFilters()
+        );
+        service.recordSavedProduct(USER_ID, product(), NOW);
+
+        service.rejectSuggestion(
+                new EnsureUserProfileCommand(USER_ID, "taste@example.com", "Taste", "User"),
+                new AcceptUserTasteSuggestionCommand(USER_ID, "linen")
+        );
+
+        assertThat(signals.bulkSuggestionUpdateCount).isOne();
+        assertThat(signals.individualSaveCount).isZero();
+        assertThat(signals.signals)
+                .singleElement()
+                .extracting(UserTasteSignal::getSuggestionStatus)
+                .isEqualTo(UserTasteSuggestionStatus.REJECTED);
     }
 
     private SaveUserProductCommand product() {
@@ -187,6 +215,8 @@ class UserTasteProfileServiceTest {
         private int batchLookupCount;
         private int saveAllCount;
         private int savedInLastSaveAll;
+        private int individualSaveCount;
+        private int bulkSuggestionUpdateCount;
 
         UserTasteSignalRepository proxy() {
             return repository(UserTasteSignalRepository.class, (proxy, method, args) -> switch (method.getName()) {
@@ -204,7 +234,16 @@ class UserTasteProfileServiceTest {
                         .filter(signal -> signal.getUserId().equals(args[0]))
                         .sorted(Comparator.comparing(UserTasteSignal::getUpdatedAt).reversed())
                         .toList();
-                case "save" -> save((UserTasteSignal) args[0]);
+                case "updateSuggestionStatus" -> updateSuggestionStatus(
+                        (UUID) args[0],
+                        (String) args[1],
+                        (UserTasteSuggestionStatus) args[2],
+                        (Instant) args[3]
+                );
+                case "save" -> {
+                    individualSaveCount++;
+                    yield save((UserTasteSignal) args[0]);
+                }
                 case "saveAll" -> saveAll((Iterable<UserTasteSignal>) args[0]);
                 default -> throw new UnsupportedOperationException(method.getName());
             });
@@ -250,6 +289,41 @@ class UserTasteProfileServiceTest {
             saveAllCount++;
             savedInLastSaveAll = saved.size();
             return saved;
+        }
+
+        private int updateSuggestionStatus(
+                UUID userId,
+                String filterId,
+                UserTasteSuggestionStatus status,
+                Instant now
+        ) {
+            bulkSuggestionUpdateCount++;
+            int changed = 0;
+            for (UserTasteSignal signal : signals) {
+                if (!signal.getUserId().equals(userId)
+                        || !java.util.Objects.equals(signal.getSuggestedFilterId(), filterId)) {
+                    continue;
+                }
+                if (status == UserTasteSuggestionStatus.ACCEPTED) {
+                    signal.acceptSuggestion(now);
+                } else if (status == UserTasteSuggestionStatus.REJECTED) {
+                    signal.rejectSuggestion(now);
+                }
+                changed++;
+            }
+            return changed;
+        }
+    }
+
+    private static final class FakeUserService extends UserService {
+
+        private FakeUserService() {
+            super(null);
+        }
+
+        @Override
+        public User ensureProfile(EnsureUserProfileCommand command) {
+            return null;
         }
     }
 

@@ -1,7 +1,22 @@
 package com.meant.api.module.cart.service;
 
 import static com.meant.api.common.util.CollectionUtils.safeList;
-import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
+import static com.meant.api.module.cart.service.CheckoutFulfillmentSupport.checkoutBuyer;
+import static com.meant.api.module.cart.service.CheckoutFulfillmentSupport.defaultFulfillmentSelection;
+import static com.meant.api.module.cart.service.CheckoutFulfillmentSupport.fulfillment;
+import static com.meant.api.module.cart.service.CheckoutFulfillmentSupport.fulfillmentOptionsMissing;
+import static com.meant.api.module.cart.service.CheckoutFulfillmentSupport.hasCheckoutDetailsValidationProblems;
+import static com.meant.api.module.cart.service.CheckoutFulfillmentSupport.hasText;
+import static com.meant.api.module.cart.service.CheckoutFulfillmentSupport.shippingDestination;
+import static com.meant.api.module.cart.service.CheckoutLineItemMapper.updateLineItems;
+import static com.meant.api.module.cart.service.CartProtocolMapper.cartAddItem;
+import static com.meant.api.module.cart.service.CartProtocolMapper.cartBuyer;
+import static com.meant.api.module.cart.service.CartProtocolMapper.cartContext;
+import static com.meant.api.module.cart.service.CartProtocolMapper.cartDeliveryAddresses;
+import static com.meant.api.module.cart.service.CartProtocolMapper.cartDeliveryOptions;
+import static com.meant.api.module.cart.service.CartProtocolMapper.checkoutContext;
+import static com.meant.api.module.cart.service.CartProtocolMapper.nativeCompletionCommand;
+import static com.meant.api.module.cart.service.CartProtocolMapper.normalizeCodes;
 
 import com.meant.api.common.service.UserMutationExecutionLane;
 import com.meant.api.module.cart.constant.CartSnapshotPurpose;
@@ -20,10 +35,6 @@ import com.meant.api.module.cart.service.dto.CartResult;
 import com.meant.api.module.cart.service.dto.CartOfferPartitionResult;
 import com.meant.api.module.cart.service.dto.CartRoutingTarget;
 import com.meant.api.module.cart.service.dto.CartToolCallContext;
-import com.meant.api.module.cart.service.dto.CartBuyerIdentityInput;
-import com.meant.api.module.cart.service.dto.CartDeliveryAddressInput;
-import com.meant.api.module.cart.service.dto.CartDeliveryAddressSelectionInput;
-import com.meant.api.module.cart.service.dto.CartDeliveryOptionSelectionInput;
 import com.meant.api.module.cart.service.dto.CheckoutConsentResult;
 import com.meant.api.module.cart.service.dto.CheckoutCompletionResult;
 import com.meant.api.module.cart.service.dto.CheckoutResult;
@@ -46,12 +57,6 @@ import com.meant.api.module.user.service.dto.ResolvedSelectedOffer;
 import com.meant.api.module.user.service.query.GetUserCheckoutDetailsQuery;
 import com.meant.api.module.user.service.query.ResolveUserSelectedOffersQuery;
 import com.meant.api.plugin.cart.common.dto.CartAddItem;
-import com.meant.api.plugin.cart.common.dto.CartBuyer;
-import com.meant.api.plugin.cart.common.dto.CartContext;
-import com.meant.api.plugin.cart.common.dto.CartDeliveryAddress;
-import com.meant.api.plugin.cart.common.dto.CartDeliveryAddressSelection;
-import com.meant.api.plugin.cart.common.dto.CartDeliveryOptionSelection;
-import com.meant.api.plugin.cart.common.dto.CartUpdateItem;
 import com.meant.api.plugin.cart.common.dto.UcpCartToolResult;
 import com.meant.api.plugin.cart.common.dto.UcpCartResponse;
 import com.meant.api.module.cart.service.MerchantCartPluginDispatchService;
@@ -64,36 +69,28 @@ import com.meant.api.plugin.checkout.common.dto.UcpCheckoutToolResult;
 import com.meant.api.plugin.checkout.common.dto.CheckoutBuyer;
 import com.meant.api.plugin.checkout.common.dto.CheckoutContext;
 import com.meant.api.plugin.checkout.extension.fulfillment.dto.CheckoutFulfillment;
-import com.meant.api.plugin.checkout.extension.fulfillment.dto.CheckoutFulfillment.FulfillmentGroup;
-import com.meant.api.plugin.checkout.extension.fulfillment.dto.CheckoutFulfillment.FulfillmentMethod;
 import com.meant.api.plugin.checkout.extension.fulfillment.dto.CheckoutFulfillment.ShippingDestination;
 import com.meant.api.module.checkout.service.MerchantCheckoutPluginDispatchService;
 import com.meant.api.module.checkout.service.NativeCheckoutCompletionService;
 import com.meant.api.module.checkout.service.CheckoutPurchaseAttributionService;
 import com.meant.api.module.checkout.constant.CheckoutAttributionRail;
 import com.meant.api.module.checkout.constant.CheckoutAttributionTrigger;
-import com.meant.api.module.checkout.service.command.NativeCheckoutCompletionCommand;
 import com.meant.api.module.checkout.service.command.RecordCheckoutOpenedCommand;
 import com.meant.api.module.checkout.service.dto.NativeCheckoutResult;
 import com.meant.api.module.checkout.service.dto.NativeCheckoutStatus;
 import com.meant.api.module.checkout.service.dto.CheckoutToolCallContext;
-import com.meant.api.plugin.checkout.complete.dto.CheckoutSignals;
 import com.meant.api.plugin.checkout.create.dto.CreateCheckoutRequest;
 import com.meant.api.plugin.checkout.get.dto.GetCheckoutRequest;
 import com.meant.api.plugin.checkout.update.dto.UpdateCheckoutRequest;
 import com.meant.api.plugin.support.UcpSession;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
-import java.time.Instant;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -346,7 +343,7 @@ public class CartService {
             return cartReplacementService.proves(response, request.replacementState());
         }
         Set<String> removedLineIds = new HashSet<>(safeList(request.removeLineIds()).stream()
-                .filter(this::hasText)
+                .filter(CheckoutFulfillmentSupport::hasText)
                 .map(String::trim)
                 .toList());
         if (removedLineIds.isEmpty()) {
@@ -511,10 +508,8 @@ public class CartService {
                 session,
                 callContext
         );
-        List<UpdateCheckoutRequest.LineItem> lineItems = updateCheckoutLineItems(
-                cart,
-                currentCheckout.response()
-        );
+        List<UpdateCheckoutRequest.LineItem> lineItems =
+                updateLineItems(cart, currentCheckout.response(), checkoutResultMapper);
         CheckoutBuyer buyer = checkoutBuyer(command.buyer());
         ShippingDestination shippingAddress = shippingDestination(command.buyer(), command.shippingAddress());
         CheckoutContext context = checkoutContext(cartBuyerContextService.buyerContext(command.userId()));
@@ -607,74 +602,6 @@ public class CartService {
                 command.shippingAddress().postalCode(),
                 command.shippingAddress().addressCountry()
         );
-    }
-
-    private List<UpdateCheckoutRequest.LineItem> updateCheckoutLineItems(
-            Cart cart,
-            UcpCheckoutResponse currentResponse
-    ) {
-        List<UcpCheckoutResponse.CheckoutLineItem> checkoutLines = new ArrayList<>(checkoutLineItems(currentResponse));
-        if (checkoutLines.isEmpty()) {
-            checkoutLines.addAll(checkoutLineItems(cart));
-        }
-        List<UpdateCheckoutRequest.LineItem> lineItems = new ArrayList<>();
-        for (CartLine line : cart.getLines()) {
-            UcpCheckoutResponse.CheckoutLineItem checkoutLine = takeMatchingCheckoutLine(checkoutLines, line);
-            String checkoutLineId = checkoutLineId(checkoutLine);
-            if (!hasText(checkoutLineId)) {
-                throw CartException.rejected("Checkout line identity is unavailable after refresh");
-            }
-            lineItems.add(new UpdateCheckoutRequest.LineItem(
-                    checkoutLineId,
-                    line.getProductVariantId(),
-                    line.getQuantity()
-            ));
-        }
-        if (!checkoutLines.isEmpty()) {
-            throw CartException.rejected("Checkout lines no longer match the cart");
-        }
-        return List.copyOf(lineItems);
-    }
-
-    private List<UcpCheckoutResponse.CheckoutLineItem> checkoutLineItems(UcpCheckoutResponse response) {
-        UcpCheckoutResponse.Checkout checkout = response == null ? null : response.resolvedCheckout();
-        return checkout == null ? List.of() : safeList(checkout.lineItems());
-    }
-
-    private List<UcpCheckoutResponse.CheckoutLineItem> checkoutLineItems(Cart cart) {
-        UcpCheckoutResponse response = checkoutResultMapper.parseStoredResponse(cart.getRawCheckoutResponse());
-        UcpCheckoutResponse.Checkout checkout = response == null ? null : response.resolvedCheckout();
-        return checkout == null ? List.of() : safeList(checkout.lineItems());
-    }
-
-    private UcpCheckoutResponse.CheckoutLineItem takeMatchingCheckoutLine(
-            List<UcpCheckoutResponse.CheckoutLineItem> checkoutLines,
-            CartLine cartLine
-    ) {
-        int matchingIndex = matchingCheckoutLineIndex(checkoutLines, cartLine);
-        return matchingIndex < 0 ? null : checkoutLines.remove(matchingIndex);
-    }
-
-    private int matchingCheckoutLineIndex(
-            List<UcpCheckoutResponse.CheckoutLineItem> checkoutLines,
-            CartLine cartLine
-    ) {
-        for (int index = 0; index < checkoutLines.size(); index++) {
-            UcpCheckoutResponse.CheckoutLineItem checkoutLine = checkoutLines.get(index);
-            if (checkoutLine != null && sameVariant(cartLine, checkoutLine)) {
-                return index;
-            }
-        }
-        return -1;
-    }
-
-    private boolean sameVariant(CartLine cartLine, UcpCheckoutResponse.CheckoutLineItem checkoutLine) {
-        return hasText(cartLine.getProductVariantId())
-                && cartLine.getProductVariantId().equals(checkoutLine.resolvedVariantId());
-    }
-
-    private String checkoutLineId(UcpCheckoutResponse.CheckoutLineItem checkoutLine) {
-        return checkoutLine == null ? null : firstText(checkoutLine.id(), checkoutLine.lineId());
     }
 
     private CreateCheckoutRequest createCheckoutRequest(Cart cart) {
@@ -806,10 +733,10 @@ public class CartService {
                         response.resolvedCheckout() == null ? Stream.empty()
                                 : response.resolvedCheckout().messages().stream())
                 .map(UcpCheckoutResponse.CheckoutMessage::message)
-                .filter(this::hasText)
+                .filter(CheckoutFulfillmentSupport::hasText)
                 .toList());
         response.errors().stream().map(UcpCheckoutResponse.CheckoutError::message)
-                .filter(this::hasText).forEach(values::add);
+                .filter(CheckoutFulfillmentSupport::hasText).forEach(values::add);
         return List.copyOf(values);
     }
 
@@ -864,85 +791,13 @@ public class CartService {
                         .map(entry -> cartAddItem(resolved.byKey().get(entry.getKey()), entry.getValue()))
                         .toList(),
                 cartBuyer(command.buyerIdentity()),
-                cartContext(commerceContext, command.buyerIdentity()),
+                cartContext(cartBuyerContextService.buyerContext(commerceContext), command.buyerIdentity()),
                 cartDeliveryAddresses(command.deliveryAddressesToAdd()),
                 cartDeliveryAddresses(command.deliveryAddressesToReplace()),
                 cartDeliveryOptions(command.selectedDeliveryOptions()),
                 normalizeCodes(command.discountCodes()),
                 normalizeCodes(command.giftCardCodes()),
                 command.note()
-        );
-    }
-
-    private CartBuyer cartBuyer(CartBuyerIdentityInput buyer) {
-        return buyer == null ? null : new CartBuyer(
-                trimToNull(buyer.firstName()),
-                trimToNull(buyer.lastName()),
-                trimToNull(buyer.email()),
-                trimToNull(buyer.phoneNumber())
-        );
-    }
-
-    private CartContext cartContext(
-            UserCommerceContextResult commerceContext,
-            CartBuyerIdentityInput buyer
-    ) {
-        CartContext context = cartBuyerContextService.buyerContext(commerceContext);
-        String buyerCountry = buyer == null ? null : trimToNull(buyer.countryCode());
-        return buyerCountry == null ? context : context.merge(new CartContext(buyerCountry.toUpperCase(Locale.ROOT)));
-    }
-
-    private List<CartDeliveryAddressSelection> cartDeliveryAddresses(
-            List<CartDeliveryAddressSelectionInput> inputs
-    ) {
-        return safeNonNullList(inputs).stream()
-                .map(input -> new CartDeliveryAddressSelection(
-                        trimToNull(input.methodId()), input.selected(), cartDeliveryAddress(input)))
-                .toList();
-    }
-
-    private CartDeliveryAddress cartDeliveryAddress(CartDeliveryAddressSelectionInput input) {
-        CartDeliveryAddressInput address = input.address();
-        return new CartDeliveryAddress(
-                trimToNull(input.id()),
-                address == null ? null : trimToNull(address.firstName()),
-                address == null ? null : trimToNull(address.lastName()),
-                address == null ? null : trimToNull(address.phoneNumber()),
-                address == null ? null : trimToNull(address.streetAddress()),
-                address == null ? null : trimToNull(address.extendedAddress()),
-                address == null ? null : trimToNull(address.addressLocality()),
-                address == null ? null : trimToNull(address.addressRegion()),
-                address == null ? null : trimToNull(address.postalCode()),
-                address == null ? null : trimToNull(address.addressCountry())
-        );
-    }
-
-    private List<CartDeliveryOptionSelection> cartDeliveryOptions(
-            List<CartDeliveryOptionSelectionInput> inputs
-    ) {
-        return safeNonNullList(inputs).stream()
-                .map(input -> new CartDeliveryOptionSelection(
-                        trimToNull(input.methodId()), trimToNull(input.groupId()), trimToNull(input.selectedOptionId())))
-                .toList();
-    }
-
-    private String trimToNull(String value) {
-        return value == null || value.isBlank() ? null : value.trim();
-    }
-
-    private CheckoutContext checkoutContext(CartContext context) {
-        if (context == null || context.empty()) {
-            return null;
-        }
-        return new CheckoutContext(
-                trimToNull(context.addressCountry()),
-                trimToNull(context.addressRegion()),
-                trimToNull(context.postalCode()),
-                trimToNull(context.intent()),
-                trimToNull(context.language()),
-                trimToNull(context.currency()),
-                context.eligibility(),
-                context.extensions()
         );
     }
 
@@ -966,315 +821,6 @@ public class CartService {
         );
         return cartPersistenceService.saveCheckoutHandoff(
                 cart.getId(), userId, cart.getCheckoutGeneration(), result);
-    }
-
-    private CheckoutBuyer checkoutBuyer(UpdateCheckoutCommand.Buyer buyer) {
-        return new CheckoutBuyer(
-                trimToNull(buyer.firstName()),
-                trimToNull(buyer.lastName()),
-                trimToNull(buyer.email()),
-                trimToNull(buyer.phoneNumber())
-        );
-    }
-
-    private CheckoutFulfillment fulfillment(
-            UpdateCheckoutCommand.Buyer buyer,
-            UpdateCheckoutCommand.PostalAddress address,
-            List<UpdateCheckoutRequest.LineItem> lineItems
-    ) {
-        ShippingDestination destination = shippingDestination(buyer, address);
-        List<String> lineItemIds = lineItemIds(lineItems);
-        FulfillmentMethod method = new FulfillmentMethod(
-                "shipping",
-                "shipping",
-                lineItemIds,
-                List.of(destination),
-                "shipping",
-                List.of()
-        );
-        return new CheckoutFulfillment(List.of(method));
-    }
-
-    private CheckoutFulfillment defaultFulfillmentSelection(
-            UcpCheckoutResponse response,
-            ShippingDestination destination
-    ) {
-        UcpCheckoutResponse.Checkout checkout = response == null ? null : response.resolvedCheckout();
-        UcpCheckoutResponse.CheckoutFulfillment fulfillment = checkout == null ? null : checkout.fulfillment();
-        if (fulfillment == null || fulfillment.methods().isEmpty()) {
-            return null;
-        }
-        List<FulfillmentMethod> methods = fulfillment.methods().stream()
-                .map(method -> defaultFulfillmentMethodSelection(method, destination))
-                .filter(Objects::nonNull)
-                .toList();
-        return methods.isEmpty() ? null : new CheckoutFulfillment(methods);
-    }
-
-    private FulfillmentMethod defaultFulfillmentMethodSelection(
-            UcpCheckoutResponse.CheckoutFulfillmentMethod method,
-            ShippingDestination destination
-    ) {
-        if (method == null || method.groups().isEmpty()) {
-            return null;
-        }
-        List<FulfillmentGroup> groups = method.groups().stream()
-                .map(this::defaultFulfillmentGroupSelection)
-                .filter(Objects::nonNull)
-                .toList();
-        if (groups.isEmpty()) {
-            return null;
-        }
-        // Update checkout uses replacement semantics, so the selection must carry the
-        // destination again or the merchant may drop the shipping address.
-        return new FulfillmentMethod(
-                firstText(method.id(), method.type()),
-                trimToNull(method.type()),
-                normalizedStrings(method.lineItemIds()),
-                destination == null ? List.of() : List.of(destination),
-                selectedDestinationId(method),
-                groups
-        );
-    }
-
-    private boolean hasCheckoutDetailsValidationProblems(UcpCheckoutResponse response) {
-        if (response == null) {
-            return false;
-        }
-        boolean hasValidationMessage = Stream.concat(
-                        safeNonNullList(response.messages()).stream(),
-                        response.resolvedCheckout() == null
-                                ? Stream.empty()
-                                : safeNonNullList(response.resolvedCheckout().messages()).stream()
-                )
-                .anyMatch(this::isCheckoutDetailsValidationMessage);
-        return hasValidationMessage || safeNonNullList(response.errors()).stream()
-                .anyMatch(this::isCheckoutDetailsValidationError);
-    }
-
-    private boolean isCheckoutDetailsValidationMessage(UcpCheckoutResponse.CheckoutMessage message) {
-        if (message == null) {
-            return false;
-        }
-        String code = normalizedValidationValue(message.code());
-        if (isDeliveryCoverageProblem(code)) {
-            return false;
-        }
-        if (isCheckoutDetailsValidationCode(code)) {
-            return true;
-        }
-        boolean rejectsTargetedField = message.isError()
-                || message.isRecoverable()
-                || message.requiresBuyerAction()
-                || hasValidationFailureName(code);
-        return rejectsTargetedField
-                && isCheckoutDetailsTarget(normalizedValidationValue(message.target()));
-    }
-
-    private boolean isCheckoutDetailsValidationError(UcpCheckoutResponse.CheckoutError error) {
-        if (error == null) {
-            return false;
-        }
-        String code = normalizedValidationValue(error.code());
-        if (isDeliveryCoverageProblem(code)) {
-            return false;
-        }
-        return isCheckoutDetailsValidationCode(code)
-                || isCheckoutDetailsValidationText(normalizedValidationValue(error.message()));
-    }
-
-    private boolean isCheckoutDetailsValidationCode(String code) {
-        if (code.startsWith("buyer_identity")) {
-            return true;
-        }
-        return hasCheckoutDetailsFieldName(code) && hasValidationFailureName(code);
-    }
-
-    private boolean isCheckoutDetailsValidationText(String message) {
-        return hasCheckoutDetailsFieldName(message) && hasValidationFailureName(message);
-    }
-
-    private boolean hasCheckoutDetailsFieldName(String value) {
-        return value.contains("buyer")
-                || value.contains("email")
-                || value.contains("phone")
-                || value.contains("first_name")
-                || value.contains("last_name")
-                || value.contains("address")
-                || value.contains("postal")
-                || value.contains("zip")
-                || value.contains("country")
-                || value.contains("region")
-                || value.contains("state")
-                || value.contains("locality")
-                || value.contains("city")
-                || value.contains("street");
-    }
-
-    private boolean hasValidationFailureName(String value) {
-        return value.contains("invalid")
-                || value.contains("validation")
-                || value.contains("required")
-                || value.contains("missing")
-                || value.contains("incomplete")
-                || value.contains("malformed")
-                || value.contains("rejected");
-    }
-
-    private boolean isCheckoutDetailsTarget(String target) {
-        return target.startsWith("$.buyer")
-                || target.contains("shipping_address")
-                || target.contains("delivery_address")
-                || target.contains("shippingaddress")
-                || target.contains("deliveryaddress")
-                || target.contains("destination");
-    }
-
-    private boolean isDeliveryCoverageProblem(String code) {
-        return code.contains("undeliverable")
-                || code.contains("no_delivery_available")
-                || code.contains("delivery_not_available")
-                || code.contains("shipping_not_available")
-                || code.contains("unsupported_destination")
-                || code.contains("outside_delivery_area");
-    }
-
-    private String normalizedValidationValue(String value) {
-        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
-    }
-
-    private FulfillmentGroup defaultFulfillmentGroupSelection(UcpCheckoutResponse.CheckoutFulfillmentGroup group) {
-        if (group == null || hasText(group.selectedOptionId())) {
-            return null;
-        }
-        String selectedOptionId = defaultOptionId(group);
-        if (!hasText(group.id()) || !hasText(selectedOptionId)) {
-            return null;
-        }
-        return new FulfillmentGroup(
-                group.id().trim(),
-                normalizedStrings(group.lineItemIds()),
-                List.of(),
-                selectedOptionId.trim()
-        );
-    }
-
-    private String selectedDestinationId(UcpCheckoutResponse.CheckoutFulfillmentMethod method) {
-        if (hasText(method.selectedDestinationId())) {
-            return method.selectedDestinationId().trim();
-        }
-        return method.destinations().stream()
-                .map(UcpCheckoutResponse.CheckoutAddress::id)
-                .filter(this::hasText)
-                .findFirst()
-                .orElse(null);
-    }
-
-    private String defaultOptionId(UcpCheckoutResponse.CheckoutFulfillmentGroup group) {
-        String selected = group.selectedOption();
-        if (hasText(selected)) {
-            return selected.trim();
-        }
-        return group.options().stream()
-                .map(UcpCheckoutResponse.CheckoutFulfillmentOption::resolvedId)
-                .filter(this::hasText)
-                .findFirst()
-                .orElse(null);
-    }
-
-    private List<String> lineItemIds(List<UpdateCheckoutRequest.LineItem> lineItems) {
-        return safeList(lineItems).stream()
-                .map(UpdateCheckoutRequest.LineItem::id)
-                .filter(this::hasText)
-                .map(String::trim)
-                .toList();
-    }
-
-    private ShippingDestination shippingDestination(
-            UpdateCheckoutCommand.Buyer buyer,
-            UpdateCheckoutCommand.PostalAddress address
-    ) {
-        return new ShippingDestination(
-                "shipping",
-                trimToNull(address.extendedAddress()),
-                trimToNull(address.streetAddress()),
-                trimToNull(address.addressLocality()),
-                trimToNull(address.addressRegion()),
-                trimToNull(address.addressCountry()),
-                trimToNull(address.postalCode()),
-                trimToNull(buyer.firstName()),
-                trimToNull(buyer.lastName()),
-                trimToNull(buyer.phoneNumber())
-        );
-    }
-
-    private boolean fulfillmentOptionsMissing(UcpCheckoutResponse response) {
-        UcpCheckoutResponse.Checkout checkout = response == null ? null : response.resolvedCheckout();
-        if (checkout == null) {
-            return false;
-        }
-        UcpCheckoutResponse.CheckoutFulfillment fulfillment = checkout.fulfillment();
-        if (fulfillment == null || fulfillment.methods().isEmpty()) {
-            return true;
-        }
-        return fulfillment.methods().stream()
-                .allMatch(method -> method == null || method.groups().isEmpty());
-    }
-
-    private List<String> normalizedStrings(List<String> values) {
-        return safeList(values).stream()
-                .filter(this::hasText)
-                .map(String::trim)
-                .toList();
-    }
-
-    private String firstText(String... values) {
-        for (String value : values) {
-            if (hasText(value)) {
-                return value.trim();
-            }
-        }
-        return null;
-    }
-
-    private NativeCheckoutCompletionCommand nativeCompletionCommand(CompleteCheckoutCommand command) {
-        return new NativeCheckoutCompletionCommand(
-                command.cartId(),
-                command.userId(),
-                command.buyerConsentId(),
-                command.checkoutId(),
-                command.paymentInstruments(),
-                command.idempotencyKey(),
-                command.ap2SecurityLock(),
-                ap2MandateInput(command.ap2Mandate()),
-                checkoutSignals(command.signals()),
-                command.buyerIp()
-        );
-    }
-
-    private NativeCheckoutCompletionCommand.Ap2MandateInput ap2MandateInput(
-            CompleteCheckoutCommand.Ap2MandateCommand command
-    ) {
-        if (command == null) {
-            return null;
-        }
-        return new NativeCheckoutCompletionCommand.Ap2MandateInput(
-                command.merchantPublicJwk(),
-                command.expectedMerchantAuthorizationKid(),
-                command.merchantAuthorizationIssuer(),
-                command.agentIssuer(),
-                command.audience(),
-                command.nonce(),
-                command.expiresAt(),
-                command.merchantAuthorizationJws()
-        );
-    }
-
-    private CheckoutSignals checkoutSignals(CompleteCheckoutCommand.CheckoutSignalsCommand command) {
-        if (command == null) {
-            return null;
-        }
-        return new CheckoutSignals(command.checkoutSurface(), command.userAgent());
     }
 
     private CheckoutCompletionResult completionResult(Cart cart, NativeCheckoutResult result) {
@@ -1418,39 +964,6 @@ public class CartService {
                 : selectedOfferCartRoutingService.resolvePersistedExternal(persistedTarget);
     }
 
-    private CartAddItem cartAddItem(ResolvedSelectedOffer offer, Integer quantity) {
-        var identity = offer.identity();
-        var reference = offer.rehydratedReference();
-        return new CartAddItem(
-                null,
-                reference.externalVariantReference() == null ? null : reference.externalVariantReference().value(),
-                identity.selectedOptions().stream()
-                        .map(option -> new CartAddItem.SelectedOption(option.group(), option.name(), option.value()))
-                        .toList(),
-                identity.components().stream()
-                        .map(component -> new CartAddItem.Component(
-                                component.externalProductIdentity().value(),
-                                component.externalVariantIdentity() == null
-                                        ? null : component.externalVariantIdentity().value(),
-                                component.quantity(),
-                                component.selectedOptions().stream()
-                                        .map(option -> new CartAddItem.SelectedOption(
-                                                option.group(), option.name(), option.value()))
-                                        .toList()
-                        ))
-                        .toList(),
-                identity.sellingPlanIdentity() == null ? null : new CartAddItem.SellingPlan(
-                        identity.sellingPlanIdentity().groupReference() == null
-                                ? null : identity.sellingPlanIdentity().groupReference().value(),
-                        identity.sellingPlanIdentity().planReference() == null
-                                ? null : identity.sellingPlanIdentity().planReference().value(),
-                        identity.sellingPlanIdentity().options().stream()
-                                .map(option -> new CartAddItem.Option(option.name(), option.value()))
-                                .toList()),
-                quantity
-        );
-    }
-
     private record ResolvedItems(
             Map<String, Integer> items,
             Map<String, ResolvedSelectedOffer> byKey
@@ -1474,17 +987,17 @@ public class CartService {
 
     private void validateUnambiguousConfigurations(
             List<CartLine> existingLines, List<ResolvedSelectedOffer> addedOffers) {
-        Map<String, java.util.Set<String>> offerKeysByVariant = new LinkedHashMap<>();
+        Map<String, Set<String>> offerKeysByVariant = new LinkedHashMap<>();
         safeList(existingLines).stream()
                 .filter(line -> line.getOfferKey() != null && hasText(line.getExternalVariantId()))
                 .forEach(line -> offerKeysByVariant
-                        .computeIfAbsent(line.getExternalVariantId(), ignored -> new java.util.HashSet<>())
+                        .computeIfAbsent(line.getExternalVariantId(), ignored -> new HashSet<>())
                         .add(line.getOfferKey()));
         safeList(addedOffers).forEach(offer -> {
             String variant = offer.identity().externalVariantIdentity() == null
                     ? null : offer.identity().externalVariantIdentity().value();
             if (hasText(variant)) {
-                offerKeysByVariant.computeIfAbsent(variant, ignored -> new java.util.HashSet<>())
+                offerKeysByVariant.computeIfAbsent(variant, ignored -> new HashSet<>())
                         .add(offer.offerKey());
             }
         });
@@ -1505,21 +1018,6 @@ public class CartService {
             return cart.getContinueUrl();
         }
         return cart.getCheckoutUrl();
-    }
-
-    private boolean hasText(String value) {
-        return value != null && !value.isBlank();
-    }
-
-    private List<String> normalizeCodes(List<String> codes) {
-        if (codes == null) {
-            return null;
-        }
-        return codes.stream()
-                .filter(code -> code != null && !code.isBlank())
-                .map(String::trim)
-                .distinct()
-                .toList();
     }
 
 }

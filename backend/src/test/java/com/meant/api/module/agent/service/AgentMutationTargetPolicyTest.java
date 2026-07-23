@@ -2,6 +2,7 @@ package com.meant.api.module.agent.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -55,13 +56,15 @@ class AgentMutationTargetPolicyTest {
         UUID messageId = UUID.randomUUID();
         AgentArtifactReference first = product(messageId, 1, "product-1", "offer-1");
         AgentArtifactReference second = product(messageId, 2, "product-2", "offer-2");
+        AgentArtifactReference firstOffer = offer(messageId, 1, "product-1", "offer-1");
         AgentArtifactReference secondOffer = offer(messageId, 2, "product-2", "offer-2");
         when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any()))
                 .thenReturn(List.of(first, second, secondOffer));
         when(artifacts.findFirstByConversationIdAndOfferKeyOrderByCreatedAtDesc(CONVERSATION_ID, "offer-2"))
                 .thenReturn(Optional.of(secondOffer));
         when(artifacts.findFirstByConversationIdAndOfferKeyOrderByCreatedAtDesc(CONVERSATION_ID, "offer-1"))
-                .thenReturn(Optional.of(offer(messageId, 1, "product-1", "offer-1")));
+                .thenReturn(Optional.of(firstOffer));
+        stubPreparedOffers(firstOffer, secondOffer);
 
         assertThat(policy.matchesExplicitOrdinal(
                 context("Add the second one."),
@@ -105,6 +108,7 @@ class AgentMutationTargetPolicyTest {
                 .thenReturn(Optional.of(thirdOffer));
         when(artifacts.findFirstByConversationIdAndOfferKeyOrderByCreatedAtDesc(CONVERSATION_ID, "offer-4"))
                 .thenReturn(Optional.of(fourthOffer));
+        stubPreparedOffers(firstOffer, secondOffer, thirdOffer, fourthOffer);
 
         String turn = "ok looks good, add the third one into cart";
         assertThat(policy.matchesMutationTarget(
@@ -140,6 +144,7 @@ class AgentMutationTargetPolicyTest {
                 .thenReturn(Optional.of(globalThirdOffer));
         when(artifacts.findFirstByConversationIdAndOfferKeyOrderByCreatedAtDesc(CONVERSATION_ID, "offer-7"))
                 .thenReturn(Optional.of(visibleThirdOffer));
+        stubPreparedOffers(globalThirdOffer, visibleThirdOffer);
         AgentVisibleProductContext visible = new AgentVisibleProductContext(messageId, List.of(
                 visibleProduct(1, 5),
                 visibleProduct(2, 6),
@@ -374,6 +379,30 @@ class AgentMutationTargetPolicyTest {
     }
 
     @Test
+    void evaluatesMultipleClarificationPoliciesFromOneRecentArtifactSnapshot() {
+        UUID messageId = UUID.randomUUID();
+        AgentVisibleProductContext visible = new AgentVisibleProductContext(messageId, List.of(
+                new AgentVisibleProductReference(1, 1, "product-1", "offer-1", "Blue cotton cap"),
+                new AgentVisibleProductReference(2, 2, "product-2", "offer-2", "Red wool cap")
+        ));
+        when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any()))
+                .thenReturn(List.of());
+        AgentToolExecutionContext context = context("Add the first two.", visible);
+
+        var evaluations = policy.evaluateProductClarifications(
+                context,
+                List.of("pin_product", "prepare_carts")
+        );
+
+        assertThat(evaluations.get("pin_product").clarificationRequired()).isTrue();
+        assertThat(evaluations.get("prepare_carts").clarificationRequired()).isFalse();
+        assertThat(evaluations.get("prepare_carts").candidates())
+                .containsExactlyElementsOf(visible.products());
+        verify(artifacts, times(1))
+                .findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any());
+    }
+
+    @Test
     void currentRunChoicesTakePrecedenceInAClarificationQuestion() {
         UUID currentMessageId = UUID.randomUUID();
         UUID visibleMessageId = UUID.randomUUID();
@@ -593,6 +622,7 @@ class AgentMutationTargetPolicyTest {
                 CONVERSATION_ID, "offer-current-3")).thenReturn(Optional.of(currentOffer));
         when(artifacts.findFirstByConversationIdAndOfferKeyOrderByCreatedAtDesc(
                 CONVERSATION_ID, "offer-7")).thenReturn(Optional.of(priorOffer));
+        stubPreparedOffers(currentOffer, priorOffer);
         AgentVisibleProductContext visible = new AgentVisibleProductContext(priorMessageId, List.of(
                 visibleProduct(1, 5),
                 visibleProduct(2, 6),
@@ -650,6 +680,7 @@ class AgentMutationTargetPolicyTest {
                 CONVERSATION_ID, "offer-jacket-2")).thenReturn(Optional.of(secondJacket));
         when(artifacts.findFirstByConversationIdAndOfferKeyOrderByCreatedAtDesc(
                 CONVERSATION_ID, "offer-shoe-2")).thenReturn(Optional.of(secondShoe));
+        stubPreparedOffers(secondJacket, secondShoe);
 
         assertThat(policy.matchesMutationTarget(
                 context("Put the second jacket in my cart."),
@@ -1108,6 +1139,7 @@ class AgentMutationTargetPolicyTest {
                 CONVERSATION_ID, "offer-jacket-1")).thenReturn(Optional.of(firstOffer));
         when(artifacts.findFirstByConversationIdAndOfferKeyOrderByCreatedAtDesc(
                 CONVERSATION_ID, "offer-jacket-2")).thenReturn(Optional.of(secondOffer));
+        stubPreparedOffers(firstOffer, secondOffer);
 
         assertThat(policy.matchesMutationTarget(
                 context("Put the second jacket into the cart."),
@@ -1164,6 +1196,47 @@ class AgentMutationTargetPolicyTest {
         )).isTrue();
         verify(artifacts, times(1))
                 .findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any());
+    }
+
+    @Test
+    void contextualReaddProjectsCartEvidenceOnlyOnce() {
+        UUID cartId = UUID.randomUUID();
+        UUID cartLineId = UUID.randomUUID();
+        AgentCartSnapshotSupport cartSnapshots = mock(AgentCartSnapshotSupport.class);
+        AgentCartSnapshotSupport.CartLine removedLine = new AgentCartSnapshotSupport.CartLine(
+                cartId,
+                cartLineId,
+                "offer-jacket",
+                "Canvas field jacket",
+                null
+        );
+        AgentCartSnapshotSupport.CartSnapshot currentCart = new AgentCartSnapshotSupport.CartSnapshot(
+                mock(AgentArtifactReference.class),
+                cartId,
+                "cart:" + cartId,
+                "cart:" + cartId,
+                "Cart",
+                List.of()
+        );
+        when(cartSnapshots.project(any())).thenReturn(new AgentCartSnapshotSupport.CartState(
+                List.of(currentCart),
+                List.of(currentCart),
+                Optional.of(new AgentCartSnapshotSupport.RemovedCartLine(cartId, removedLine))
+        ));
+        AgentMutationTargetPolicy policyWithMeasuredProjection = new AgentMutationTargetPolicy(
+                artifacts,
+                objectMapper,
+                cartSnapshots
+        );
+        when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any()))
+                .thenReturn(List.of());
+
+        assertThat(policyWithMeasuredProjection.matchesMutationTarget(
+                context("Add it again."),
+                "add_cart_line",
+                addLineArguments(cartId, "offer-jacket")
+        )).isTrue();
+        verify(cartSnapshots, times(1)).project(any());
     }
 
     @Test
@@ -1411,6 +1484,7 @@ class AgentMutationTargetPolicyTest {
                 CONVERSATION_ID, "offer-jacket-1")).thenReturn(Optional.of(firstOffer));
         when(artifacts.findFirstByConversationIdAndOfferKeyOrderByCreatedAtDesc(
                 CONVERSATION_ID, "offer-jacket-2")).thenReturn(Optional.of(secondOffer));
+        stubPreparedOffers(firstOffer, secondOffer);
 
         String turn = "Go back to the second jacket and put it in the cart.";
         assertThat(policy.matchesMutationTarget(
@@ -1550,6 +1624,7 @@ class AgentMutationTargetPolicyTest {
                 .thenReturn(Optional.of(firstOffer));
         when(artifacts.findFirstByConversationIdAndOfferKeyOrderByCreatedAtDesc(CONVERSATION_ID, "offer-2"))
                 .thenReturn(Optional.of(secondOffer));
+        stubPreparedOffers(firstOffer, secondOffer);
 
         assertThat(policy.matchesExplicitOrdinal(
                 context("Compare the first two."),
@@ -1566,6 +1641,11 @@ class AgentMutationTargetPolicyTest {
                 "prepare_carts",
                 "{\"offers\":[{\"offerKey\":\"offer-1\"},{\"offerKey\":\"offer-2\"}]}"
         )).isTrue();
+        verify(artifacts, times(1))
+                .findByConversationIdAndOfferKeyInOrderByCreatedAtDesc(
+                        CONVERSATION_ID,
+                        List.of("offer-1", "offer-2")
+                );
     }
 
     @Test
@@ -1580,6 +1660,18 @@ class AgentMutationTargetPolicyTest {
     private AgentToolExecutionContext context(String text) {
         return new AgentToolExecutionContext(
                 UUID.randomUUID(), CONVERSATION_ID, UUID.randomUUID(), UUID.randomUUID(), text);
+    }
+
+    private void stubPreparedOffers(AgentArtifactReference... references) {
+        when(artifacts.findByConversationIdAndOfferKeyInOrderByCreatedAtDesc(
+                eq(CONVERSATION_ID),
+                anyList()
+        )).thenAnswer(invocation -> {
+            List<String> offerKeys = invocation.getArgument(1);
+            return List.of(references).stream()
+                    .filter(reference -> offerKeys.contains(reference.getOfferKey()))
+                    .toList();
+        });
     }
 
     private AgentToolExecutionContext context(String text, AgentVisibleProductContext visibleProductContext) {

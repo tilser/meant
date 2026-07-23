@@ -1,5 +1,7 @@
 package com.meant.api.module.cart.service;
 
+import static com.meant.api.module.cart.service.CartProtocolMapper.normalizeCodes;
+
 import static com.meant.api.common.util.CollectionUtils.safeList;
 import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
 
@@ -398,11 +400,6 @@ public class CartReplacementService {
 
     private Map<String, CartLine> remoteLines(Cart cart) {
         return cart.getLines().stream().collect(Collectors.toMap(CartLine::getRemoteCartLineId, line -> line));
-    }
-
-    private List<String> normalizeCodes(List<String> codes) {
-        return codes == null ? null : codes.stream().filter(CartReplacementService::hasText)
-                .map(String::trim).distinct().toList();
     }
 
     private boolean providerBound(Cart cart) {

@@ -44,4 +44,9 @@ public interface AgentArtifactReferenceRepository extends JpaRepository<AgentArt
             UUID conversationId,
             String offerKey
     );
+
+    List<AgentArtifactReference> findByConversationIdAndOfferKeyInOrderByCreatedAtDesc(
+            UUID conversationId,
+            List<String> offerKeys
+    );
 }

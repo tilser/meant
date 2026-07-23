@@ -23,7 +23,7 @@ import org.springframework.util.StringUtils;
  * their own decoder), a stub decoder is used that rejects every token — secured endpoints then
  * return 401 while public endpoints keep working, so the application always starts.
  */
-@Configuration
+@Configuration(proxyBeanMethods = false)
 public class JwtDecoderConfiguration {
 
     @Bean

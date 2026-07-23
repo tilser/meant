@@ -12,8 +12,8 @@ import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
@@ -21,7 +21,7 @@ import tools.jackson.databind.ObjectMapper;
 class UserProductSearchPreferenceServiceTest {
 
     @Test
-    void serializesAnUpsertBeforeCheckingWhetherTheScopedPreferenceExists() {
+    void serializesAndBatchLoadsPreferenceUpserts() {
         PreferenceRepositoryHandler repository = new PreferenceRepositoryHandler();
         UserProductSearchPreferenceService service = new UserProductSearchPreferenceService(
                 repository.proxy(), new ObjectMapper());
@@ -29,12 +29,18 @@ class UserProductSearchPreferenceServiceTest {
 
         service.upsert(new SaveUserProductSearchPreferencesCommand(
                 userId,
-                List.of(new UserProductSearchPreferenceCommand(
-                        "footwear", UserProductSearchAttributeName.SIZE, List.of("10")))
+                List.of(
+                        new UserProductSearchPreferenceCommand(
+                                "footwear", UserProductSearchAttributeName.SIZE, List.of("10")),
+                        new UserProductSearchPreferenceCommand(
+                                "apparel", UserProductSearchAttributeName.SIZE, List.of("M"))
+                )
         ));
 
-        assertThat(repository.events).containsExactly("lock", "find", "save");
-        assertThat(repository.saved).isNotNull();
+        assertThat(repository.events).containsExactly("lock", "findAll", "saveAll");
+        assertThat(repository.saved)
+                .extracting(UserProductSearchPreference::getScope)
+                .containsExactly("footwear", "apparel");
     }
 
     @Test
@@ -56,7 +62,7 @@ class UserProductSearchPreferenceServiceTest {
     private static final class PreferenceRepositoryHandler implements InvocationHandler {
 
         private final List<String> events = new ArrayList<>();
-        private UserProductSearchPreference saved;
+        private List<UserProductSearchPreference> saved = List.of();
         private UUID deletedUserId;
         private String deletedScope;
         private UserProductSearchAttributeName deletedAttribute;
@@ -70,19 +76,26 @@ class UserProductSearchPreferenceServiceTest {
         }
 
         @Override
+        @SuppressWarnings("unchecked")
         public Object invoke(Object proxy, Method method, Object[] arguments) {
             return switch (method.getName()) {
                 case "lockUserPreferenceWrites" -> {
                     events.add("lock");
                     yield 1;
                 }
-                case "findByUserIdAndScopeAndAttributeName" -> {
-                    events.add("find");
-                    yield Optional.empty();
+                case "findByUserIdAndScopeInAndAttributeNameIn" -> {
+                    events.add("findAll");
+                    assertThat((Collection<String>) arguments[1])
+                            .containsExactlyInAnyOrder("footwear", "apparel");
+                    assertThat((Collection<UserProductSearchAttributeName>) arguments[2])
+                            .containsExactly(UserProductSearchAttributeName.SIZE);
+                    yield List.of();
                 }
-                case "save" -> {
-                    events.add("save");
-                    saved = (UserProductSearchPreference) arguments[0];
+                case "saveAll" -> {
+                    events.add("saveAll");
+                    List<UserProductSearchPreference> preferences = new ArrayList<>();
+                    ((Iterable<UserProductSearchPreference>) arguments[0]).forEach(preferences::add);
+                    saved = List.copyOf(preferences);
                     yield saved;
                 }
                 case "deleteByUserIdAndScopeAndAttributeName" -> {

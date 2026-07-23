@@ -1,5 +1,6 @@
 package com.meant.api.module.checkout.entity;
 
+import com.meant.api.common.entity.AssignedIdEntity;
 import com.meant.api.module.checkout.constant.EmbeddedCheckoutSessionStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -21,7 +22,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Table(name = "embedded_checkout_session")
-public class EmbeddedCheckoutSession {
+public class EmbeddedCheckoutSession extends AssignedIdEntity<UUID> {
     @Id
     @Builder.Default
     @Column(nullable = false, updatable = false)

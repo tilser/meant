@@ -4,12 +4,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.meant.api.module.agent.constant.AgentToolRisk;
 import com.meant.api.module.agent.service.dto.AgentModelToolCall;
 import com.meant.api.module.agent.service.dto.AgentProductClarification;
+import com.meant.api.module.agent.service.dto.AgentProductClarificationEvaluation;
 import com.meant.api.module.agent.service.dto.AgentToolDescriptor;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
 import com.meant.api.module.agent.service.dto.AgentVisibleProductReference;
@@ -17,6 +19,7 @@ import com.meant.api.module.agent.service.tool.AgentTool;
 import com.meant.api.module.agent.service.tool.AgentToolAuthorizationPolicy;
 import com.meant.api.module.agent.service.tool.AgentToolRegistry;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -53,10 +56,7 @@ class AgentProductClarificationServiceTest {
         List<AgentVisibleProductReference> products = products();
         AgentToolDescriptor descriptor = descriptor("prepare_carts");
         when(authorizationPolicy.authorized(context, descriptor)).thenReturn(true);
-        when(mutationTargetPolicy.requiresProductClarification(context, "prepare_carts"))
-                .thenReturn(true);
-        when(mutationTargetPolicy.productClarificationCandidates(context, "prepare_carts"))
-                .thenReturn(products);
+        stubEvaluation(context, "prepare_carts", true, products);
 
         Optional<AgentProductClarification> result = service.preflight(
                 context,
@@ -79,8 +79,7 @@ class AgentProductClarificationServiceTest {
         AgentToolExecutionContext context = context("Add the third one to my cart");
         AgentToolDescriptor descriptor = descriptor("prepare_carts");
         when(authorizationPolicy.authorized(context, descriptor)).thenReturn(true);
-        when(mutationTargetPolicy.requiresProductClarification(context, "prepare_carts"))
-                .thenReturn(false);
+        stubEvaluation(context, "prepare_carts", false, products());
 
         Optional<AgentProductClarification> result = service.preflight(
                 context,
@@ -123,10 +122,7 @@ class AgentProductClarificationServiceTest {
         List<AgentVisibleProductReference> products = products();
         AgentToolDescriptor descriptor = descriptor("get_product_reviews");
         when(authorizationPolicy.authorized(context, descriptor)).thenReturn(true);
-        when(mutationTargetPolicy.requiresProductClarification(context, "get_product_reviews"))
-                .thenReturn(true);
-        when(mutationTargetPolicy.productClarificationCandidates(context, "get_product_reviews"))
-                .thenReturn(products);
+        stubEvaluation(context, "get_product_reviews", true, products);
 
         assertThat(service.preflight(
                 context,
@@ -148,10 +144,7 @@ class AgentProductClarificationServiceTest {
         List<AgentVisibleProductReference> products = products();
         AgentToolDescriptor descriptor = descriptor("find_similar_products");
         when(authorizationPolicy.authorized(context, descriptor)).thenReturn(true);
-        when(mutationTargetPolicy.requiresProductClarification(context, "find_similar_products"))
-                .thenReturn(true);
-        when(mutationTargetPolicy.productClarificationCandidates(context, "find_similar_products"))
-                .thenReturn(products);
+        stubEvaluation(context, "find_similar_products", true, products);
 
         assertThat(service.preflight(
                 context,
@@ -180,10 +173,7 @@ class AgentProductClarificationServiceTest {
                 context,
                 descriptor("prepare_carts")
         )).thenReturn(true);
-        when(mutationTargetPolicy.requiresProductClarification(context, "prepare_carts"))
-                .thenReturn(true);
-        when(mutationTargetPolicy.productClarificationCandidates(context, "prepare_carts"))
-                .thenReturn(products);
+        stubEvaluation(context, "prepare_carts", true, products);
 
         assertThat(service.unresolvedIntent(context))
                 .contains(new AgentProductClarification(
@@ -191,6 +181,29 @@ class AgentProductClarificationServiceTest {
                         "Add the blue cap to my cart",
                         products
                 ));
+    }
+
+    @Test
+    void unresolvedIntentEvaluatesAllAuthorizedActionsAgainstOneArtifactSnapshot() {
+        AgentToolExecutionContext context = context("Add the blue cap to my cart");
+        List<AgentVisibleProductReference> products = products();
+        when(authorizationPolicy.authorized(context, descriptor("unpin_product"))).thenReturn(true);
+        when(authorizationPolicy.authorized(context, descriptor("prepare_carts"))).thenReturn(true);
+        List<String> eligibleTools = List.of("unpin_product", "prepare_carts");
+        when(mutationTargetPolicy.evaluateProductClarifications(context, eligibleTools))
+                .thenReturn(Map.of(
+                        "unpin_product", new AgentProductClarificationEvaluation(false, products),
+                        "prepare_carts", new AgentProductClarificationEvaluation(true, products)
+                ));
+
+        assertThat(service.unresolvedIntent(context))
+                .contains(new AgentProductClarification(
+                        "prepare_carts",
+                        "Add the blue cap to my cart",
+                        products
+                ));
+        verify(mutationTargetPolicy, times(1))
+                .evaluateProductClarifications(context, eligibleTools);
     }
 
     @Test
@@ -202,8 +215,8 @@ class AgentProductClarificationServiceTest {
                 .thenReturn(true);
 
         assertThat(service.unresolvedIntent(context)).isEmpty();
-        verify(mutationTargetPolicy, never()).requiresProductClarification(
-                context, "prepare_carts");
+        verify(mutationTargetPolicy, never()).evaluateProductClarifications(
+                context, List.of("prepare_carts"));
     }
 
     @Test
@@ -222,8 +235,8 @@ class AgentProductClarificationServiceTest {
                         "{\"offers\":[{\"offerKey\":\"offer-selected-by-mission\"}]}"
                 ))
         )).isEmpty();
-        verify(mutationTargetPolicy, never()).requiresProductClarification(
-                context, "prepare_carts");
+        verify(mutationTargetPolicy, never()).evaluateProductClarifications(
+                context, List.of("prepare_carts"));
     }
 
     @Test
@@ -240,10 +253,7 @@ class AgentProductClarificationServiceTest {
         when(authorizationPolicy.authorized(context, descriptor)).thenReturn(true);
         when(authorizationPolicy.isUnqualifiedDelegatedCartAddition(context, "prepare_carts"))
                 .thenReturn(false);
-        when(mutationTargetPolicy.requiresProductClarification(context, "prepare_carts"))
-                .thenReturn(true);
-        when(mutationTargetPolicy.productClarificationCandidates(context, "prepare_carts"))
-                .thenReturn(products);
+        stubEvaluation(context, "prepare_carts", true, products);
 
         assertThat(service.preflight(
                 context,
@@ -291,6 +301,19 @@ class AgentProductClarificationServiceTest {
                 new AgentVisibleProductReference(1, 5, "product-blue", "offer-blue", "Blue cap"),
                 new AgentVisibleProductReference(2, 6, "product-red", "offer-red", "Red cap")
         );
+    }
+
+    private void stubEvaluation(
+            AgentToolExecutionContext context,
+            String toolName,
+            boolean required,
+            List<AgentVisibleProductReference> candidates
+    ) {
+        when(mutationTargetPolicy.evaluateProductClarifications(context, List.of(toolName)))
+                .thenReturn(Map.of(
+                        toolName,
+                        new AgentProductClarificationEvaluation(required, candidates)
+                ));
     }
 
     private AgentToolDescriptor descriptor(String name) {

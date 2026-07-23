@@ -37,12 +37,7 @@ public class AgentMaintenanceService {
     }
 
     public void recoverAfterRestart() {
-        if (!properties.enabled()) {
-            return;
-        }
-        mutationRecoveryService.recoverStaleExecutions();
-        recoverExpiredLeases();
-        coordinator.scheduleQueuedRuns();
+        recoverStaleRuns();
     }
 
     private void recoverExpiredLeases() {

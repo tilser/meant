@@ -2,7 +2,8 @@ package com.meant.api.module.user.repository;
 
 import com.meant.api.module.user.entity.User;
 import java.time.Instant;
-import java.util.Optional;
+import java.util.Collection;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -11,7 +12,16 @@ import org.springframework.data.repository.query.Param;
 
 public interface UserRepository extends JpaRepository<User, UUID> {
 
-    Optional<User> findByEmail(String email);
+    @Query("""
+            select candidate
+            from User candidate
+            where candidate.email in :emails
+            order by case when candidate.email = :preferredEmail then 0 else 1 end
+            """)
+    List<User> findEmailCandidates(
+            @Param("emails") Collection<String> emails,
+            @Param("preferredEmail") String preferredEmail
+    );
 
     @Query(value = """
             SELECT 1

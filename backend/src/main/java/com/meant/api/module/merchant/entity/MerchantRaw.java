@@ -1,5 +1,6 @@
 package com.meant.api.module.merchant.entity;
 
+import com.meant.api.common.entity.AssignedIdEntity;
 import com.meant.api.module.merchant.constant.MerchantIntegrationProvider;
 import com.meant.api.module.merchant.constant.MerchantRawSource;
 import jakarta.persistence.Column;
@@ -31,7 +32,7 @@ import lombok.NoArgsConstructor;
                 @UniqueConstraint(name = "uk_merchant_raw_source_domain", columnNames = {"source", "domain"})
         }
 )
-public class MerchantRaw {
+public class MerchantRaw extends AssignedIdEntity<UUID> {
 
     @Id
     @Builder.Default

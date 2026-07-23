@@ -1,5 +1,6 @@
 package com.meant.api.module.user.entity;
 
+import com.meant.api.common.entity.AssignedIdEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -19,7 +20,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Table(name = "user_discover_product_result_sets")
-public class UserDiscoverProductResultSet {
+public class UserDiscoverProductResultSet extends AssignedIdEntity<UUID> {
 
     @Id
     @Column(nullable = false, updatable = false)

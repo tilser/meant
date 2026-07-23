@@ -1,6 +1,17 @@
 spring:
   application:
     name: meant-api
+  data:
+    jpa:
+      repositories:
+        # Build the EntityManagerFactory in the background while regular beans initialize.
+        # Deferred mode still verifies every repository before the application becomes ready.
+        bootstrap-mode: deferred
+  task:
+    execution:
+      # The catalog owns a ScheduledExecutorService, so Boot otherwise backs off its
+      # application executor. Deferred JPA bootstrap needs this dedicated executor.
+      mode: force
   datasource:
     url: ${MEANT_DB_URL:jdbc:postgresql://localhost:5433/meant}
     username: ${MEANT_DB_USER:meant}
@@ -12,6 +23,10 @@ spring:
     properties:
       hibernate:
         format_sql: true
+        jdbc:
+          # Groups consecutive entity writes (including canonical-reference replacements)
+          # without changing transaction or flush boundaries.
+          batch_size: ${MEANT_HIBERNATE_JDBC_BATCH_SIZE:50}
   liquibase:
     change-log: classpath:db/changelog/db.changelog-master.xml
   security:

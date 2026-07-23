@@ -1,5 +1,6 @@
 package com.meant.api.module.cart.entity;
 
+import com.meant.api.common.entity.AssignedIdEntity;
 import com.meant.api.module.cart.constant.CartSnapshotPurpose;
 
 import jakarta.persistence.CascadeType;
@@ -21,6 +22,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.BatchSize;
 
 @Entity
 @Getter
@@ -33,7 +35,7 @@ import lombok.NoArgsConstructor;
                 @UniqueConstraint(name = "uk_cart_remote_cart_id_hash", columnNames = "remote_cart_id_hash")
         }
 )
-public class Cart {
+public class Cart extends AssignedIdEntity<UUID> {
 
     @Id
     @Builder.Default
@@ -121,10 +123,12 @@ public class Cart {
     private Instant refreshedAt;
 
     @Builder.Default
+    @BatchSize(size = 20)
     @OneToMany(mappedBy = "cart", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<CartLine> lines = new ArrayList<>();
 
     @Builder.Default
+    @BatchSize(size = 20)
     @OneToMany(mappedBy = "cart", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<CartAppliedCode> appliedCodes = new ArrayList<>();
 

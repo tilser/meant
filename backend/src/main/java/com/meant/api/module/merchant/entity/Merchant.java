@@ -1,5 +1,6 @@
 package com.meant.api.module.merchant.entity;
 
+import com.meant.api.common.entity.AssignedIdEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -30,7 +31,7 @@ import org.hibernate.type.SqlTypes;
                 @UniqueConstraint(name = "uk_merchant_domain", columnNames = "domain")
         }
 )
-public class Merchant {
+public class Merchant extends AssignedIdEntity<UUID> {
 
     @Id
     @Builder.Default

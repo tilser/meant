@@ -18,6 +18,7 @@ import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.dto.UserInventoryExportResult;
 import com.meant.api.module.user.service.dto.UserInventoryCommerceReference;
 import com.meant.api.module.user.service.dto.UserInventoryItemResult;
+import com.meant.api.module.user.service.dto.UserInventoryProfileSummary;
 import com.meant.api.module.user.service.dto.UserInventoryRecommendationSignal;
 import com.meant.api.module.user.service.dto.UserInventorySelectedOption;
 import com.meant.api.module.user.service.dto.UserProductSearchProductSnapshot;
@@ -204,12 +205,11 @@ public class UserInventoryService {
 
     @Transactional(readOnly = true)
     public String inventoryProfileHash(UUID userId) {
-        long itemCount = userInventoryItemRepository.countByUserId(userId);
-        if (itemCount == 0) {
+        UserInventoryProfileSummary summary = userInventoryItemRepository.summarizeProfileByUserId(userId);
+        if (summary.itemCount() == 0) {
             return "inventory:none";
         }
-        Instant lastUpdatedAt = userInventoryItemRepository.findMaxUpdatedAtByUserId(userId).orElse(null);
-        return "inventory:" + itemCount + ":" + value(lastUpdatedAt);
+        return "inventory:" + summary.itemCount() + ":" + value(summary.lastUpdatedAt());
     }
 
     @Transactional(readOnly = true)

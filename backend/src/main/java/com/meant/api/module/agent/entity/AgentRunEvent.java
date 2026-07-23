@@ -1,5 +1,6 @@
 package com.meant.api.module.agent.entity;
 
+import com.meant.api.common.entity.AssignedIdEntity;
 import com.meant.api.module.agent.constant.AgentRunEventType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -21,7 +22,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Table(name = "agent_run_event")
-public class AgentRunEvent {
+public class AgentRunEvent extends AssignedIdEntity<UUID> {
 
     @Id
     @Builder.Default

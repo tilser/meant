@@ -1,5 +1,6 @@
 package com.meant.api.module.user.entity;
 
+import com.meant.api.common.entity.AssignedIdEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -18,7 +19,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Table(name = "user_discover_conversation_tombstones")
-public class UserDiscoverConversationTombstone {
+public class UserDiscoverConversationTombstone extends AssignedIdEntity<UUID> {
 
     @Id
     @Column(nullable = false, updatable = false)
@@ -29,6 +30,11 @@ public class UserDiscoverConversationTombstone {
 
     @Column(nullable = false, updatable = false)
     private Instant deletedAt;
+
+    @Override
+    public UUID getId() {
+        return conversationId;
+    }
 
     public static UserDiscoverConversationTombstone create(UUID conversationId, UUID userId, Instant now) {
         return UserDiscoverConversationTombstone.builder()

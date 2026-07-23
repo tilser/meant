@@ -1,9 +1,15 @@
 spring:
+  data:
+    jpa:
+      repositories:
+        bootstrap-mode: deferred
   datasource:
     hikari:
       maximum-pool-size: 2
       minimum-idle: 0
   task:
+    execution:
+      mode: force
     scheduling:
       enabled: false
   liquibase:
@@ -13,6 +19,10 @@ spring:
     hibernate:
       ddl-auto: validate
     open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          batch_size: 50
 
 rest-client:
   connect-timeout-milliseconds: 5000
