@@ -1,12 +1,150 @@
-import type { KeyboardEvent } from 'react'
+import {
+  type KeyboardEvent,
+  type ReactNode,
+  type UIEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
 
 import { InventorySignalBadge } from '../inventory/InventorySignalBadge'
-import { HeartIcon, MatchRing, PrefChip } from '../shared/icons'
+import { ChevronIcon, HeartIcon, MatchRing, PrefChip } from '../shared/icons'
 import { CloseIcon, ProductArtwork } from '../shared/ui'
 import type { Preference, Product, UserLocation } from '../types'
 import { money, prefLabel, productMerchantCount, productPriceFrom } from '../utils'
 import { productCuratedFields } from './productCuration'
 import type { ProductOpenProps, ProductSaveProps } from './types'
+
+interface TagRailPosition {
+  canScrollBack: boolean
+  hiddenAhead: number
+}
+
+function tagRailPosition(rail: HTMLDivElement): TagRailPosition {
+  const obscuredByControl = 32
+  const visibleEnd = rail.scrollLeft + rail.clientWidth - obscuredByControl
+  const tags = Array.from(rail.children) as HTMLElement[]
+
+  return {
+    canScrollBack: rail.scrollLeft > 2,
+    hiddenAhead: tags.filter((tag) => tag.offsetLeft + tag.offsetWidth > visibleEnd).length,
+  }
+}
+
+function ProductTagRail({
+  ariaLabel,
+  children,
+  className = '',
+  itemCount,
+}: Readonly<{
+  ariaLabel: string
+  children: ReactNode
+  className?: string
+  itemCount: number
+}>) {
+  const railRef = useRef<HTMLDivElement>(null)
+  const [position, setPosition] = useState<TagRailPosition>({
+    canScrollBack: false,
+    hiddenAhead: 0,
+  })
+
+  const updatePosition = useCallback(() => {
+    const rail = railRef.current
+    if (!rail) {
+      return
+    }
+    setPosition(tagRailPosition(rail))
+  }, [])
+
+  useEffect(() => {
+    const rail = railRef.current
+    if (!rail) {
+      return
+    }
+
+    updatePosition()
+    const resizeObserver =
+      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updatePosition)
+    resizeObserver?.observe(rail)
+    window.addEventListener('resize', updatePosition)
+
+    return () => {
+      resizeObserver?.disconnect()
+      window.removeEventListener('resize', updatePosition)
+    }
+  }, [itemCount, updatePosition])
+
+  const scroll = (direction: -1 | 1) => {
+    const rail = railRef.current
+    if (!rail) {
+      return
+    }
+    rail.scrollBy({
+      left: direction * Math.max(rail.clientWidth * 0.72, 120),
+      behavior: 'smooth',
+    })
+  }
+
+  const handleRailKey = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      event.preventDefault()
+      event.stopPropagation()
+      scroll(event.key === 'ArrowLeft' ? -1 : 1)
+    }
+  }
+
+  const handleRailScroll = (event: UIEvent<HTMLDivElement>) => {
+    setPosition(tagRailPosition(event.currentTarget))
+  }
+
+  return (
+    <div
+      className={`mt-card-tag-rail ${className}`}
+      data-scroll-back={position.canScrollBack}
+      data-scroll-ahead={position.hiddenAhead > 0}
+    >
+      {position.canScrollBack ? (
+        <button
+          className="mt-card-tag-control mt-card-tag-control-back"
+          type="button"
+          aria-label={`Show previous ${ariaLabel.toLowerCase()}`}
+          onClick={(event) => {
+            event.stopPropagation()
+            scroll(-1)
+          }}
+        >
+          <ChevronIcon direction="left" size={13} />
+        </button>
+      ) : null}
+      <div
+        ref={railRef}
+        className="mt-card-tag-list"
+        role="group"
+        aria-label={ariaLabel}
+        tabIndex={position.canScrollBack || position.hiddenAhead > 0 ? 0 : undefined}
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={handleRailKey}
+        onScroll={handleRailScroll}
+      >
+        {children}
+      </div>
+      {position.hiddenAhead > 0 ? (
+        <button
+          className="mt-card-tag-control mt-card-tag-control-more"
+          type="button"
+          aria-label={`Show ${position.hiddenAhead} more ${ariaLabel.toLowerCase()}`}
+          onClick={(event) => {
+            event.stopPropagation()
+            scroll(1)
+          }}
+        >
+          +{position.hiddenAhead}
+        </button>
+      ) : null}
+    </div>
+  )
+}
 
 function productWasPrice(
   product: Product,
@@ -109,10 +247,15 @@ export function ProductCard({
 >) {
   const open = () => onOpen(product)
   const savePending = savePendingSet.has(product.id)
-  const catalogBadges = catalogBadgeLabels(product).slice(0, 3)
+  const catalogBadges = catalogBadgeLabels(product)
+  const preferenceTagCount = product.satisfies.length + product.misses.length
+  const catalogTagCount = catalogBadges.length + (product.detailError ? 1 : 0)
   const liveStage = product.agentStage ?? 'ranked'
   const curatedFields = productCuratedFields(product, preferences)
   const handleKey = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.currentTarget !== event.target) {
+      return
+    }
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault()
       open()
@@ -173,16 +316,22 @@ export function ProductCard({
         <div className="mt-mono mt-card-brand">{product.brand}</div>
         <InventorySignalBadge product={product} compact />
         <div className="mt-card-name">{product.name}</div>
-        <div className="mt-chips">
-          {product.satisfies.slice(0, 3).map((id) => (
-            <PrefChip key={id} label={prefLabel(preferences, id)} variant="lit" small />
-          ))}
-          {product.misses.map((id) => (
-            <PrefChip key={id} label={prefLabel(preferences, id)} variant="missed" small />
-          ))}
-        </div>
-        {catalogBadges.length > 0 || product.detailError ? (
-          <div className="mt-catalog-pills">
+        {preferenceTagCount > 0 ? (
+          <ProductTagRail ariaLabel="Preference tags" itemCount={preferenceTagCount}>
+            {product.satisfies.map((id) => (
+              <PrefChip key={id} label={prefLabel(preferences, id)} variant="lit" small />
+            ))}
+            {product.misses.map((id) => (
+              <PrefChip key={id} label={prefLabel(preferences, id)} variant="missed" small />
+            ))}
+          </ProductTagRail>
+        ) : null}
+        {catalogTagCount > 0 ? (
+          <ProductTagRail
+            ariaLabel="Product detail tags"
+            className="mt-card-catalog-tag-rail"
+            itemCount={catalogTagCount}
+          >
             {catalogBadges.map((label) => (
               <span className="mt-catalog-pill" key={label}>
                 {label}
@@ -191,7 +340,7 @@ export function ProductCard({
             {product.detailError ? (
               <span className="mt-catalog-pill mt-catalog-pill-warning">Details unavailable</span>
             ) : null}
-          </div>
+          </ProductTagRail>
         ) : null}
         <div className="mt-card-foot">
           <ProductPriceLine

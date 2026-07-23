@@ -773,6 +773,20 @@
   overflow: hidden;
 }
 
+.mt-ct-prod .mt-card-tag-rail {
+  margin-bottom: 8px;
+}
+
+.mt-ct-prod .mt-card-tag-list {
+  gap: 4px;
+}
+
+.mt-ct-prod .mt-card-tag-control {
+  width: 21px;
+  height: 21px;
+  font-size: 8.5px;
+}
+
 .mt-ct-prod .mt-chip-sm,
 .mt-ct-prod .mt-catalog-pill {
   max-width: 100%;
@@ -4416,6 +4430,114 @@ button:disabled {
 
 .mt-card .mt-chips {
   margin-bottom: 14px;
+}
+
+.mt-card-tag-rail {
+  position: relative;
+  min-width: 0;
+  margin-bottom: 14px;
+}
+
+.mt-card-catalog-tag-rail {
+  margin-bottom: 12px;
+}
+
+.mt-card-tag-list {
+  display: flex;
+  min-width: 0;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 1px 34px 2px 1px;
+  overscroll-behavior-inline: contain;
+  scroll-behavior: smooth;
+  scrollbar-width: none;
+  scroll-padding-inline: 34px;
+  scroll-snap-type: inline proximity;
+}
+
+.mt-card-tag-list::-webkit-scrollbar {
+  display: none;
+}
+
+.mt-card-tag-list > * {
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+}
+
+.mt-card-tag-list .mt-chip,
+.mt-card-tag-list .mt-catalog-pill {
+  max-width: none;
+  white-space: nowrap;
+}
+
+.mt-card-tag-rail::before,
+.mt-card-tag-rail::after {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  bottom: 0;
+  width: 42px;
+  pointer-events: none;
+  content: '';
+  opacity: 0;
+  transition: opacity var(--motion-quick) var(--ease-out);
+}
+
+.mt-card-tag-rail::before {
+  left: 0;
+  background: linear-gradient(90deg, var(--surface) 15%, transparent);
+}
+
+.mt-card-tag-rail::after {
+  right: 0;
+  background: linear-gradient(270deg, var(--surface) 15%, transparent);
+}
+
+.mt-card-tag-rail[data-scroll-back='true']::before,
+.mt-card-tag-rail[data-scroll-ahead='true']::after {
+  opacity: 1;
+}
+
+.mt-card-tag-control {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: 0 5px 14px -9px rgba(20, 24, 28, 0.62);
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  transform: translateY(-50%);
+  transition:
+    border-color var(--motion-quick) var(--ease-out),
+    background var(--motion-quick) var(--ease-out),
+    color var(--motion-quick) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.mt-card-tag-control:hover {
+  border-color: var(--accent-line);
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+
+.mt-card-tag-control:active {
+  transform: translateY(-50%) scale(0.92);
+}
+
+.mt-card-tag-control-back {
+  left: 1px;
+}
+
+.mt-card-tag-control-more {
+  right: 1px;
 }
 
 .mt-catalog-pills {
