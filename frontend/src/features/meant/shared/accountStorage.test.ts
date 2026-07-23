@@ -24,6 +24,9 @@ describe('account storage isolation', () => {
     expect(accountSessionStorageKey('meant.agentPendingCartRuns', 'user-a')).toBe(
       'meant.agentPendingCartRuns.account.user-a',
     )
+    expect(accountSessionStorageKey('meant.agentCartProvenance', 'user-a')).toBe(
+      'meant.agentCartProvenance.account.user-a',
+    )
     expect(() => accountSessionStorageKey('meant.locations', 'user-a')).toThrow(
       'Account storage key is not session-only',
     )
@@ -43,9 +46,11 @@ describe('account storage isolation', () => {
       ['meant.cart', 'cart'],
       ['meant.cartSnapshots', 'cart facts'],
       ['meant.agentPendingCartRuns', 'pending cart run'],
+      ['meant.agentCartProvenance', 'agent cart provenance'],
       ['meant.shelf.account.user-a', 'scoped persistent products'],
       ['meant.cartSnapshots.account.user-b', 'scoped persistent cart facts'],
       ['meant.agentPendingCartRuns.account.user-b', 'scoped pending cart run'],
+      ['meant.agentCartProvenance.account.user-b', 'scoped agent cart provenance'],
       ['meant.locations.account.user-a', 'valid scoped durable preference'],
       ['meant.theme', 'dark'],
     ])
