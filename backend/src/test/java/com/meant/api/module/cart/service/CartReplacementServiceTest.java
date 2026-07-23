@@ -140,7 +140,31 @@ class CartReplacementServiceTest {
     }
 
     @Test
-    void exactReconciliationRejectsDifferentOrOmittedConfigurationAndLineSetChanges() {
+    void reconciliationAcceptsRotatedLineIdAndSparseProviderIdentityWhenVariantIsUnique() {
+        CartReplacementState intended = state(item("product-a", "variant-a", "Black", 2));
+        UcpCartResponse response = response(List.of(sparseRemoteLine("rotated-line", "variant-a", 2)));
+
+        assertThat(service.proves(response, intended)).isTrue();
+        assertThat(service.proves(
+                response(List.of(sparseRemoteLine("rotated-line", "variant-a", 1))), intended)).isFalse();
+        assertThat(service.proves(
+                response(List.of(sparseRemoteLine("rotated-line", "variant-b", 2))), intended)).isFalse();
+    }
+
+    @Test
+    void reconciliationRejectsAmbiguousSparseProviderIdentity() {
+        CartReplacementState intended = state(
+                item("product-a", "variant-shared", "Black", 1),
+                item("product-a", "variant-shared", "White", 1));
+        UcpCartResponse response = response(List.of(
+                sparseRemoteLine("rotated-a", "variant-shared", 1),
+                sparseRemoteLine("rotated-b", "variant-shared", 1)));
+
+        assertThat(service.proves(response, intended)).isFalse();
+    }
+
+    @Test
+    void reconciliationRejectsDifferentConfigurationAndLineSetChanges() {
         CartAddItem configured = new CartAddItem(
                 "product-a", "variant-a",
                 List.of(new CartAddItem.SelectedOption("variant", "Color", "Black")),
@@ -150,10 +174,6 @@ class CartReplacementServiceTest {
                 1);
         CartReplacementState intended = state(configured);
 
-        assertThat(service.proves(response(List.of(new UcpCartResponse.Line(
-                "line", 1, null, new UcpCartResponse.Merchandise(
-                "variant-a", null, new UcpCartResponse.Product("product-a", null),
-                "product-a", List.of(), List.of(), null)))), intended)).isFalse();
         assertThat(service.proves(response(List.of(remoteLine(
                 "line", "product-a", "variant-a", "White", 1))), intended)).isFalse();
         assertThat(service.proves(response(List.of(new UcpCartResponse.Line(
@@ -282,6 +302,11 @@ class CartReplacementServiceTest {
         return new UcpCartResponse.Line(id, quantity, null, new UcpCartResponse.Merchandise(
                 variant, null, new UcpCartResponse.Product(product, null), product,
                 List.of(), List.of(), null));
+    }
+
+    private UcpCartResponse.Line sparseRemoteLine(String id, String variant, int quantity) {
+        return new UcpCartResponse.Line(id, quantity, null, new UcpCartResponse.Merchandise(
+                variant, null, null, null, List.of(), List.of(), null));
     }
 
     private CartAddItem item(String product, String variant, String color, int quantity) {

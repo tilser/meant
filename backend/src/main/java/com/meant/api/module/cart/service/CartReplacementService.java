@@ -23,7 +23,6 @@ import com.meant.api.plugin.cart.common.dto.UcpCartResponse;
 import com.meant.api.plugin.cart.update.dto.CartReplacementState;
 import com.meant.api.plugin.cart.update.dto.UpdateCartRequest;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -93,7 +92,7 @@ public class CartReplacementService {
         if (response == null || response.cart() == null || intended == null) {
             return false;
         }
-        List<LineIdentity> expected = intended.lineItems().stream().map(this::identity).sorted(ORDER).toList();
+        List<LineIdentity> expected = intended.lineItems().stream().map(this::identity).toList();
         List<LineIdentity> actual = new ArrayList<>();
         for (UcpCartResponse.Line line : safeNonNullList(response.cart().lines())) {
             UcpCartResponse.Merchandise merchandise = line.merchandise();
@@ -104,8 +103,43 @@ public class CartReplacementService {
                     merchandise.resolvedProductId(), merchandise.id(), merchandise.selectedOptions(),
                     merchandise.components(), merchandise.sellingPlan(), line.quantity())));
         }
-        actual.sort(ORDER);
-        return expected.equals(actual);
+        return matchesUnambiguously(expected, actual);
+    }
+
+    private boolean matchesUnambiguously(List<LineIdentity> expected, List<LineIdentity> actual) {
+        if (expected.size() != actual.size()) {
+            return false;
+        }
+        List<LineIdentity> unmatched = new ArrayList<>(expected);
+        List<LineIdentity> sparse = new ArrayList<>();
+        for (LineIdentity observed : actual) {
+            int exact = unmatched.indexOf(observed);
+            if (exact >= 0) {
+                unmatched.remove(exact);
+            } else {
+                sparse.add(observed);
+            }
+        }
+        for (LineIdentity observed : sparse) {
+            List<LineIdentity> candidates = unmatched.stream()
+                    .filter(candidate -> compatible(candidate, observed))
+                    .distinct()
+                    .toList();
+            if (candidates.size() != 1) {
+                return false;
+            }
+            unmatched.remove(candidates.getFirst());
+        }
+        return unmatched.isEmpty();
+    }
+
+    private boolean compatible(LineIdentity expected, LineIdentity observed) {
+        return expected.variantId().equals(observed.variantId())
+                && expected.quantity().equals(observed.quantity())
+                && (!hasText(observed.productId()) || expected.productId().equals(observed.productId()))
+                && (observed.options().isEmpty() || expected.options().equals(observed.options()))
+                && (observed.components().isEmpty() || expected.components().equals(observed.components()))
+                && (observed.sellingPlan().isEmpty() || expected.sellingPlan().equals(observed.sellingPlan()));
     }
 
     private CartReplacementState replacementState(
@@ -411,15 +445,9 @@ public class CartReplacementService {
         return value != null && !value.isBlank();
     }
 
-    private static final Comparator<LineIdentity> ORDER = Comparator.comparing(LineIdentity::sortKey);
-
     private record LineIdentity(
             String productId, String variantId, List<String> options, List<String> components,
             String sellingPlan, Integer quantity
     ) {
-        String sortKey() {
-            return productId + '\u0000' + variantId + '\u0000' + options + '\u0000' + components
-                    + '\u0000' + sellingPlan + '\u0000' + quantity;
-        }
     }
 }

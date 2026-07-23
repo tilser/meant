@@ -823,6 +823,42 @@ class CartServiceTest {
     }
 
     @Test
+    void providerBoundQuantityUpdateAcceptsRotatedSparseRemoteLine() {
+        UUID cartId = UUID.randomUUID();
+        UUID cartLineId = UUID.randomUUID();
+        cartRepository.save(providerBoundCart(cartId, cartLineId));
+        cartDispatchService.getCartResults.addLast(cartToolResult());
+        cartDispatchService.cartToolResult = cartToolResult(
+                List.of(sparseCartLine("gid://shopify/CartLine/rotated", 2)),
+                2
+        );
+
+        CartResult result = cartService.update(new UpdateCartCommand(
+                cartId,
+                USER_ID,
+                List.of(),
+                List.of(new UpdateCartCommand.UpdateItem(cartLineId, null, 2)),
+                List.of(),
+                List.of(),
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+        ));
+
+        assertThat(result.lines()).singleElement().satisfies(line -> {
+            assertThat(line.remoteCartLineId()).isEqualTo("gid://shopify/CartLine/rotated");
+            assertThat(line.quantity()).isEqualTo(2);
+            assertThat(line.offerKey()).isEqualTo("offer-candle");
+        });
+        assertThat(cartDispatchService.updateCount).isEqualTo(1);
+        assertThat(cartDispatchService.getCount).isEqualTo(1);
+    }
+
+    @Test
     void updateForwardsSelectedDeliveryOptions() {
         UUID cartId = UUID.randomUUID();
         cartRepository.save(cart(cartId, "https://merchant.example/checkout"));
@@ -1837,6 +1873,26 @@ class CartServiceTest {
                         "gid://shopify/ProductVariant/1",
                         "3x6",
                         new UcpCartResponse.Product("gid://shopify/Product/1", "Candle")
+                )
+        );
+    }
+
+    private UcpCartResponse.Line sparseCartLine(String id, int quantity) {
+        return new UcpCartResponse.Line(
+                id,
+                quantity,
+                new UcpCartResponse.Cost(
+                        new UcpCartResponse.Money("29.90", "USD"),
+                        new UcpCartResponse.Money("29.90", "USD")
+                ),
+                new UcpCartResponse.Merchandise(
+                        "gid://shopify/ProductVariant/1",
+                        "3x6",
+                        null,
+                        null,
+                        List.of(),
+                        List.of(),
+                        null
                 )
         );
     }
