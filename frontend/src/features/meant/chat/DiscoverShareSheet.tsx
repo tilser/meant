@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 
 import { CloseIcon } from '../shared/ui'
 import { ComingSoonNewsletter } from './ComingSoonNewsletter'
@@ -36,9 +37,14 @@ export function DiscoverShareSheet({
     window.setTimeout(() => setCopied(false), 1600)
   }
 
-  return (
+  const sheet = (
     <div className="mt-modal-root open" role="dialog" aria-label="Share for a second opinion">
-      <button className="mt-modal-scrim" type="button" aria-label="Close" onClick={onClose} />
+      <button
+        className="mt-modal-scrim mt-ct-share-scrim"
+        type="button"
+        aria-label="Close"
+        onClick={onClose}
+      />
       <div className="mt-ct-sharesheet">
         <button className="mt-modal-close" type="button" onClick={onClose} aria-label="Close">
           <CloseIcon size={14} />
@@ -86,4 +92,6 @@ export function DiscoverShareSheet({
       </div>
     </div>
   )
+
+  return typeof document === 'undefined' ? sheet : createPortal(sheet, document.body)
 }
