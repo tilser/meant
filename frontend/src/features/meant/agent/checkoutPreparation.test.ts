@@ -10,10 +10,10 @@ function cartLine(id: string, cartId?: string | null): CartItem {
 describe('checkoutInChatMessage', () => {
   test('opens a local checkout surface for carts created through the cart API', () => {
     expect(
-      checkoutInChatMessage(
-        'checkout-1',
-        [cartLine('product-1', ' cart-1 '), cartLine('product-2', 'cart-1')],
-      ),
+      checkoutInChatMessage('checkout-1', [
+        cartLine('product-1', ' cart-1 '),
+        cartLine('product-2', 'cart-1'),
+      ]),
     ).toEqual({
       id: 'checkout-1',
       role: 'ai',
@@ -40,10 +40,10 @@ describe('checkoutInChatMessage', () => {
 
   test('does not open checkout when the live cart has no server cart ID', () => {
     expect(
-      checkoutInChatMessage(
-        'checkout-missing',
-        [cartLine('local-product'), cartLine('syncing-product', '  ')],
-      ),
+      checkoutInChatMessage('checkout-missing', [
+        cartLine('local-product'),
+        cartLine('syncing-product', '  '),
+      ]),
     ).toBeNull()
   })
 })
