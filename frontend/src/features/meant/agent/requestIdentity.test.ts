@@ -29,6 +29,16 @@ describe('agent direct-action request identity', () => {
     ).toBe(false)
   })
 
+  test('classifies API errors independently of their constructor identity', () => {
+    const foreignApiError = Object.assign(new Error('Invalid target.'), {
+      name: 'ApiError',
+      status: 400,
+      code: 'bad_request',
+    })
+
+    expect(retainAgentActionIdempotencyKey(foreignApiError)).toBe(false)
+  })
+
   test('reuses one key through an uncertain retry and rotates it only after completion', () => {
     const store = new AgentActionRequestIdentityStore()
     let sequence = 0

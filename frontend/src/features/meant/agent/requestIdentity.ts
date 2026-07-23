@@ -1,5 +1,3 @@
-import { ApiError } from '../../../lib/apiError'
-
 const RETRYABLE_ACTION_CODES = new Set(['agent_action_in_progress', 'agent_action_uncertain'])
 const STORAGE_PREFIX = 'meant:agent-action-request:v1:'
 
@@ -19,11 +17,13 @@ function browserSessionStorage(): AgentActionRequestIdentityStorage | undefined 
 
 /** Retains the original request identity whenever the server outcome is unknown or still in flight. */
 export function retainAgentActionIdempotencyKey(error: unknown): boolean {
-  if (!(error instanceof ApiError)) return true
+  if (!(error instanceof Error)) return true
+  const failure = error as Error & { status?: unknown; code?: unknown }
+  if (typeof failure.status !== 'number') return true
   return (
-    Boolean(error.code && RETRYABLE_ACTION_CODES.has(error.code)) ||
-    error.status === 408 ||
-    error.status >= 500
+    (typeof failure.code === 'string' && RETRYABLE_ACTION_CODES.has(failure.code)) ||
+    failure.status === 408 ||
+    failure.status >= 500
   )
 }
 
