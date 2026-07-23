@@ -2,6 +2,8 @@ package com.meant.api.module.user.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.meant.api.module.catalog.service.CatalogDataUsePolicyResolver;
 import com.meant.api.module.catalog.service.CatalogDataUsePolicyMetrics;
@@ -60,6 +62,8 @@ class UserSelectedOfferResolutionServiceTest {
             List.of(provider), new CatalogProductRehydrationMetrics(new SimpleMeterRegistry()));
     private final UserCanonicalProductSessionStore sessionStore =
             new UserCanonicalProductSessionStore(Duration.ofMinutes(5), 10);
+    private final UserCanonicalProductReferencePersistenceService productReferencePersistenceService =
+            mock(UserCanonicalProductReferencePersistenceService.class);
     private final StubSavedProductPersistenceService savedProductPersistenceService =
             new StubSavedProductPersistenceService();
     private final StubCatalogDataUsePolicy savedProductPolicy = new StubCatalogDataUsePolicy();
@@ -78,6 +82,7 @@ class UserSelectedOfferResolutionServiceTest {
             );
     private final UserSelectedOfferResolutionService service = new UserSelectedOfferResolutionService(
             sessionStore,
+            productReferencePersistenceService,
             rehydrationService,
             savedProductOfferResolutionService,
             new SelectedOfferResolutionMetrics(new SimpleMeterRegistry())
@@ -150,25 +155,27 @@ class UserSelectedOfferResolutionServiceTest {
     }
 
     @Test
-    void rejectsAnExpiredOfferWithoutCallingAProvider() {
-        UserCanonicalProductSessionStore expiredStore = new UserCanonicalProductSessionStore(Duration.ZERO, 10);
-        expiredStore.remember(
-                userId,
-                List.of(new CanonicalProduct(
-                        "product-key", "Product", null, List.of(), List.of(), List.of(), List.of(), List.of(),
-                        List.of(), offer.provenance(), List.of(offer))),
-                Map.of(), Map.of(), List.of());
-        UserSelectedOfferResolutionService expiredService = new UserSelectedOfferResolutionService(
-                expiredStore,
+    void restoresAnExpiredOfferFromDurableHistoryAndRepopulatesTheSession() {
+        UserCanonicalProductSessionStore restartedStore =
+                new UserCanonicalProductSessionStore(Duration.ofMinutes(5), 10);
+        CanonicalProduct durableProduct = new CanonicalProduct(
+                "product-key", null, null, List.of(), List.of(), List.of(), List.of(), List.of(),
+                List.of(), offer.provenance(), List.of(offer));
+        when(productReferencePersistenceService.findProductByOffer(userId, offer.key()))
+                .thenReturn(Optional.of(durableProduct));
+        UserSelectedOfferResolutionService restartedService = new UserSelectedOfferResolutionService(
+                restartedStore,
+                productReferencePersistenceService,
                 rehydrationService,
                 savedProductOfferResolutionService,
                 new SelectedOfferResolutionMetrics(new SimpleMeterRegistry()));
 
-        assertThatThrownBy(() -> expiredService.resolve(new ResolveUserSelectedOfferQuery(userId, offer.key())))
-                .isInstanceOf(SelectedOfferResolutionException.class)
-                .extracting("failure")
-                .isEqualTo(SelectedOfferResolutionException.Failure.UNKNOWN_OR_EXPIRED);
-        assertThat(provider.calls).isZero();
+        ResolvedSelectedOffer resolved =
+                restartedService.resolve(new ResolveUserSelectedOfferQuery(userId, offer.key()));
+
+        assertThat(resolved.offerKey()).isEqualTo(offer.key());
+        assertThat(restartedStore.findOffer(userId, offer.key())).isPresent();
+        assertThat(provider.calls).isEqualTo(1);
     }
 
     @Test
@@ -216,6 +223,7 @@ class UserSelectedOfferResolutionServiceTest {
         String savedOfferKey = savedOffer(savedProductId, null);
         UserSelectedOfferResolutionService noSessionService = new UserSelectedOfferResolutionService(
                 new UserCanonicalProductSessionStore(Duration.ZERO, 1),
+                productReferencePersistenceService,
                 rehydrationService,
                 savedProductOfferResolutionService,
                 new SelectedOfferResolutionMetrics(new SimpleMeterRegistry())

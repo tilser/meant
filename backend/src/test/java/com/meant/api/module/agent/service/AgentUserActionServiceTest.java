@@ -21,6 +21,7 @@ import com.meant.api.module.agent.service.dto.AgentUserActionReservation;
 import com.meant.api.module.agent.service.tool.AgentTool;
 import com.meant.api.module.agent.service.tool.AgentToolRegistry;
 import com.meant.api.module.agent.service.tool.AgentToolSchemaValidator;
+import com.meant.api.module.user.exception.SelectedOfferResolutionException;
 import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -156,6 +157,60 @@ class AgentUserActionServiceTest {
                     eq(actionId),
                     eq(AgentUserActionStatus.UNCERTAIN),
                     any(String.class)
+            );
+        } finally {
+            service.shutdown();
+        }
+    }
+
+    @Test
+    void deterministicCommerceRejectionPreservesItsStatusAndSafeMessage() {
+        UUID actionId = UUID.randomUUID();
+        AgentToolRegistry registry = mock(AgentToolRegistry.class);
+        AgentUserActionPersistenceService persistence = mock(AgentUserActionPersistenceService.class);
+        AgentJsonSupport json = mock(AgentJsonSupport.class);
+        AgentToolSchemaValidator schema = mock(AgentToolSchemaValidator.class);
+        SelectedOfferResolutionException rejection =
+                SelectedOfferResolutionException.unknownOrExpired();
+        AgentTool tool = new AgentTool() {
+            @Override
+            public AgentToolDescriptor descriptor() {
+                return new AgentToolDescriptor(
+                        "prepare_carts",
+                        "Prepare carts",
+                        "{\"type\":\"object\"}",
+                        "v1",
+                        AgentToolRisk.REVERSIBLE_MUTATION
+                );
+            }
+
+            @Override
+            public AgentToolExecutionResult execute(AgentToolExecutionContext context, String argumentsJson) {
+                throw rejection;
+            }
+        };
+        when(registry.required("prepare_carts")).thenReturn(tool);
+        when(json.validateArguments("{}")).thenReturn("{}");
+        RecordAgentUserActionCommand command = new RecordAgentUserActionCommand(
+                UUID.randomUUID(), UUID.randomUUID(), "prepare_carts", "{}", "stable-key", "Prepare cart"
+        );
+        when(persistence.reserve(command, "{}", "v1"))
+                .thenReturn(new AgentUserActionReservation(actionId, true, null));
+        AgentUserActionService service = new AgentUserActionService(
+                registry,
+                persistence,
+                json,
+                schema,
+                mock(AgentMetrics.class),
+                properties()
+        );
+
+        try {
+            assertThatThrownBy(() -> service.perform(command)).isSameAs(rejection);
+            verify(persistence).fail(
+                    actionId,
+                    AgentUserActionStatus.FAILED,
+                    rejection.getSafeMessage()
             );
         } finally {
             service.shutdown();

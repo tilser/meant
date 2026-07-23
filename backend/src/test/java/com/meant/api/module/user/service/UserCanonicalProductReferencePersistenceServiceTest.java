@@ -77,8 +77,12 @@ class UserCanonicalProductReferencePersistenceServiceTest {
 
         when(repository.findByUserIdAndCanonicalProductKeyOrderByOfferRankAscIdAsc(
                 USER_ID, product.key())).thenReturn(saved.get());
+        when(repository.findByUserIdAndOfferKeyOrderByReferenceVerifiedAtDescIdAsc(
+                USER_ID, product.offers().getFirst().key())).thenReturn(saved.get());
 
         CanonicalProduct restored = service.findProduct(USER_ID, product.key()).orElseThrow();
+        CanonicalProduct restoredByOffer =
+                service.findProductByOffer(USER_ID, product.offers().getFirst().key()).orElseThrow();
 
         assertThat(restored.title()).isNull();
         assertThat(restored.description()).isNull();
@@ -90,6 +94,9 @@ class UserCanonicalProductReferencePersistenceServiceTest {
             assertThat(offer.selectedOptions())
                     .containsExactly(new ProductAttribute("variant-option", "Color", "Blue"));
         });
+        assertThat(restoredByOffer.key()).isEqualTo(product.key());
+        assertThat(restoredByOffer.offers()).extracting(Offer::key)
+                .containsExactly(product.offers().getFirst().key());
     }
 
     @Test

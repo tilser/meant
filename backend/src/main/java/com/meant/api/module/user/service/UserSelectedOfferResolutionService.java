@@ -17,6 +17,7 @@ import jakarta.validation.constraints.NotNull;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -28,6 +29,7 @@ import org.springframework.validation.annotation.Validated;
 @RequiredArgsConstructor
 public class UserSelectedOfferResolutionService {
     private final UserCanonicalProductSessionStore sessionStore;
+    private final UserCanonicalProductReferencePersistenceService productReferencePersistenceService;
     private final CatalogProductRehydrationService rehydrationService;
     private final UserSavedProductOfferResolutionService savedProductOfferResolutionService;
     private final SelectedOfferResolutionMetrics metrics;
@@ -86,6 +88,7 @@ public class UserSelectedOfferResolutionService {
             );
         }
         UserCanonicalProductSessionStore.OfferEntry entry = sessionStore.findOffer(userId, offerKey)
+                .or(() -> restoreDurableOffer(userId, offerKey))
                 .orElseThrow(() -> failure(sessionStore.isOfferOwnedByAnotherUser(userId, offerKey)
                         ? SelectedOfferResolutionException.wrongUser()
                         : SelectedOfferResolutionException.unknownOrExpired()));
@@ -94,6 +97,20 @@ public class UserSelectedOfferResolutionService {
                 .map(provenance -> new Reference(provenance, reference(offer, provenance), null))
                 .toList();
         return new Selection(entry, offer, null, references);
+    }
+
+    private Optional<UserCanonicalProductSessionStore.OfferEntry> restoreDurableOffer(
+            UUID userId,
+            String offerKey
+    ) {
+        return productReferencePersistenceService.findProductByOffer(userId, offerKey)
+                .flatMap(product -> product.offers().stream()
+                        .filter(candidate -> offerKey.equals(candidate.key()))
+                        .findFirst()
+                        .map(offer -> {
+                            sessionStore.rememberOffer(userId, product.key(), offer);
+                            return new UserCanonicalProductSessionStore.OfferEntry(product.key(), offer);
+                        }));
     }
 
     private ResolvedSelectedOffer resolveSelection(Selection selection, List<Resolved> resolved) {

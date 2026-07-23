@@ -1,6 +1,7 @@
 package com.meant.api.module.agent.service;
 
 import com.meant.api.common.constant.ApiErrorCode;
+import com.meant.api.common.exception.ApiException;
 import com.meant.api.module.agent.constant.AgentToolRisk;
 import com.meant.api.module.agent.constant.AgentUserActionStatus;
 import com.meant.api.module.agent.exception.AgentException;
@@ -112,8 +113,8 @@ public class AgentUserActionService {
         } catch (ExecutionException exception) {
             Throwable cause = exception.getCause();
             boolean uncertainMutation = outcomeUncertain(tool.descriptor().riskClass(), cause);
-            String safeMessage = cause instanceof AgentException agentException
-                    ? agentException.getSafeMessage()
+            String safeMessage = cause instanceof ApiException apiException
+                    ? apiException.getSafeMessage()
                     : "The action could not complete. Try again.";
             persistenceService.fail(
                     reservation.actionId(),
@@ -127,13 +128,13 @@ public class AgentUserActionService {
                     elapsedMilliseconds(started)
             );
             if (uncertainMutation) {
-                HttpStatus status = cause instanceof AgentException agentException
-                        ? HttpStatus.valueOf(agentException.getStatus().value())
+                HttpStatus status = cause instanceof ApiException apiException
+                        ? HttpStatus.valueOf(apiException.getStatus().value())
                         : HttpStatus.BAD_REQUEST;
                 throw AgentException.actionUncertain(status, safeMessage, cause);
             }
-            if (cause instanceof AgentException agentException) {
-                throw agentException;
+            if (cause instanceof RuntimeException runtimeException && cause instanceof ApiException) {
+                throw runtimeException;
             }
             throw new AgentException(HttpStatus.BAD_REQUEST, ApiErrorCode.BAD_REQUEST, safeMessage, cause);
         }
@@ -143,11 +144,11 @@ public class AgentUserActionService {
         if (risk == AgentToolRisk.READ) {
             return false;
         }
-        if (!(cause instanceof AgentException agentException)) {
+        if (!(cause instanceof ApiException apiException)) {
             return true;
         }
-        return agentException.getStatus().value() == HttpStatus.REQUEST_TIMEOUT.value()
-                || agentException.getStatus().is5xxServerError();
+        return apiException.getStatus().value() == HttpStatus.REQUEST_TIMEOUT.value()
+                || apiException.getStatus().is5xxServerError();
     }
 
     private long elapsedMilliseconds(long started) {

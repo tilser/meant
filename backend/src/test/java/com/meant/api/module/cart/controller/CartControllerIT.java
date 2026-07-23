@@ -1143,7 +1143,7 @@ class CartControllerIT extends PostgresIntegrationTestSupport {
 
     static class FakeSelectedOfferResolutionService extends UserSelectedOfferResolutionService {
         FakeSelectedOfferResolutionService() {
-            super(null, null, null, null);
+            super(null, null, null, null, null);
         }
 
         @Override

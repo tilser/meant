@@ -80,6 +80,26 @@ public class UserCanonicalProductReferencePersistenceService {
     }
 
     @Transactional(readOnly = true)
+    public Optional<CanonicalProduct> findProductByOffer(UUID userId, String offerKey) {
+        if (offerKey == null || offerKey.isBlank()) {
+            return Optional.empty();
+        }
+        List<UserCanonicalProductReference> stored =
+                repository.findByUserIdAndOfferKeyOrderByReferenceVerifiedAtDescIdAsc(
+                        userId, offerKey.trim());
+        if (stored.isEmpty()) {
+            return Optional.empty();
+        }
+        String canonicalProductKey = stored.getFirst().getCanonicalProductKey();
+        return product(
+                canonicalProductKey,
+                stored.stream()
+                        .filter(reference -> canonicalProductKey.equals(reference.getCanonicalProductKey()))
+                        .toList()
+        );
+    }
+
+    @Transactional(readOnly = true)
     public Map<String, CanonicalProduct> findProducts(UUID userId, List<String> canonicalProductKeys) {
         Set<String> requestedKeys = canonicalProductKeys == null
                 ? Set.of()

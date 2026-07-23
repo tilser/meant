@@ -18,5 +18,10 @@ public interface UserCanonicalProductReferenceRepository
             List<String> canonicalProductKeys
     );
 
+    List<UserCanonicalProductReference> findByUserIdAndOfferKeyOrderByReferenceVerifiedAtDescIdAsc(
+            UUID userId,
+            String offerKey
+    );
+
     long deleteByUserIdAndCanonicalProductKey(UUID userId, String canonicalProductKey);
 }
