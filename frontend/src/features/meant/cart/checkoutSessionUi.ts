@@ -1,5 +1,6 @@
 import type { CheckoutCompletionProfile, CheckoutProfile } from '../../../lib/apiClient'
 import type { ActiveCheckoutSession } from './checkoutTypes'
+import { safeExternalCheckoutUrl } from './embeddedCheckoutPolicy'
 import { merchantDeliveryCoverageSummary } from '../utils'
 import { savedCheckoutDetails } from './savedCheckoutDetails'
 
@@ -40,6 +41,16 @@ function checkoutHasExtensionInteraction(profile: CheckoutProfile | null | undef
   )
 }
 
+export function checkoutRequiresMerchantRedirect(
+  profile: CheckoutProfile | null | undefined,
+): boolean {
+  return (
+    profile?.nextAction === 'HANDOFF' &&
+    profile.selectedRail === 'MERCHANT_HANDOFF' &&
+    (profile.ineligibilityReasons?.includes('MERCHANT_REDIRECT_REQUIRED') ?? false)
+  )
+}
+
 function checkoutNeedsMerchantInput(
   profile: CheckoutProfile | null | undefined,
   completion: CheckoutCompletionProfile | null,
@@ -74,21 +85,21 @@ function checkoutNeedsMerchantInput(
   })
 }
 
+export function merchantContinueUrl(session: ActiveCheckoutSession): string | null {
+  return (
+    safeExternalCheckoutUrl(session.completion?.continueUrl) ??
+    safeExternalCheckoutUrl(session.profile.continueUrl)
+  )
+}
+
 export function merchantCheckoutUrl(session: ActiveCheckoutSession): string | null {
-  const candidate =
-    session.completion?.continueUrl ?? session.profile.continueUrl ?? session.profile.checkoutUrl
-  if (!candidate?.trim()) {
-    return null
-  }
-  try {
-    const url = new URL(candidate.trim())
-    return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : null
-  } catch {
-    return null
-  }
+  return merchantContinueUrl(session) ?? safeExternalCheckoutUrl(session.profile.checkoutUrl)
 }
 
 export function checkoutNeedsAddress(session: ActiveCheckoutSession): boolean {
+  if (checkoutRequiresMerchantRedirect(session.profile)) {
+    return false
+  }
   return (
     checkoutHasBuyerDetailMessages(session.profile) ||
     checkoutNeedsMerchantInput(session.profile, session.completion)
@@ -116,6 +127,9 @@ export function checkoutReadyForPayment(session: ActiveCheckoutSession): boolean
 export function checkoutNeedsHandoff(session: ActiveCheckoutSession): boolean {
   const normalizedStatus = session.profile.status?.trim().toLowerCase() ?? ''
   const nextAction = session.profile.nextAction
+  if (checkoutRequiresMerchantRedirect(session.profile)) {
+    return true
+  }
   if (session.completion?.status === 'SCA_REQUIRED') {
     return true
   }
@@ -131,6 +145,13 @@ export function checkoutNeedsHandoff(session: ActiveCheckoutSession): boolean {
   )
 }
 
+export function checkoutUsesEmbeddedCheckout(session: ActiveCheckoutSession): boolean {
+  return (
+    session.profile.nextAction === 'OPEN_EMBEDDED_CHECKOUT' &&
+    !checkoutRequiresMerchantRedirect(session.profile)
+  )
+}
+
 export function checkoutPhase(session: ActiveCheckoutSession): string {
   if (checkoutNeedsAddress(session)) {
     return 'address'
@@ -138,7 +159,7 @@ export function checkoutPhase(session: ActiveCheckoutSession): string {
   if (checkoutNeedsHandoff(session)) {
     return 'merchant-handoff'
   }
-  if (session.profile.selectedRail === 'EMBEDDED_CHECKOUT') {
+  if (checkoutUsesEmbeddedCheckout(session)) {
     return 'embedded-checkout'
   }
   if (session.profile.selectedRail === 'DIRECT_CHECKOUT_COMPLETION') {
@@ -149,7 +170,13 @@ export function checkoutPhase(session: ActiveCheckoutSession): string {
 
 export function checkoutAssistantPrompt(session: ActiveCheckoutSession): string {
   const merchantUrl = merchantCheckoutUrl(session)
+  const continueUrl = merchantContinueUrl(session)
   const coverage = merchantDeliveryCoverageSummary(session.merchant)
+  if (checkoutRequiresMerchantRedirect(session.profile)) {
+    return continueUrl
+      ? 'Checkout inside Meant is not available for this Merchant. Please continue to Merchant checkout below.'
+      : 'Checkout inside Meant is not available for this Merchant, but it has not returned a checkout link yet.'
+  }
   if (checkoutNeedsAddress(session)) {
     if (savedCheckoutDetails(session.profile)) {
       return `I need shipping and contact details before I can continue with ${session.merchant}. You can reuse your saved details below or enter different details.`

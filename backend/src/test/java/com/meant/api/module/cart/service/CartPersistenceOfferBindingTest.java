@@ -26,6 +26,7 @@ import com.meant.api.module.catalog.service.dto.ResultProvenance;
 import com.meant.api.module.catalog.service.dto.ResultSourceReference;
 import com.meant.api.module.catalog.service.dto.ResultSourceType;
 import com.meant.api.module.catalog.service.dto.SellingPlanIdentity;
+import com.meant.api.module.merchant.constant.CommerceExecutionRail;
 import com.meant.api.module.merchant.constant.MerchantIntegrationProvider;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.module.merchant.service.dto.MerchantExecutionPolicy;
@@ -341,6 +342,36 @@ class CartPersistenceOfferBindingTest {
         assertThat(saved.getContinueUrl()).isEqualTo("https://seller.test/checkout");
         assertThat(saved.getRawCheckoutResponse()).isNull();
         assertThat(saved.toString()).doesNotContain("buyer-secret").doesNotContain("secret");
+    }
+
+    @Test
+    void providerRedirectRemainsFallbackAfterRawMessagesAreDiscardedWhenEmbeddedIsUnavailable()
+            throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+        CartPersistenceService service = new CartPersistenceService(savingRepository(), objectMapper);
+        Cart cart = service.saveSnapshot(null, java.util.UUID.randomUUID(), target(), cartResult("line-1"),
+                List.of(), List.of(selectedOffer()), CartSnapshotPurpose.CART_MUTATION);
+        String raw = """
+                {"ucp":{"version":"2026-04-08"},"checkout":{"id":"checkout-1","cart_id":"remote-cart",
+                "status":"requires_escalation","continue_url":"https://seller.test/checkout","messages":[
+                {"type":"error","code":"item_unavailable","severity":"recoverable",
+                 "content":"Item cannot be purchased"},
+                {"type":"error","code":"redirect_to_checkout_required","severity":"requires_buyer_input",
+                 "content":"Cross-border checkout is not supported for this channel."}]}}
+                """;
+        UcpCheckoutResponse response = objectMapper.readValue(raw, UcpCheckoutResponse.class);
+
+        Cart saved = service.saveCheckoutHandoff(
+                cart.getId(), cart.getUserId(), cart.getCheckoutGeneration(), new UcpCheckoutToolResult(
+                        "https://seller.test/api/ucp/mcp", raw, response));
+        var cached = new CheckoutResultMapper(objectMapper, new CheckoutExecutionPlanner())
+                .from(saved, MerchantExecutionPolicy.unavailable());
+
+        assertThat(saved.getCheckoutLifecycleState()).isEqualTo("MERCHANT_HANDOFF_REQUIRED");
+        assertThat(saved.getRawCheckoutResponse()).isNull();
+        assertThat(cached.nextAction()).isEqualTo(CheckoutNextAction.HANDOFF);
+        assertThat(cached.selectedRail()).isEqualTo(CommerceExecutionRail.MERCHANT_HANDOFF);
+        assertThat(cached.continueUrl()).isEqualTo("https://seller.test/checkout");
     }
 
     private CartRepository savingRepository() {

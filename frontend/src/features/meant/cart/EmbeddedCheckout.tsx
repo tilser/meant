@@ -20,6 +20,7 @@ import {
   resolveEmbeddedCheckoutBootstrap,
   safeExternalCheckoutUrl,
 } from './embeddedCheckoutPolicy'
+import { merchantContinueUrl } from './checkoutSessionUi'
 import type { ActiveCheckoutSession } from './checkoutTypes'
 import { EmbeddedCheckoutView, type EmbeddedCheckoutPhase } from './EmbeddedCheckoutView'
 
@@ -56,6 +57,8 @@ export function EmbeddedCheckout({
   const actionButtonRef = useRef<HTMLButtonElement | null>(null)
   const onReconciledRef = useRef(onReconciled)
   const onSessionReleasedRef = useRef(onSessionReleased)
+  const sessionFallbackUrl = merchantContinueUrl(session)
+  const sessionFallbackUrlRef = useRef(sessionFallbackUrl)
 
   useEffect(() => {
     onReconciledRef.current = onReconciled
@@ -64,6 +67,10 @@ export function EmbeddedCheckout({
   useEffect(() => {
     onSessionReleasedRef.current = onSessionReleased
   }, [onSessionReleased])
+
+  useEffect(() => {
+    sessionFallbackUrlRef.current = sessionFallbackUrl
+  }, [sessionFallbackUrl])
 
   const clearStartTimer = useCallback(() => {
     if (startTimerRef.current) clearTimeout(startTimerRef.current)
@@ -196,11 +203,16 @@ export function EmbeddedCheckout({
       })
     } catch {
       if (generation !== generationRef.current) return
-      setPhase('error')
-      setMessage('Meant could not prepare embedded checkout. Refresh the checkout or try again.')
+      setPhase('fallback')
+      setMessage('Meant could not prepare embedded checkout.')
       trackCheckoutLifecycleEvent('embedded_bootstrap', {
         surface,
         result: 'failed',
+        reason: 'BOOTSTRAP_FAILED',
+      })
+      trackCheckoutLifecycleEvent('embedded_checkout_fallback', {
+        surface,
+        result: sessionFallbackUrlRef.current ? 'succeeded' : 'failed',
         reason: 'BOOTSTRAP_FAILED',
       })
       return
@@ -417,7 +429,7 @@ export function EmbeddedCheckout({
     await prepare()
   }
 
-  const fallbackUrl = safeExternalCheckoutUrl(descriptor?.fallbackContinueUrl)
+  const fallbackUrl = safeExternalCheckoutUrl(descriptor?.fallbackContinueUrl) ?? sessionFallbackUrl
 
   return (
     <EmbeddedCheckoutView

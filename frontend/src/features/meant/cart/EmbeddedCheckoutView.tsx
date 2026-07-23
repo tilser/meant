@@ -37,8 +37,16 @@ export function EmbeddedCheckoutView({
   return (
     <div className={`mt-embedded-checkout ${phase}`} aria-live="polite">
       <div className="mt-embedded-checkout-copy">
-        <strong>Checkout inside Meant</strong>
-        <span>{message}</span>
+        <strong>
+          {phase === 'fallback'
+            ? 'Checkout inside Meant is not available for this Merchant'
+            : 'Checkout inside Meant'}
+        </strong>
+        <span>
+          {phase === 'fallback' && fallbackUrl
+            ? 'Please continue to Merchant checkout to finish your order.'
+            : message}
+        </span>
       </div>
       <div className="mt-embedded-checkout-actions">
         {phase === 'ready' || phase === 'cancelled' ? (
@@ -73,8 +81,14 @@ export function EmbeddedCheckoutView({
           </button>
         ) : null}
         {phase === 'fallback' && fallbackUrl ? (
-          <a href={fallbackUrl} target="_blank" rel="noopener noreferrer" onClick={onFallback}>
-            Continue with merchant
+          <a
+            href={fallbackUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Open Merchant checkout (opens in a new tab)"
+            onClick={onFallback}
+          >
+            Open Merchant checkout
           </a>
         ) : null}
         {phase === 'fallback' || phase === 'error' ? (

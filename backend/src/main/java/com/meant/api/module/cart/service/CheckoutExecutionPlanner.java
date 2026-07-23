@@ -24,6 +24,9 @@ public class CheckoutExecutionPlanner {
     ) {
         List<CheckoutResult.Message> checkoutMessages = messages == null ? List.of() : messages;
         MerchantExecutionPolicy executionPolicy = policy == null ? MerchantExecutionPolicy.unavailable() : policy;
+        if (normalize(status).equals("merchant_handoff_required")) {
+            return merchantRedirectPlan(executionPolicy);
+        }
         if (checkoutMessages.stream().anyMatch(message -> message.recoverable()
                 && !isExtensionInteraction(message))) {
             return checkoutSessionPlan(CheckoutNextAction.UPDATE_CHECKOUT, executionPolicy);
@@ -109,6 +112,22 @@ public class CheckoutExecutionPlanner {
                 CommerceExecutionRail.MERCHANT_HANDOFF,
                 reasons
         );
+    }
+
+    private CheckoutExecutionPlan merchantRedirectPlan(MerchantExecutionPolicy policy) {
+        CommerceCapabilityDecision embedded = policy.decision(CommerceOperation.EMBEDDED_CHECKOUT);
+        if (embedded.available()) {
+            return new CheckoutExecutionPlan(
+                    CheckoutNextAction.OPEN_EMBEDDED_CHECKOUT,
+                    embedded.selectedRail(),
+                    List.of()
+            );
+        }
+        Set<CapabilityIneligibilityReason> reasons = new LinkedHashSet<>();
+        reasons.add(CapabilityIneligibilityReason.MERCHANT_REDIRECT_REQUIRED);
+        reasons.addAll(embedded.ineligibilityReasons());
+        reasons.add(CapabilityIneligibilityReason.FALLBACK_SELECTED);
+        return handoffPlan(List.copyOf(reasons));
     }
 
     private CheckoutExecutionPlan terminalPlan(CheckoutNextAction action) {

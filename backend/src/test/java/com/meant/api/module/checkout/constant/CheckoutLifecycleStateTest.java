@@ -38,6 +38,45 @@ class CheckoutLifecycleStateTest {
                 """))).isEqualTo(CheckoutLifecycleState.TERMINAL_FAILURE);
     }
 
+    @Test
+    void classifiesExplicitMerchantRedirectBeforeAnAccompanyingRecoverableError() {
+        assertThat(CheckoutLifecycleState.from(response("""
+                {"id":"checkout-1","status":"requires_escalation",
+                "continue_url":"https://merchant.example/continue","messages":[
+                {"type":"error","code":"item_unavailable","severity":"recoverable",
+                 "content":"Item cannot be purchased"},
+                {"type":"error","code":"redirect_to_checkout_required","severity":"requires_buyer_input",
+                 "content":"Cross-border checkout is not supported for this channel."}]}
+                """))).isEqualTo(CheckoutLifecycleState.MERCHANT_HANDOFF_REQUIRED);
+    }
+
+    @Test
+    void terminalFailureStillTakesPriorityOverMerchantRedirect() {
+        assertThat(CheckoutLifecycleState.from(response("""
+                {"id":"checkout-1","status":"requires_escalation",
+                "continue_url":"https://merchant.example/continue","messages":[
+                {"type":"error","code":"checkout_expired","severity":"unrecoverable",
+                 "content":"Checkout expired"},
+                {"type":"error","code":"redirect_to_checkout_required","severity":"requires_buyer_input",
+                 "content":"Continue with the merchant."}]}
+                """))).isEqualTo(CheckoutLifecycleState.TERMINAL_FAILURE);
+    }
+
+    @Test
+    void doesNotClassifyAProviderRedirectWithoutAUsableHandoffState() {
+        assertThat(CheckoutLifecycleState.from(response("""
+                {"checkout":{"id":"checkout-1","status":"requires_escalation","messages":[
+                {"type":"error","code":"redirect_to_checkout_required","severity":"requires_buyer_input",
+                 "content":"Continue with the merchant."}]}}
+                """))).isEqualTo(CheckoutLifecycleState.REQUIRES_ESCALATION);
+        assertThat(CheckoutLifecycleState.from(response("""
+                {"checkout":{"id":"checkout-1","status":"incomplete",
+                "continue_url":"https://merchant.example/continue","messages":[
+                {"type":"error","code":"redirect_to_checkout_required","severity":"requires_buyer_input",
+                 "content":"Continue with the merchant."}]}}
+                """))).isEqualTo(CheckoutLifecycleState.INCOMPLETE);
+    }
+
     private UcpCheckoutResponse response(String json) {
         try {
             return objectMapper.readValue(json, UcpCheckoutResponse.class);

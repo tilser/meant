@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="056-allow-merchant-handoff-checkout-lifecycle" author="codex">
+        <sql>
+            ALTER TABLE cart DROP CONSTRAINT ck_cart_checkout_lifecycle_value
+        </sql>
+        <sql>
+            ALTER TABLE cart ADD CONSTRAINT ck_cart_checkout_lifecycle_value
+            CHECK (checkout_lifecycle_state IS NULL OR checkout_lifecycle_state IN
+                   ('INCOMPLETE', 'REQUIRES_ESCALATION', 'READY_FOR_COMPLETE', 'PROCESSING', 'COMPLETED',
+                    'CANCELLED', 'MERCHANT_HANDOFF_REQUIRED', 'RECOVERABLE_FAILURE', 'TERMINAL_FAILURE',
+                    'UNKNOWN'))
+        </sql>
+    </changeSet>
+</databaseChangeLog>

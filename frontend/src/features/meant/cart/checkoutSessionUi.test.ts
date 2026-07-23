@@ -6,8 +6,11 @@ import {
   checkoutAssistantPrompt,
   checkoutNeedsAddress,
   checkoutNeedsHandoff,
+  checkoutRequiresMerchantRedirect,
   checkoutReadyForPayment,
   checkoutShouldOfferSavedDetails,
+  checkoutUsesEmbeddedCheckout,
+  merchantCheckoutUrl,
   merchantHandoffReason,
 } from './checkoutSessionUi'
 
@@ -125,10 +128,19 @@ describe('checkout session UCP actions', () => {
       status: 'ready_for_complete',
       nextAction: 'COMPLETE_CHECKOUT',
       selectedRail: 'DIRECT_CHECKOUT_COMPLETION',
-      ineligibilityReasons: [],
-      messages: [],
+      ineligibilityReasons: ['MERCHANT_REDIRECT_REQUIRED'],
+      continueUrl: 'https://merchant.example/continue',
+      messages: [
+        {
+          type: 'error',
+          code: 'redirect_to_checkout_required',
+          severity: 'requires_buyer_input',
+          content: 'Continue in the merchant checkout.',
+        },
+      ],
     })
 
+    expect(checkoutRequiresMerchantRedirect(checkout.profile)).toBe(false)
     expect(checkoutNeedsHandoff(checkout)).toBe(false)
     expect(checkoutAssistantPrompt(checkout)).toContain('ready for direct completion')
   })
@@ -163,7 +175,142 @@ describe('checkout session UCP actions', () => {
     })
 
     expect(checkoutNeedsHandoff(checkout)).toBe(false)
+    expect(checkoutUsesEmbeddedCheckout(checkout)).toBe(true)
     expect(checkoutAssistantPrompt(checkout)).toContain('embedded checkout')
+  })
+
+  test('uses the merchant continue URL when the provider explicitly requires redirect checkout', () => {
+    const checkout = session({
+      status: 'requires_escalation',
+      requiresEscalation: true,
+      nextAction: 'HANDOFF',
+      selectedRail: 'MERCHANT_HANDOFF',
+      ineligibilityReasons: ['MERCHANT_REDIRECT_REQUIRED', 'FALLBACK_SELECTED'],
+      checkoutUrl: 'https://merchant.example/generic-checkout',
+      continueUrl: 'https://merchant.example/continue',
+      messages: [
+        {
+          type: 'error',
+          code: 'item_unavailable',
+          severity: 'recoverable',
+          content: 'Item cannot be purchased',
+        },
+        {
+          type: 'error',
+          code: 'redirect_to_checkout_required',
+          severity: 'requires_buyer_input',
+          content: 'Cross-border checkout is not supported for this channel.',
+        },
+      ],
+    })
+
+    expect(checkoutNeedsAddress(checkout)).toBe(false)
+    expect(checkoutNeedsHandoff(checkout)).toBe(true)
+    expect(checkoutUsesEmbeddedCheckout(checkout)).toBe(false)
+    expect(merchantCheckoutUrl(checkout)).toBe('https://merchant.example/continue')
+    expect(checkoutAssistantPrompt(checkout)).toContain(
+      'Checkout inside Meant is not available for this Merchant',
+    )
+    expect(checkoutAssistantPrompt(checkout)).not.toContain('I have the checkout details I need')
+  })
+
+  test('embedded checkout remains authoritative over stale provider redirect metadata', () => {
+    const checkout = session({
+      status: 'requires_escalation',
+      nextAction: 'OPEN_EMBEDDED_CHECKOUT',
+      selectedRail: 'EMBEDDED_CHECKOUT',
+      ineligibilityReasons: ['MERCHANT_REDIRECT_REQUIRED'],
+      continueUrl: 'https://merchant.example/continue',
+      messages: [
+        {
+          type: 'error',
+          code: 'redirect_to_checkout_required',
+          severity: 'requires_buyer_input',
+          content: 'Continue in the merchant checkout.',
+        },
+      ],
+    })
+
+    expect(checkoutRequiresMerchantRedirect(checkout.profile)).toBe(false)
+    expect(checkoutNeedsHandoff(checkout)).toBe(false)
+    expect(checkoutUsesEmbeddedCheckout(checkout)).toBe(true)
+    expect(checkoutAssistantPrompt(checkout)).toContain('supports embedded checkout')
+    expect(checkoutAssistantPrompt(checkout)).not.toContain('not available for this Merchant')
+  })
+
+  test('keeps a terminal action authoritative over redirect fallback inference', () => {
+    const checkout = session({
+      status: 'requires_escalation',
+      nextAction: 'RESTART',
+      selectedRail: 'NONE',
+      ineligibilityReasons: ['MERCHANT_REDIRECT_REQUIRED'],
+      continueUrl: 'https://merchant.example/continue',
+      messages: [
+        {
+          type: 'error',
+          code: 'checkout_expired',
+          severity: 'unrecoverable',
+          content: 'Checkout expired.',
+        },
+        {
+          type: 'error',
+          code: 'redirect_to_checkout_required',
+          severity: 'requires_buyer_input',
+          content: 'Continue in the merchant checkout.',
+        },
+      ],
+    })
+
+    expect(checkoutRequiresMerchantRedirect(checkout.profile)).toBe(false)
+    expect(checkoutNeedsHandoff(checkout)).toBe(false)
+    expect(checkoutAssistantPrompt(checkout)).not.toContain('not available for this Merchant')
+  })
+
+  test('does not infer merchant redirect without an explicit backend handoff decision', () => {
+    const incomplete = session({
+      status: 'incomplete',
+      nextAction: 'OPEN_EMBEDDED_CHECKOUT',
+      selectedRail: 'EMBEDDED_CHECKOUT',
+      ineligibilityReasons: [],
+      continueUrl: 'https://merchant.example/continue',
+      messages: [
+        {
+          code: 'redirect_to_checkout_required',
+          severity: 'requires_buyer_input',
+          content: 'Continue in the merchant checkout.',
+        },
+      ],
+    })
+    const missingUrl = session({
+      status: 'requires_escalation',
+      nextAction: 'OPEN_EMBEDDED_CHECKOUT',
+      selectedRail: 'EMBEDDED_CHECKOUT',
+      ineligibilityReasons: [],
+      messages: incomplete.profile.messages,
+    })
+
+    for (const checkout of [incomplete, missingUrl]) {
+      expect(checkoutNeedsHandoff(checkout)).toBe(false)
+      expect(checkoutUsesEmbeddedCheckout(checkout)).toBe(true)
+      expect(checkoutAssistantPrompt(checkout)).toContain('supports embedded checkout')
+    }
+  })
+
+  test('rejects insecure or credential-bearing merchant handoff URLs', () => {
+    expect(
+      merchantCheckoutUrl(
+        session({
+          continueUrl: 'http://merchant.example/continue',
+        }),
+      ),
+    ).toBeNull()
+    expect(
+      merchantCheckoutUrl(
+        session({
+          continueUrl: 'https://buyer:secret@merchant.example/continue',
+        }),
+      ),
+    ).toBeNull()
   })
 
   test('explains a scope-driven merchant fallback from typed policy reasons', () => {

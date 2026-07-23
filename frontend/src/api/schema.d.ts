@@ -3078,7 +3078,7 @@ export interface components {
              */
             selectedRail: "PROVIDER_CATALOG" | "PROVIDER_CART" | "PROVIDER_CHECKOUT_SESSION" | "EMBEDDED_CHECKOUT" | "DIRECT_CHECKOUT_COMPLETION" | "MERCHANT_HANDOFF" | "PROVIDER_ORDER_API" | "PROVIDER_ORDER_WEBHOOK" | "NONE";
             /** @description Typed reasons explaining ineligibility or fallback selection. */
-            ineligibilityReasons: ("NOT_ADVERTISED" | "AUTHORIZATION_REQUIRED" | "AUTHENTICATION_DISABLED" | "TIER_NOT_GRANTED" | "MISSING_SCOPES" | "ROLLOUT_DISABLED" | "INTEGRATION_UNHEALTHY" | "OPERATION_UNSUPPORTED" | "FALLBACK_SELECTED" | "NO_FALLBACK")[];
+            ineligibilityReasons: ("NOT_ADVERTISED" | "AUTHORIZATION_REQUIRED" | "AUTHENTICATION_DISABLED" | "TIER_NOT_GRANTED" | "MISSING_SCOPES" | "ROLLOUT_DISABLED" | "INTEGRATION_UNHEALTHY" | "OPERATION_UNSUPPORTED" | "MERCHANT_REDIRECT_REQUIRED" | "FALLBACK_SELECTED" | "NO_FALLBACK")[];
         };
         /** @description Saved buyer contact details that can be reused during checkout. */
         SavedCheckoutBuyerResponse: {
@@ -3159,7 +3159,7 @@ export interface components {
              */
             selectedRail: "PROVIDER_CATALOG" | "PROVIDER_CART" | "PROVIDER_CHECKOUT_SESSION" | "EMBEDDED_CHECKOUT" | "DIRECT_CHECKOUT_COMPLETION" | "MERCHANT_HANDOFF" | "PROVIDER_ORDER_API" | "PROVIDER_ORDER_WEBHOOK" | "NONE";
             /** @description Typed reasons that made a preferred checkout rail ineligible or selected a fallback. */
-            ineligibilityReasons: ("NOT_ADVERTISED" | "AUTHORIZATION_REQUIRED" | "AUTHENTICATION_DISABLED" | "TIER_NOT_GRANTED" | "MISSING_SCOPES" | "ROLLOUT_DISABLED" | "INTEGRATION_UNHEALTHY" | "OPERATION_UNSUPPORTED" | "FALLBACK_SELECTED" | "NO_FALLBACK")[];
+            ineligibilityReasons: ("NOT_ADVERTISED" | "AUTHORIZATION_REQUIRED" | "AUTHENTICATION_DISABLED" | "TIER_NOT_GRANTED" | "MISSING_SCOPES" | "ROLLOUT_DISABLED" | "INTEGRATION_UNHEALTHY" | "OPERATION_UNSUPPORTED" | "MERCHANT_REDIRECT_REQUIRED" | "FALLBACK_SELECTED" | "NO_FALLBACK")[];
             /** @description Independent effective capability decisions for the merchant's commerce operations. */
             capabilities: components["schemas"]["CapabilityDecisionResponse"][];
             /** @description Provider messages for checkout guidance. */

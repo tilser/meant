@@ -4,10 +4,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.meant.api.module.cart.constant.CheckoutNextAction;
 import com.meant.api.module.cart.entity.Cart;
+import com.meant.api.module.merchant.constant.CapabilityAvailability;
+import com.meant.api.module.merchant.constant.CapabilityIntegrationHealth;
+import com.meant.api.module.merchant.constant.CommerceExecutionRail;
+import com.meant.api.module.merchant.constant.CommerceOperation;
+import com.meant.api.module.merchant.service.dto.CapabilityAuthorizationDecision;
+import com.meant.api.module.merchant.service.dto.CommerceCapabilityDecision;
 import com.meant.api.module.merchant.service.dto.MerchantExecutionPolicy;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutResponse;
 import java.time.Instant;
-import java.util.Map;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
@@ -25,6 +31,7 @@ class CheckoutResultMapperLifecycleTest {
         assertAction("PROCESSING", CheckoutNextAction.WAIT);
         assertAction("COMPLETED", CheckoutNextAction.DONE);
         assertAction("CANCELLED", CheckoutNextAction.RESTART);
+        assertAction("MERCHANT_HANDOFF_REQUIRED", CheckoutNextAction.HANDOFF);
         assertAction("UNKNOWN", CheckoutNextAction.UNKNOWN);
     }
 
@@ -45,6 +52,31 @@ class CheckoutResultMapperLifecycleTest {
         assertThat(cached.totalAmountMinor()).isNull();
         assertThat(cached.messages()).isEmpty();
         assertThat(cached.nextAction()).isEqualTo(CheckoutNextAction.UPDATE_CHECKOUT);
+    }
+
+    @Test
+    void cachedProviderRedirectStillUsesAvailableEmbeddedCheckout() {
+        MerchantExecutionPolicy policy = new MerchantExecutionPolicy(List.of(
+                new CommerceCapabilityDecision(
+                        CommerceOperation.EMBEDDED_CHECKOUT,
+                        true,
+                        CapabilityAuthorizationDecision.notRequired(),
+                        true,
+                        CapabilityIntegrationHealth.HEALTHY,
+                        true,
+                        CapabilityAvailability.AVAILABLE,
+                        CommerceExecutionRail.EMBEDDED_CHECKOUT,
+                        List.of(),
+                        UUID.randomUUID(),
+                        null
+                )
+        ));
+
+        var result = mapper.from(cart("MERCHANT_HANDOFF_REQUIRED"), policy);
+
+        assertThat(result.nextAction()).isEqualTo(CheckoutNextAction.OPEN_EMBEDDED_CHECKOUT);
+        assertThat(result.selectedRail()).isEqualTo(CommerceExecutionRail.EMBEDDED_CHECKOUT);
+        assertThat(result.ineligibilityReasons()).isEmpty();
     }
 
     private void assertAction(String lifecycle, CheckoutNextAction action) {

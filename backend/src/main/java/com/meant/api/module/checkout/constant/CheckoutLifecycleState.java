@@ -12,6 +12,7 @@ public enum CheckoutLifecycleState {
     PROCESSING,
     COMPLETED,
     CANCELLED,
+    MERCHANT_HANDOFF_REQUIRED,
     RECOVERABLE_FAILURE,
     TERMINAL_FAILURE,
     UNKNOWN;
@@ -20,6 +21,9 @@ public enum CheckoutLifecycleState {
         UcpCheckoutResponse.Checkout checkout = response == null ? null : response.resolvedCheckout();
         if (hasTerminalFailure(response, checkout)) {
             return TERMINAL_FAILURE;
+        }
+        if (hasMerchantHandoffRequirement(response, checkout)) {
+            return MERCHANT_HANDOFF_REQUIRED;
         }
         if (hasRecoverableFailure(response, checkout)) {
             return RECOVERABLE_FAILURE;
@@ -45,6 +49,21 @@ public enum CheckoutLifecycleState {
                 .anyMatch(error -> error != null && !error.isRecoverable());
     }
 
+    private static boolean hasMerchantHandoffRequirement(
+            UcpCheckoutResponse response, UcpCheckoutResponse.Checkout checkout) {
+        if (checkout == null
+                || !matches(checkout.status(), "requires_escalation")
+                || !hasText(checkout.continueUrl())) {
+            return false;
+        }
+        boolean messageRequiresHandoff = messages(response, checkout)
+                .anyMatch(message -> matches(message.code(), "redirect_to_checkout_required"));
+        boolean errorRequiresHandoff = response != null && response.errors().stream()
+                .anyMatch(error -> error != null
+                        && matches(error.code(), "redirect_to_checkout_required"));
+        return messageRequiresHandoff || errorRequiresHandoff;
+    }
+
     private static boolean hasRecoverableFailure(
             UcpCheckoutResponse response, UcpCheckoutResponse.Checkout checkout) {
         return messages(response, checkout).anyMatch(UcpCheckoutResponse.CheckoutMessage::isRecoverable)
@@ -58,7 +77,15 @@ public enum CheckoutLifecycleState {
             return Stream.empty();
         }
         return Stream.concat(response.messages().stream(),
-                        checkout == null ? Stream.empty() : checkout.messages().stream())
+                checkout == null ? Stream.empty() : checkout.messages().stream())
                 .filter(message -> message != null);
+    }
+
+    private static boolean matches(String value, String expected) {
+        return value != null && value.trim().equalsIgnoreCase(expected);
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 }

@@ -2,8 +2,9 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 
 import type { CheckoutAssistantMessage, CheckoutProfile } from '../../../lib/apiClient'
 import { CloseIcon, SparkMark } from '../shared/ui'
-import { MerchantCheckoutLink } from './MerchantCheckoutLink'
 import { EmbeddedCheckout } from './EmbeddedCheckout'
+import { MerchantCheckoutHandoff } from './MerchantCheckoutHandoff'
+import { MerchantCheckoutLink } from './MerchantCheckoutLink'
 import { SavedCheckoutDetailsPrompt } from './SavedCheckoutDetailsPrompt'
 import { merchantDeliveryCoverageSummary, money } from '../utils'
 import type { ActiveCheckoutSession, CheckoutAssistantHandler } from './checkoutTypes'
@@ -13,7 +14,9 @@ import {
   checkoutNeedsAddress,
   checkoutNeedsHandoff,
   checkoutPhase,
+  checkoutRequiresMerchantRedirect,
   checkoutShouldOfferSavedDetails,
+  checkoutUsesEmbeddedCheckout,
   merchantCheckoutUrl,
   merchantHandoffReason,
 } from './checkoutSessionUi'
@@ -65,10 +68,11 @@ export function CartCheckoutDialog({
   const logRef = useRef<HTMLDivElement | null>(null)
   const merchantUrl = merchantCheckoutUrl(session)
   const handoff = checkoutNeedsHandoff(session)
+  const merchantRedirect = checkoutRequiresMerchantRedirect(session.profile)
   const needsAddress = checkoutNeedsAddress(session)
   const savedDetails = savedCheckoutDetails(session.profile)
   const offerSavedDetails = checkoutShouldOfferSavedDetails(session, savedDetailsDismissed)
-  const embedded = session.profile.nextAction === 'OPEN_EMBEDDED_CHECKOUT'
+  const embedded = checkoutUsesEmbeddedCheckout(session)
 
   const requestClose = useCallback(() => {
     if (embedded && !window.confirm('Close checkout? Your merchant cart will be preserved.')) return
@@ -207,21 +211,25 @@ export function CartCheckoutDialog({
           {embedded ? (
             <EmbeddedCheckout session={session} surface="cart" onReconciled={onRefresh} />
           ) : handoff ? (
-            <div className="mt-checkout-handoff">
-              <div className="mt-checkout-note">
-                <SparkMark size={13} />
-                <span>{merchantHandoffReason(session)}</span>
+            merchantRedirect ? (
+              <MerchantCheckoutHandoff session={session} busy={busy} onRefresh={onRefresh} />
+            ) : (
+              <div className="mt-checkout-handoff">
+                <div className="mt-checkout-note">
+                  <SparkMark size={13} />
+                  <span>{merchantHandoffReason(session)}</span>
+                </div>
+                <div className="mt-checkout-actions">
+                  {merchantUrl ? (
+                    <MerchantCheckoutLink session={session} />
+                  ) : (
+                    <button type="button" onClick={() => void onRefresh()} disabled={busy}>
+                      {busy ? 'Checking...' : 'Get merchant checkout link'}
+                    </button>
+                  )}
+                </div>
               </div>
-              <div className="mt-checkout-actions">
-                {merchantUrl ? (
-                  <MerchantCheckoutLink session={session} />
-                ) : (
-                  <button type="button" onClick={() => void onRefresh()} disabled={busy}>
-                    {busy ? 'Checking...' : 'Get merchant checkout link'}
-                  </button>
-                )}
-              </div>
-            </div>
+            )
           ) : offerSavedDetails && savedDetails ? (
             <SavedCheckoutDetailsPrompt
               details={savedDetails}

@@ -3,16 +3,28 @@ import { merchantCheckoutUrl } from './checkoutSessionUi'
 
 export function MerchantCheckoutLink({
   session,
+  label = 'Continue on merchant site',
+  className,
 }: Readonly<{
   session: ActiveCheckoutSession
+  label?: string
+  className?: string | null
 }>) {
   const merchantUrl = merchantCheckoutUrl(session)
   if (!merchantUrl) {
     return null
   }
+  const resolvedClassName =
+    className === undefined ? 'mt-ct-cobtn mt-ct-cobtn-link' : (className ?? undefined)
   return (
-    <a className="mt-ct-cobtn mt-ct-cobtn-link" href={merchantUrl} target="_blank" rel="noreferrer">
-      Continue on merchant site
+    <a
+      className={resolvedClassName}
+      href={merchantUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={`${label} (opens in a new tab)`}
+    >
+      {label}
     </a>
   )
 }

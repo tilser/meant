@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.meant.api.module.cart.constant.CheckoutNextAction;
 import com.meant.api.module.cart.service.CheckoutExecutionPlanner;
 import com.meant.api.module.merchant.constant.CapabilityAvailability;
+import com.meant.api.module.merchant.constant.CapabilityIneligibilityReason;
 import com.meant.api.module.merchant.constant.CapabilityIntegrationHealth;
 import com.meant.api.module.merchant.constant.CommerceExecutionRail;
 import com.meant.api.module.merchant.constant.CommerceOperation;
@@ -84,6 +85,41 @@ class CheckoutResultTest {
         );
 
         assertThat(result.nextAction()).isEqualTo(CheckoutNextAction.OPEN_EMBEDDED_CHECKOUT);
+    }
+
+    @Test
+    void embeddedCheckoutTakesPriorityOverProviderRedirectHandoff() {
+        var result = new CheckoutExecutionPlanner().resolve(
+                "MERCHANT_HANDOFF_REQUIRED",
+                List.of(
+                        message("item_unavailable", "recoverable"),
+                        message("redirect_to_checkout_required", "requires_buyer_input")
+                ),
+                availablePolicy(CommerceOperation.EMBEDDED_CHECKOUT, CommerceExecutionRail.EMBEDDED_CHECKOUT)
+        );
+
+        assertThat(result.nextAction()).isEqualTo(CheckoutNextAction.OPEN_EMBEDDED_CHECKOUT);
+        assertThat(result.selectedRail()).isEqualTo(CommerceExecutionRail.EMBEDDED_CHECKOUT);
+        assertThat(result.ineligibilityReasons()).isEmpty();
+    }
+
+    @Test
+    void providerRedirectHandsOffOnlyWhenEmbeddedCheckoutIsUnavailable() {
+        var result = new CheckoutExecutionPlanner().resolve(
+                "MERCHANT_HANDOFF_REQUIRED",
+                List.of(
+                        message("item_unavailable", "recoverable"),
+                        message("redirect_to_checkout_required", "requires_buyer_input")
+                ),
+                MerchantExecutionPolicy.unavailable()
+        );
+
+        assertThat(result.nextAction()).isEqualTo(CheckoutNextAction.HANDOFF);
+        assertThat(result.selectedRail()).isEqualTo(CommerceExecutionRail.MERCHANT_HANDOFF);
+        assertThat(result.ineligibilityReasons()).contains(
+                CapabilityIneligibilityReason.MERCHANT_REDIRECT_REQUIRED,
+                CapabilityIneligibilityReason.FALLBACK_SELECTED
+        );
     }
 
     private com.meant.api.module.cart.service.dto.CheckoutExecutionPlan checkout(

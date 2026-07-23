@@ -81,6 +81,12 @@ class CheckoutLifecycleMigrationIT extends PostgresIntegrationTestSupport {
                                         'checkout_synchronized_at')
                     """, String.class, schema)).containsExactlyInAnyOrder(
                     "checkout_protocol_version", "checkout_lifecycle_state", "checkout_synchronized_at");
+            assertThat(jdbcTemplate.update(
+                    "update %s.cart set checkout_lifecycle_state = 'MERCHANT_HANDOFF_REQUIRED' where id = ?"
+                            .formatted(schema), shopify)).isEqualTo(1);
+            assertThat(jdbcTemplate.queryForObject(
+                    "select checkout_lifecycle_state from %s.cart where id = ?".formatted(schema),
+                    String.class, shopify)).isEqualTo("MERCHANT_HANDOFF_REQUIRED");
             assertThatThrownBy(() -> jdbcTemplate.update(
                     "update %s.cart set raw_checkout_response = '{}' where id = ?".formatted(schema), shopify))
                     .isInstanceOf(RuntimeException.class);
@@ -104,6 +110,9 @@ class CheckoutLifecycleMigrationIT extends PostgresIntegrationTestSupport {
             liquibase.setChangeLog("classpath:db/changelog/migration/036-add-checkout-lifecycle-metadata.xml");
             liquibase.setDefaultSchema(schema);
             liquibase.setLiquibaseSchema(schema);
+            liquibase.afterPropertiesSet();
+            liquibase.setChangeLog(
+                    "classpath:db/changelog/migration/056-allow-merchant-handoff-checkout-lifecycle.xml");
             liquibase.afterPropertiesSet();
         }
     }

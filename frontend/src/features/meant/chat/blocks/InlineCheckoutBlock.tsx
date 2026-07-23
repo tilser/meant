@@ -14,10 +14,13 @@ import {
   checkoutNeedsAddress,
   checkoutNeedsHandoff,
   checkoutPhase,
+  checkoutRequiresMerchantRedirect,
   checkoutShouldOfferSavedDetails,
+  checkoutUsesEmbeddedCheckout,
   merchantCheckoutUrl,
   merchantHandoffReason,
 } from '../../cart/checkoutSessionUi'
+import { MerchantCheckoutHandoff } from '../../cart/MerchantCheckoutHandoff'
 import { MerchantCheckoutLink } from '../../cart/MerchantCheckoutLink'
 import { SavedCheckoutDetailsPrompt } from '../../cart/SavedCheckoutDetailsPrompt'
 import { savedCheckoutDetails } from '../../cart/savedCheckoutDetails'
@@ -225,7 +228,8 @@ export function InlineCheckoutBlock({
 
   const renderConversation = (session: ActiveCheckoutSession) => {
     const handoff = checkoutNeedsHandoff(session)
-    const embedded = session.profile.nextAction === 'OPEN_EMBEDDED_CHECKOUT'
+    const embedded = checkoutUsesEmbeddedCheckout(session)
+    const merchantRedirect = checkoutRequiresMerchantRedirect(session.profile)
     const merchantUrl = merchantCheckoutUrl(session)
     const needsAddress = checkoutNeedsAddress(session)
     const savedDetails = savedCheckoutDetails(session.profile)
@@ -256,31 +260,48 @@ export function InlineCheckoutBlock({
             onSessionReleased={(outcome) => releaseCheckout(session.cartId, outcome)}
           />
         ) : handoff ? (
-          <div className="mt-ct-checkout-handoff">
-            <div className="mt-ct-checkout-handoff-copy">
-              <SparkMark size={13} />
-              <span>{merchantHandoffReason(session)}</span>
-            </div>
-            {merchantUrl ? (
-              <MerchantCheckoutLink session={session} />
-            ) : (
+          merchantRedirect ? (
+            <>
+              <MerchantCheckoutHandoff
+                session={session}
+                busy={checkoutBusy}
+                onRefresh={onRefreshCheckout}
+              />
               <button
                 className="mt-ct-cobtn"
                 type="button"
-                disabled={checkoutBusy}
-                onClick={() => void onRefreshCheckout()}
+                onClick={() => releaseCheckout(session.cartId, 'dismissed')}
               >
-                {checkoutBusy ? 'Checking...' : 'Check merchant link'}
+                Back to merchant checkouts
               </button>
-            )}
-            <button
-              className="mt-ct-cobtn"
-              type="button"
-              onClick={() => releaseCheckout(session.cartId, 'dismissed')}
-            >
-              Back to merchant checkouts
-            </button>
-          </div>
+            </>
+          ) : (
+            <div className="mt-ct-checkout-handoff">
+              <div className="mt-ct-checkout-handoff-copy">
+                <SparkMark size={13} />
+                <span>{merchantHandoffReason(session)}</span>
+              </div>
+              {merchantUrl ? (
+                <MerchantCheckoutLink session={session} />
+              ) : (
+                <button
+                  className="mt-ct-cobtn"
+                  type="button"
+                  disabled={checkoutBusy}
+                  onClick={() => void onRefreshCheckout()}
+                >
+                  {checkoutBusy ? 'Checking...' : 'Check merchant link'}
+                </button>
+              )}
+              <button
+                className="mt-ct-cobtn"
+                type="button"
+                onClick={() => releaseCheckout(session.cartId, 'dismissed')}
+              >
+                Back to merchant checkouts
+              </button>
+            </div>
+          )
         ) : offerSavedDetails && savedDetails ? (
           <>
             <SavedCheckoutDetailsPrompt
