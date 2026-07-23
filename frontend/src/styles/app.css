@@ -3274,6 +3274,39 @@ button:disabled {
     transform var(--motion-fast) var(--ease-out);
 }
 
+.mt-prompt {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  animation: mt-prompt-arrive 680ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(90ms + var(--mt-prompt-index, 0) * 115ms);
+}
+
+.mt-prompt::after {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  inset: -50% auto -50% -34%;
+  width: 32%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--accent) 10%, transparent),
+    color-mix(in srgb, var(--surface) 84%, transparent),
+    transparent
+  );
+  opacity: 0;
+  pointer-events: none;
+  transform: skewX(-18deg);
+  animation: mt-prompt-sheen 720ms var(--ease-out) both;
+  animation-delay: calc(360ms + var(--mt-prompt-index, 0) * 115ms);
+}
+
+.mt-prompt-label {
+  position: relative;
+  z-index: 1;
+}
+
 .mt-ask-chip {
   animation: mt-ask-chip-in var(--motion-medium) var(--ease-out) both;
   animation-delay: calc(var(--mt-chip-index, 0) * 42ms);
@@ -9881,6 +9914,53 @@ button:disabled {
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes mt-prompt-arrive {
+  0% {
+    opacity: 0;
+    filter: blur(8px);
+    clip-path: inset(0 48% round 999px);
+    scale: 0.9;
+    translate: 0 11px;
+  }
+
+  52% {
+    opacity: 1;
+    filter: blur(0);
+    clip-path: inset(0 round 999px);
+    scale: 1.025;
+    translate: 0 -1px;
+  }
+
+  100% {
+    opacity: 1;
+    filter: blur(0);
+    clip-path: inset(0 round 999px);
+    scale: 1;
+    translate: 0 0;
+  }
+}
+
+@keyframes mt-prompt-sheen {
+  0%,
+  18% {
+    opacity: 0;
+    translate: 0 0;
+  }
+
+  34% {
+    opacity: 0.8;
+  }
+
+  72% {
+    opacity: 0.42;
+  }
+
+  100% {
+    opacity: 0;
+    translate: 460% 0;
   }
 }
 

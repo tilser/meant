@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { type CSSProperties, useEffect, useRef, useState } from 'react'
 
 import type { MerchantProfile } from '../../../lib/apiClient'
 import type { AskReplyDraft } from '../ask/types'
@@ -162,15 +162,16 @@ export function DiscoverHomeHero({
         />
       </div>
       <div className="mt-prompts">
-        {prompts.map((prompt) => (
+        {prompts.map((prompt, index) => (
           <button
             key={prompt}
             type="button"
             className="mt-prompt"
+            style={{ '--mt-prompt-index': index } as CSSProperties}
             onClick={() => submit(prompt)}
             disabled={loading}
           >
-            {prompt}
+            <span className="mt-prompt-label">{prompt}</span>
           </button>
         ))}
       </div>

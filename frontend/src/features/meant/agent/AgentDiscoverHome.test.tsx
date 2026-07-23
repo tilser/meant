@@ -19,7 +19,7 @@ const props = {
   expectedUserId: 'user-1',
   profile: PROFILE,
   greeting: 'Good morning',
-  prompts: ['Find running shoes'],
+  prompts: ['Find running shoes', 'Find a quiet coffee machine'],
   merchants: [merchant],
   merchantsLoading: false,
   merchantsError: null,
@@ -69,6 +69,9 @@ describe('agent Discovery home', () => {
     expect(markup).toContain('Everything here is <em>Meant</em> for you.')
     expect(markup).toContain('Search with Meant - &quot;a good cotton T-shirt under $50&quot;')
     expect(markup).toContain('Find running shoes')
+    expect(markup).toContain('Find a quiet coffee machine')
+    expect(markup).toContain('--mt-prompt-index:0')
+    expect(markup).toContain('--mt-prompt-index:1')
     expect(markup).toContain('aria-haspopup="listbox"')
     expect(markup).not.toContain('verified Shop IDs')
     expect(markup).toContain('Workbench')
