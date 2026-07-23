@@ -102,7 +102,7 @@ import { mergeAnchoredLocalMessages, type AnchoredLocalMessage } from './localMe
 import { AgentWorkingIndicator } from './AgentWorkingIndicator'
 import { agentWorkingStage } from './agentWorkingState'
 import { threadFromAgentConversationSummary } from './conversationHistory'
-import { addChatProductToCart, exactProductOfferKey } from './chatCartAddition'
+import { addChatProductToCart, cartInChatMessage, exactProductOfferKey } from './chatCartAddition'
 
 const NEWSLETTER_SUBSCRIBED_MESSAGE =
   'You are subscribed to the newsletter. If you want to unsubscribe, you can do so in your account settings.'
@@ -373,6 +373,7 @@ export function AgentDiscoverView({
   } | null>(null)
   const visibleProductContextsRef = useRef<VisibleProductContextRegistry>(new Map())
   const visibleMessageIdsByConversationRef = useRef(new Map<string, readonly string[]>())
+  const liveCartMessageIdRef = useRef<string | null>(null)
   const actionQueue = useMemo(() => agentActionQueueFor(expectedUserId), [expectedUserId])
   const autoDismissTimeoutsRef = useRef(new Map<string, number>())
   const visibleCartRef = useRef(cart)
@@ -904,6 +905,7 @@ export function AgentDiscoverView({
       : allMessages
   }, [activeConversationId, allMessages, dismissedMessageIds])
   const liveCartMessageId = useMemo(() => latestCartBlockMessageId(messages), [messages])
+  liveCartMessageIdRef.current = liveCartMessageId
 
   const removeMessage = useCallback(
     (messageId: string) => {
@@ -1338,7 +1340,13 @@ export function AgentDiscoverView({
   }
   const addToCart = (product: Product) => {
     setError(null)
-    void addChatProductToCart(product, onAddSelectedOfferToCart).then((result) => {
+    void addChatProductToCart(product, onAddSelectedOfferToCart, () => {
+      const conversationId = activeConversationIdRef.current
+      if (!conversationId || liveCartMessageIdRef.current) return
+      const messageId = uniqueRequestId('cart')
+      liveCartMessageIdRef.current = messageId
+      appendLocalMessage(cartInChatMessage(messageId), conversationId)
+    }).then((result) => {
       if (result !== 'added') {
         setError(
           result === 'missing-offer'

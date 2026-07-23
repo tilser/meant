@@ -150,6 +150,53 @@ class MerchantCartPluginDispatchServiceTest {
     }
 
     @Test
+    void rejectsOutOfStockCreateUsingShopifyWarningContent() throws Exception {
+        RestClient.Builder restClientBuilder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
+        MerchantCartPluginDispatchService service = new MerchantCartPluginDispatchService(
+                merchantMcpToolClient(restClientBuilder.build()),
+                registry(),
+                objectMapper,
+                List.of(),
+                new CartBindingMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry())
+        );
+        UcpSession session = UcpSession.start();
+        String merchantMessage = "The product 'Madelyn Shorts - Black / XS/S' is already sold out.";
+
+        server.expect(requestTo("https://merchant.example/api/mcp"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(content().string(containsString("\"name\":\"create_cart\"")))
+                .andRespond(withSuccess(
+                        mcpResponse(outOfStockCartResponse("gid://shopify/Cart/out-of-stock", merchantMessage)),
+                        MediaType.APPLICATION_JSON
+                ));
+
+        assertThatThrownBy(() -> service.createCart(
+                provider(),
+                new CreateCartRequest(
+                        List.of(new CartAddItem("gid://shopify/ProductVariant/sold-out", 1)),
+                        null,
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        null
+                ),
+                session
+        ))
+                .isInstanceOf(CartException.class)
+                .hasMessage(merchantMessage)
+                .satisfies(exception -> {
+                    CartException cartException = (CartException) exception;
+                    assertThat(cartException.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+                    assertThat(cartException.getSafeMessage()).isEqualTo(merchantMessage);
+                });
+        assertThat(session.cartId()).isNull();
+        server.verify();
+    }
+
+    @Test
     void boundGenericCreateFailureUsesOneExactEndpointCallAndNoLegacyFallback() {
         MerchantMcpToolClient client = mock(MerchantMcpToolClient.class);
         when(client.callToolExactEndpoint(any(), any(), any(), any()))
@@ -336,5 +383,22 @@ class MerchantCartPluginDispatchServiceTest {
                   "errors": []
                 }
                 """.formatted(cartId);
+    }
+
+    private String outOfStockCartResponse(String cartId, String message) throws Exception {
+        return """
+                {
+                  "id": "%s",
+                  "line_items": [],
+                  "messages": [
+                    {
+                      "type": "warning",
+                      "content_type": "plain",
+                      "code": "merchandise_out_of_stock",
+                      "content": %s
+                    }
+                  ]
+                }
+                """.formatted(cartId, objectMapper.writeValueAsString(message));
     }
 }

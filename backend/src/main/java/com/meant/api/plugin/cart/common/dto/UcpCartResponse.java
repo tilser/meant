@@ -200,6 +200,7 @@ public record UcpCartResponse(
             String code,
             String severity,
             String type,
+            @JsonAlias("content")
             String message,
             String target
     ) {
@@ -212,6 +213,10 @@ public record UcpCartResponse(
 
         public boolean isNotFound() {
             return matches(code, "not_found") || matches(code, "cart_not_found");
+        }
+
+        public boolean rejectsAddedItem() {
+            return matches(code, "merchandise_out_of_stock");
         }
 
         private boolean matches(String value, String expected) {

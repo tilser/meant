@@ -100,7 +100,8 @@ public class MerchantCartPluginDispatchService {
             throw providerFailure("Cart provider create failed", exception);
         }
         UcpCartResponse response = parseCartResponse(capability, result, "create cart");
-        rejectCartProblems(null, request.discountCodes(), request.giftCardCodes(), response);
+        rejectCartProblems(
+                null, request.addItems(), request.discountCodes(), request.giftCardCodes(), response);
         updateSession(session, result, response);
         return cartResult(result, response);
     }
@@ -149,7 +150,7 @@ public class MerchantCartPluginDispatchService {
             throw providerFailure("Cart provider get failed", exception);
         }
         UcpCartResponse response = parseCartResponse(capability, result, "get cart");
-        rejectCartProblems(request.cartId(), List.of(), List.of(), response);
+        rejectCartProblems(request.cartId(), List.of(), List.of(), List.of(), response);
         updateSession(session, result, response);
         return cartResult(result, response);
     }
@@ -195,7 +196,8 @@ public class MerchantCartPluginDispatchService {
             throw providerFailure("Cart provider update failed", exception);
         }
         UcpCartResponse response = parseCartResponse(capability, result, "update cart");
-        rejectCartProblems(request.cartId(), request.discountCodes(), request.giftCardCodes(), response);
+        rejectCartProblems(
+                request.cartId(), request.addItems(), request.discountCodes(), request.giftCardCodes(), response);
         updateSession(session, result, response);
         return cartResult(result, response);
     }
@@ -555,6 +557,7 @@ public class MerchantCartPluginDispatchService {
 
     private void rejectCartProblems(
             String cartId,
+            Collection<CartAddItem> addedItems,
             Collection<String> discountCodes,
             Collection<String> giftCardCodes,
             UcpCartResponse response
@@ -577,6 +580,10 @@ public class MerchantCartPluginDispatchService {
 
         if (response.cart() == null) {
             throw CartException.upstream("UCP cart response did not contain cart");
+        }
+        UcpCartResponse.CartMessage rejectedAddition = firstRejectedAddition(addedItems, response);
+        if (rejectedAddition != null) {
+            throw CartException.rejected(safeCartErrorMessage(rejectedAddition.message()));
         }
         rejectInapplicableCodes("Discount code", discountCodes, response.cart().discountCodes(), false);
         rejectInapplicableCodes("Gift card code", giftCardCodes, response.cart().giftCardCodes(), true);
@@ -623,6 +630,23 @@ public class MerchantCartPluginDispatchService {
                                 : safeNonNullList(response.cart().messages()).stream()
                 )
                 .filter(UcpCartResponse.CartMessage::isError)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private UcpCartResponse.CartMessage firstRejectedAddition(
+            Collection<CartAddItem> addedItems,
+            UcpCartResponse response
+    ) {
+        if (addedItems == null || addedItems.isEmpty()) {
+            return null;
+        }
+        return Stream.concat(
+                        safeNonNullList(response.messages()).stream(),
+                        safeNonNullList(response.cart().messages()).stream()
+                )
+                .filter(Objects::nonNull)
+                .filter(UcpCartResponse.CartMessage::rejectsAddedItem)
                 .findFirst()
                 .orElse(null);
     }
