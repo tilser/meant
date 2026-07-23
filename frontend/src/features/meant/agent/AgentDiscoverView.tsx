@@ -101,7 +101,7 @@ import {
   commerceActionQueueFor,
 } from './actionQueue'
 import { PRODUCT_PIN_NOTICE_LIFETIME_MS, isProductPinNotice } from './autoDismissNotices'
-import { prepareCheckoutFromCurrentCart } from './checkoutPreparation'
+import { checkoutInChatMessage } from './checkoutPreparation'
 import { withProjectedAgentMessages } from './messageProjection'
 import { mergeAnchoredLocalMessages, type AnchoredLocalMessage } from './localMessageOrdering'
 import { AgentWorkingIndicator } from './AgentWorkingIndicator'
@@ -1491,22 +1491,16 @@ export function AgentDiscoverView({
       undefined,
       sourceItem,
     )
-  const prepareCheckout = async () => {
-    const targetConversationId = activeConversationId
+  const openCheckoutInChat = () => {
+    const targetConversationId = activeConversationIdRef.current
     if (!targetConversationId) return
-    await commerceActionQueue.enqueueUnique(
-      `${expectedUserId}:${targetConversationId}:prepare-checkout-workflow`,
-      async () => {
-        const outcome = await prepareCheckoutFromCurrentCart(
-          onReadAgentCart(),
-          (toolName, argumentsValue, summary) =>
-            executeAction(targetConversationId, toolName, argumentsValue, summary),
-        )
-        if (outcome === 'missing-cart') {
-          setError('Your merchant cart must be ready before checkout can start.')
-        }
-      },
-    )
+    const message = checkoutInChatMessage(uniqueRequestId('checkout'), onReadAgentCart())
+    if (!message) {
+      setError('Your merchant cart must be ready before checkout can start.')
+      return
+    }
+    setError(null)
+    appendLocalMessage(message, targetConversationId)
   }
 
   const returnHome = useCallback(() => {
@@ -1866,7 +1860,7 @@ export function AgentDiscoverView({
               onCheckoutAssistant={onCheckoutAssistant}
               onRefreshCheckout={onRefreshCheckout}
               onReleaseCheckout={onReleaseCheckout}
-              onCheckoutHere={() => void prepareCheckout()}
+              onCheckoutHere={openCheckoutInChat}
               newsletter={newsletter}
               newsletterPending={newsletterPending}
               onNewsletterSignup={() => void subscribeToNewsletter()}

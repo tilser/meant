@@ -1,45 +1,49 @@
 import { describe, expect, test } from 'bun:test'
 
 import type { CartItem } from '../types'
-import { prepareCheckoutFromCurrentCart } from './checkoutPreparation'
+import { checkoutInChatMessage } from './checkoutPreparation'
 
 function cartLine(id: string, cartId?: string | null): CartItem {
   return { id, merchant: 'Test merchant', qty: 1, cartId }
 }
 
-describe('prepareCheckoutFromCurrentCart', () => {
-  test('submits checkout directly without persisting an active-cart refresh', async () => {
-    const actions: Array<{
-      toolName: string
-      argumentsValue: unknown
-      summary: string
-    }> = []
-
-    const outcome = await prepareCheckoutFromCurrentCart(
-      [cartLine('product-1', ' cart-1 '), cartLine('product-2', 'cart-1')],
-      async (toolName, argumentsValue, summary) => {
-        actions.push({ toolName, argumentsValue, summary })
-      },
-    )
-
-    expect(outcome).toBe('submitted')
-    expect(actions).toEqual([
-      {
-        toolName: 'prepare_checkout',
-        argumentsValue: { cartIds: ['cart-1'] },
-        summary: 'Prepared checkout',
-      },
-    ])
+describe('checkoutInChatMessage', () => {
+  test('opens a local checkout surface for carts created through the cart API', () => {
+    expect(
+      checkoutInChatMessage(
+        'checkout-1',
+        [cartLine('product-1', ' cart-1 '), cartLine('product-2', 'cart-1')],
+      ),
+    ).toEqual({
+      id: 'checkout-1',
+      role: 'ai',
+      blocks: [
+        {
+          type: 'text',
+          text: 'I grouped checkout by merchant and kept it inside the chat.',
+        },
+        { type: 'checkout', merchantCount: 1 },
+      ],
+    })
   })
 
-  test('does not execute an action when the live cart has no server cart ID', async () => {
-    let executionCount = 0
-
-    const outcome = await prepareCheckoutFromCurrentCart([cartLine('local-product')], async () => {
-      executionCount += 1
+  test('counts one checkout group per server cart', () => {
+    expect(
+      checkoutInChatMessage('checkout-2', [
+        cartLine('product-1', 'cart-1'),
+        cartLine('product-2', 'cart-2'),
+      ]),
+    ).toMatchObject({
+      blocks: [{ type: 'text' }, { type: 'checkout', merchantCount: 2 }],
     })
+  })
 
-    expect(outcome).toBe('missing-cart')
-    expect(executionCount).toBe(0)
+  test('does not open checkout when the live cart has no server cart ID', () => {
+    expect(
+      checkoutInChatMessage(
+        'checkout-missing',
+        [cartLine('local-product'), cartLine('syncing-product', '  ')],
+      ),
+    ).toBeNull()
   })
 })
