@@ -1,5 +1,6 @@
 package com.meant.api.module.agent.service.tool;
 
+import com.meant.api.module.agent.constant.AgentMutationAdmission;
 import com.meant.api.module.agent.constant.AgentRunEventType;
 import com.meant.api.module.agent.constant.AgentToolInvocationStatus;
 import com.meant.api.module.agent.constant.AgentToolRisk;
@@ -251,9 +252,13 @@ public class AgentToolInvocationService {
                         false
                 );
             }
-            if (invocation.getStatus() == AgentToolInvocationStatus.UNCERTAIN
-                    || (invocation.getStatus() == AgentToolInvocationStatus.FAILED
-                    && invocation.getRiskClass() == AgentToolRisk.READ)) {
+            boolean retryableFailure = invocation.getStatus() == AgentToolInvocationStatus.FAILED
+                    && (invocation.getRiskClass() == AgentToolRisk.READ
+                            || AgentMutationAdmission.FAILURE_CLASSIFICATION.equals(
+                                    invocation.getFailureClassification()));
+            if (invocation.getStatus() == AgentToolInvocationStatus.UNCERTAIN || retryableFailure) {
+                boolean reconciliationRetry = invocation.getStatus() == AgentToolInvocationStatus.UNCERTAIN
+                        && invocation.getRiskClass() != AgentToolRisk.READ;
                 invocation.retry();
                 run.recordToolInvocation();
                 appendProposed(runId, executionOwner, call, descriptor);
@@ -262,7 +267,7 @@ public class AgentToolInvocationService {
                         true,
                         null,
                         java.util.List.of(),
-                        invocation.getRiskClass() != AgentToolRisk.READ
+                        reconciliationRetry
                 );
             }
             throw AgentException.conflict("An equivalent tool mutation is already in progress or cannot be retried.");

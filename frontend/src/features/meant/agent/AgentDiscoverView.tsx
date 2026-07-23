@@ -23,6 +23,7 @@ import {
   type AgentRunSnapshotProfile,
   type MerchantProfile,
 } from '../../../lib/apiClient'
+import { ApiError } from '../../../lib/apiError'
 import { AskComposer } from '../ask/AskComposer'
 import type {
   ActiveCheckoutSession,
@@ -94,7 +95,11 @@ import {
 } from './eventReducer'
 import { isExpiredAgentEventCursor, streamAgentRunEvents } from './eventStream'
 import { AgentActionRequestIdentityStore } from './requestIdentity'
-import { agentActionQueueFor } from './actionQueue'
+import {
+  agentActionQueueFor,
+  agentTurnSubmissionQueueFor,
+  commerceActionQueueFor,
+} from './actionQueue'
 import { PRODUCT_PIN_NOTICE_LIFETIME_MS, isProductPinNotice } from './autoDismissNotices'
 import { prepareCheckoutFromCurrentCart } from './checkoutPreparation'
 import { withProjectedAgentMessages } from './messageProjection'
@@ -103,6 +108,8 @@ import { AgentWorkingIndicator } from './AgentWorkingIndicator'
 import { agentWorkingStage } from './agentWorkingState'
 import { threadFromAgentConversationSummary } from './conversationHistory'
 import { addChatProductToCart, cartInChatMessage, exactProductOfferKey } from './chatCartAddition'
+import { agentRunCandidateIds, preferredAgentRunSnapshot } from './runSelection'
+import { refreshAgentViewAfterSettlement } from './settlementRefresh'
 
 const NEWSLETTER_SUBSCRIBED_MESSAGE =
   'You are subscribed to the newsletter. If you want to unsubscribe, you can do so in your account settings.'
@@ -235,6 +242,7 @@ export interface AgentDiscoverViewProps {
   productDetailChatRequest: ProductDetailChatRequest | null
   discoverFindRequest: DiscoverFindRequest | null
   homeRequestId: number
+  agentRunSettlementRevision: number
   newsletter: boolean
   onOpen: (product: Product, products?: readonly Product[], researchQuery?: string | null) => void
   onToggleSave: (product: Product) => void
@@ -295,6 +303,7 @@ export function AgentDiscoverView({
   productDetailChatRequest,
   discoverFindRequest,
   homeRequestId,
+  agentRunSettlementRevision,
   newsletter,
   onOpen,
   onToggleSave,
@@ -337,7 +346,7 @@ export function AgentDiscoverView({
     createAgentEventReducerState(),
   )
   const [loading, setLoading] = useState(true)
-  const [submitting, setSubmitting] = useState(false)
+  const [pendingSubmissions, setPendingSubmissions] = useState(0)
   const [actionPending, setActionPending] = useState<ReadonlySet<string>>(new Set())
   const [optimisticCart, setOptimisticCart] = useState<readonly CartItem[] | null>(null)
   const [autoRemovingMessageKeys, setAutoRemovingMessageKeys] = useState<ReadonlySet<string>>(
@@ -375,43 +384,23 @@ export function AgentDiscoverView({
   const visibleMessageIdsByConversationRef = useRef(new Map<string, readonly string[]>())
   const liveCartMessageIdRef = useRef<string | null>(null)
   const actionQueue = useMemo(() => agentActionQueueFor(expectedUserId), [expectedUserId])
+  const turnSubmissionQueue = useMemo(
+    () => agentTurnSubmissionQueueFor(expectedUserId, activeConversationId ?? 'draft'),
+    [activeConversationId, expectedUserId],
+  )
+  const commerceActionQueue = useMemo(
+    () => commerceActionQueueFor(expectedUserId),
+    [expectedUserId],
+  )
   const autoDismissTimeoutsRef = useRef(new Map<string, number>())
   const visibleCartRef = useRef(cart)
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const handledHomeRequestRef = useRef(homeRequestId)
+  const handledAgentRunSettlementRevisionRef = useRef(agentRunSettlementRevision)
   const handledFindRequestRef = useRef<string | null>(null)
   const handledProductRequestRef = useRef<string | null>(null)
   eventStateRef.current = eventState
   activeConversationIdRef.current = activeConversationId
-
-  const waitForAgentRunSettlement = useCallback(
-    async (runId: string) => {
-      const deadline = Date.now() + 60 * 60 * 1000
-      let retryDelay = 500
-      while (Date.now() < deadline) {
-        try {
-          const run = await getAgentRun(runId, { expectedUserId })
-          if (isTerminalRun(run)) return
-          retryDelay = 500
-        } catch {
-          retryDelay = Math.min(4000, retryDelay * 2)
-        }
-        await new Promise((resolve) => window.setTimeout(resolve, retryDelay))
-      }
-    },
-    [expectedUserId],
-  )
-
-  const holdQueueForAgentRun = useCallback(
-    (runId: string) => {
-      void actionQueue
-        .enqueueUnique(`${expectedUserId}:agent-run:${runId}`, () =>
-          waitForAgentRunSettlement(runId),
-        )
-        .catch(() => undefined)
-    },
-    [actionQueue, expectedUserId, waitForAgentRunSettlement],
-  )
 
   useEffect(() => {
     visibleCartRef.current = cart
@@ -531,67 +520,121 @@ export function AgentDiscoverView({
   )
 
   const discoverLatestRun = useCallback(
-    async (snapshot: AgentConversationDetailProfile) => {
-      if (committedConversationSnapshotRef.current.get(snapshot.conversationId) !== snapshot) {
+    async (initialSnapshot: AgentConversationDetailProfile) => {
+      if (
+        committedConversationSnapshotRef.current.get(initialSnapshot.conversationId) !==
+        initialSnapshot
+      ) {
         return
       }
-      const runIds = [
-        ...new Set(
-          [...snapshot.messages]
-            .reverse()
-            .flatMap((message) => (message.runId ? [message.runId] : [])),
-        ),
-      ]
-      for (const runId of runIds.slice(0, 3)) {
+      const recoverRun = async (runId: string): Promise<AgentRunSnapshotProfile | null> => {
         try {
-          const run = await getAgentRun(runId, { expectedUserId })
-          if (
-            activeConversationIdRef.current !== snapshot.conversationId ||
-            committedConversationSnapshotRef.current.get(snapshot.conversationId) !== snapshot
-          ) {
-            return
+          return await getAgentRun(runId, { expectedUserId })
+        } catch (caught) {
+          if (!(caught instanceof ApiError) || caught.status !== 404) {
+            throw caught
           }
-          setRunSnapshot(run)
-          setEventState((current) => {
-            const next = restoreAgentRunSnapshot(current, run)
-            eventStateRef.current = next
-            return next
-          })
-          if (!isTerminalRun(run)) {
-            holdQueueForAgentRun(run.runId)
-            onAgentRunSubmitted?.(run.runId, snapshot.conversationId, undefined)
-            updateActiveRunId(run.runId)
-          }
-          return
-        } catch {
           // An old/pruned run does not prevent the durable conversation from rendering.
+          return null
         }
       }
+      const showRun = (
+        run: AgentRunSnapshotProfile | null,
+        snapshot: AgentConversationDetailProfile,
+      ) => {
+        setRunSnapshot(run)
+        if (!run) {
+          updateActiveRunId(null)
+          return
+        }
+        setEventState((current) => {
+          const next = restoreAgentRunSnapshot(current, run)
+          eventStateRef.current = next
+          return next
+        })
+        if (isTerminalRun(run)) {
+          updateActiveRunId(null)
+          return
+        }
+        onAgentRunSubmitted?.(run.runId, snapshot.conversationId, undefined)
+        updateActiveRunId(run.runId)
+      }
+
+      let snapshot = initialSnapshot
+      const observedCurrentRunIds = new Set<string>()
+      while (snapshot.currentRunId && !observedCurrentRunIds.has(snapshot.currentRunId)) {
+        const advertisedRunId = snapshot.currentRunId
+        observedCurrentRunIds.add(advertisedRunId)
+        const currentRun = await recoverRun(advertisedRunId)
+        if (
+          activeConversationIdRef.current !== snapshot.conversationId ||
+          committedConversationSnapshotRef.current.get(snapshot.conversationId) !== snapshot
+        ) {
+          return
+        }
+        if (currentRun && !isTerminalRun(currentRun)) {
+          showRun(currentRun, snapshot)
+          return
+        }
+
+        // The advertised FIFO head may finish between the conversation and run requests.
+        // Refresh until the server either exposes the next head or confirms that the queue drained.
+        const refreshed = await refreshConversation(snapshot.conversationId)
+        if (
+          activeConversationIdRef.current !== refreshed.conversationId ||
+          committedConversationSnapshotRef.current.get(refreshed.conversationId) !== refreshed
+        ) {
+          return
+        }
+        snapshot = refreshed
+      }
+
+      const runIds = agentRunCandidateIds(
+        snapshot.currentRunId,
+        snapshot.messages
+          .filter((message) => message.role === 'USER')
+          .map((message) => message.runId),
+      ).slice(0, 3)
+      const runs = (await Promise.all(runIds.map(recoverRun))).filter(
+        (run): run is AgentRunSnapshotProfile => run !== null,
+      )
       if (
         activeConversationIdRef.current !== snapshot.conversationId ||
         committedConversationSnapshotRef.current.get(snapshot.conversationId) !== snapshot
       ) {
         return
       }
-      setRunSnapshot(null)
-      updateActiveRunId(null)
+      const run = preferredAgentRunSnapshot(runs)
+      showRun(run, snapshot)
     },
-    [expectedUserId, holdQueueForAgentRun, onAgentRunSubmitted, updateActiveRunId],
+    [expectedUserId, onAgentRunSubmitted, refreshConversation, updateActiveRunId],
   )
 
-  useEffect(
-    () =>
-      actionQueue.subscribeToSettled(() => {
-        void refreshLists().catch(() => undefined)
-        const conversationId = activeConversationIdRef.current
-        if (conversationId) {
-          void refreshConversation(conversationId)
-            .then(discoverLatestRun)
-            .catch(() => undefined)
-        }
-      }),
-    [actionQueue, discoverLatestRun, refreshConversation, refreshLists],
-  )
+  const refreshAfterSettlement = useCallback(() => {
+    void refreshAgentViewAfterSettlement({
+      activeConversationId: activeConversationIdRef.current,
+      refreshLists,
+      refreshConversation,
+      discoverLatestRun,
+    })
+  }, [discoverLatestRun, refreshConversation, refreshLists])
+
+  useEffect(() => {
+    const unsubscribeAgent = actionQueue.subscribeToSettled(refreshAfterSettlement)
+    const unsubscribeTurn = turnSubmissionQueue.subscribeToSettled(refreshAfterSettlement)
+    const unsubscribeCommerce = commerceActionQueue.subscribeToSettled(refreshAfterSettlement)
+    return () => {
+      unsubscribeAgent()
+      unsubscribeTurn()
+      unsubscribeCommerce()
+    }
+  }, [actionQueue, commerceActionQueue, refreshAfterSettlement, turnSubmissionQueue])
+
+  useEffect(() => {
+    if (handledAgentRunSettlementRevisionRef.current === agentRunSettlementRevision) return
+    handledAgentRunSettlementRevisionRef.current = agentRunSettlementRevision
+    refreshAfterSettlement()
+  }, [agentRunSettlementRevision, refreshAfterSettlement])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -675,7 +718,6 @@ export function AgentDiscoverView({
           return next
         })
         if (isTerminalRun(run)) {
-          updateActiveRunId((current) => (current === runId ? null : current))
           await discoverLatestRun(nextConversation)
         }
       } finally {
@@ -688,7 +730,6 @@ export function AgentDiscoverView({
       commitConversationSnapshot,
       discoverLatestRun,
       expectedUserId,
-      updateActiveRunId,
     ],
   )
 
@@ -737,7 +778,6 @@ export function AgentDiscoverView({
             ) {
               return
             }
-            updateActiveRunId((current) => (current === activeRunId ? null : current))
             await discoverLatestRun(snapshot)
             void refreshLists()
             return
@@ -764,7 +804,6 @@ export function AgentDiscoverView({
     recoverSnapshots,
     refreshConversation,
     refreshLists,
-    updateActiveRunId,
   ])
 
   const streamArtifacts = useMemo(() => {
@@ -1071,7 +1110,9 @@ export function AgentDiscoverView({
   const currentStatus =
     eventState.runs[activeRunId ?? '']?.status ??
     (runSnapshot?.runId === activeRunId ? runSnapshot.status : undefined)
+  const submitting = pendingSubmissions > 0
   const isRunning = Boolean(activeRunId && !isTerminalAgentRunStatus(currentStatus ?? 'QUEUED'))
+  const agentActionsDisabled = submitting || Boolean(activeRunId)
   const activeRunProjection = activeRunId ? eventState.runs[activeRunId] : undefined
   const activeRunHasVisibleOutput = Boolean(
     activeRunId &&
@@ -1110,10 +1151,9 @@ export function AgentDiscoverView({
           ? conversationRef.current
           : null
       setError(null)
-      void actionQueue
+      void turnSubmissionQueue
         .enqueue(async () => {
-          setSubmitting(true)
-          let submittedRunId: string | null = null
+          setPendingSubmissions((current) => current + 1)
           try {
             let targetConversationId = requestedConversationId ?? activeConversationIdRef.current
             let targetConversation =
@@ -1164,7 +1204,6 @@ export function AgentDiscoverView({
               shelfContext: agentShelfContext(shelf),
               expectedUserId,
             })
-            submittedRunId = turn.runId
             onAgentRunSubmitted?.(turn.runId, targetConversationId, submittedCartRevision)
             if (activeConversationIdRef.current === targetConversationId) {
               updateConversationState((current) => {
@@ -1188,11 +1227,8 @@ export function AgentDiscoverView({
           } catch (caught) {
             setError(caught instanceof Error ? caught.message : 'Could not submit this message.')
           } finally {
-            setSubmitting(false)
+            setPendingSubmissions((current) => Math.max(0, current - 1))
           }
-
-          if (!submittedRunId) return
-          await waitForAgentRunSettlement(submittedRunId)
         })
         .catch((caught) => {
           setError(caught instanceof Error ? caught.message : 'Could not process this request.')
@@ -1200,7 +1236,6 @@ export function AgentDiscoverView({
       return true
     },
     [
-      actionQueue,
       expectedUserId,
       invalidateConversationSnapshotRequests,
       loading,
@@ -1211,7 +1246,7 @@ export function AgentDiscoverView({
       updateActiveConversationId,
       updateActiveRunId,
       updateConversationState,
-      waitForAgentRunSettlement,
+      turnSubmissionQueue,
     ],
   )
 
@@ -1459,7 +1494,7 @@ export function AgentDiscoverView({
   const prepareCheckout = async () => {
     const targetConversationId = activeConversationId
     if (!targetConversationId) return
-    await actionQueue.enqueueUnique(
+    await commerceActionQueue.enqueueUnique(
       `${expectedUserId}:${targetConversationId}:prepare-checkout-workflow`,
       async () => {
         const outcome = await prepareCheckoutFromCurrentCart(
@@ -1802,6 +1837,7 @@ export function AgentDiscoverView({
               celebrateArrival={false}
               immutable
               useLiveCart={message.id === liveCartMessageId}
+              agentActionsDisabled={agentActionsDisabled}
               deletable
               removing={autoRemovingMessageKeys.has(
                 `${activeConversationId ?? 'agent'}:${message.id}`,
@@ -1874,7 +1910,7 @@ export function AgentDiscoverView({
                     className="mt-ct-tray-x"
                     type="button"
                     aria-label={`Unpin ${product.name}`}
-                    disabled={trayClearing}
+                    disabled={trayClearing || agentActionsDisabled}
                     onClick={() => togglePin(product)}
                   >
                     ×
@@ -1885,7 +1921,7 @@ export function AgentDiscoverView({
             <button
               className="mt-ct-tray-mini"
               type="button"
-              disabled={pinnedProducts.length < 2 || trayClearing}
+              disabled={pinnedProducts.length < 2 || trayClearing || agentActionsDisabled}
               onClick={() => void compareHere(pinnedProducts)}
             >
               Compare here
@@ -1893,7 +1929,7 @@ export function AgentDiscoverView({
             <button
               className="mt-ct-tray-go"
               type="button"
-              disabled={pinnedProducts.length < 2 || trayClearing}
+              disabled={pinnedProducts.length < 2 || trayClearing || agentActionsDisabled}
               onClick={() => void compareHere(pinnedProducts, true)}
             >
               Full compare
@@ -1902,7 +1938,7 @@ export function AgentDiscoverView({
               className="mt-ct-tray-clear"
               type="button"
               onClick={() => void clearCompareTray()}
-              disabled={trayClearing}
+              disabled={trayClearing || agentActionsDisabled}
             >
               Clear
             </button>

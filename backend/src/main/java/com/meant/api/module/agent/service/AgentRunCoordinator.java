@@ -86,7 +86,7 @@ public class AgentRunCoordinator {
     private final ExecutorService runExecutor = Executors.newVirtualThreadPerTaskExecutor();
     private final ExecutorService parallelReadExecutor = Executors.newVirtualThreadPerTaskExecutor();
     private final ScheduledExecutorService heartbeatExecutor = Executors.newSingleThreadScheduledExecutor();
-    private final Map<UUID, ReentrantLock> userLocks = new ConcurrentHashMap<>();
+    private final Map<UUID, ConversationLane> conversationLanes = new ConcurrentHashMap<>();
     private final java.util.Set<UUID> scheduledRuns = ConcurrentHashMap.newKeySet();
 
     public void schedule(UUID runId) {
@@ -127,14 +127,13 @@ public class AgentRunCoordinator {
             return;
         }
         UUID conversationId = scheduledRun.getConversationId();
-        UUID userId = scheduledRun.getUserId();
-        ReentrantLock lock = userLocks.computeIfAbsent(userId, ignored -> new ReentrantLock());
-        lock.lock();
+        ConversationLane lane = retainConversationLane(conversationId);
+        lane.lock.lock();
         UUID executionOwner = null;
         ScheduledFuture<?> heartbeat = null;
         try {
-            UUID nextQueuedRunId = runRepository.findFirstByUserIdAndStatusInOrderByCreatedAtAscIdAsc(
-                            userId,
+            UUID nextQueuedRunId = runRepository.findFirstByConversationIdAndStatusInOrderByCreatedAtAscIdAsc(
+                            conversationId,
                             List.of(AgentRunStatus.QUEUED)
                     )
                     .map(AgentRun::getId)
@@ -170,11 +169,10 @@ public class AgentRunCoordinator {
             if (heartbeat != null) {
                 heartbeat.cancel(false);
             }
-            lock.unlock();
+            lane.lock.unlock();
+            releaseConversationLane(conversationId, lane);
             scheduledRuns.remove(runId);
-            if (executionOwner != null) {
-                scheduleNextQueuedRun(userId);
-            }
+            scheduleNextQueuedRun(conversationId);
         }
     }
 
@@ -201,19 +199,37 @@ public class AgentRunCoordinator {
         }
     }
 
-    private void scheduleNextQueuedRun(UUID userId) {
-        if (runRepository.findFirstByUserIdAndStatusInOrderByCreatedAtAscIdAsc(
-                userId,
+    private void scheduleNextQueuedRun(UUID conversationId) {
+        if (runRepository.findFirstByConversationIdAndStatusInOrderByCreatedAtAscIdAsc(
+                conversationId,
                 List.of(AgentRunStatus.RUNNING)
         ).isPresent()) {
             return;
         }
-        runRepository.findFirstByUserIdAndStatusInOrderByCreatedAtAscIdAsc(
-                        userId,
+        runRepository.findFirstByConversationIdAndStatusInOrderByCreatedAtAscIdAsc(
+                        conversationId,
                         List.of(AgentRunStatus.QUEUED)
                 )
                 .map(AgentRun::getId)
                 .ifPresent(this::schedule);
+    }
+
+    private ConversationLane retainConversationLane(UUID conversationId) {
+        return conversationLanes.compute(conversationId, (ignored, current) -> {
+            ConversationLane retained = current == null ? new ConversationLane() : current;
+            retained.references += 1;
+            return retained;
+        });
+    }
+
+    private void releaseConversationLane(UUID conversationId, ConversationLane lane) {
+        conversationLanes.computeIfPresent(conversationId, (ignored, current) -> {
+            if (current != lane) {
+                return current;
+            }
+            current.references -= 1;
+            return current.references == 0 ? null : current;
+        });
     }
 
     private void executeLoop(UUID runId, UUID conversationId, UUID executionOwner) {
@@ -679,6 +695,12 @@ public class AgentRunCoordinator {
         private UnusableModelResponseException() {
             super("Agent model returned neither text nor tool calls");
         }
+    }
+
+    private static final class ConversationLane {
+
+        private final ReentrantLock lock = new ReentrantLock();
+        private int references;
     }
 
     @PreDestroy

@@ -7,6 +7,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.meant.api.common.constant.ApiErrorCode;
+import com.meant.api.module.agent.constant.AgentMutationAdmission;
 import com.meant.api.module.agent.constant.AgentContentKind;
 import com.meant.api.module.agent.constant.AgentMessageRole;
 import com.meant.api.module.agent.constant.AgentUserActionStatus;
@@ -84,9 +85,46 @@ class AgentUserActionPersistenceServiceTest {
         assertThat(reservation.execute()).isTrue();
         assertThat(reservation.actionId()).isEqualTo(action.getId());
         assertThat(reservation.merchantId()).isEqualTo(merchantId);
+        assertThat(reservation.reconciliationRetry()).isTrue();
         assertThat(action.getStatus()).isEqualTo(AgentUserActionStatus.RESERVED);
         assertThat(action.getSafeMessage()).isNull();
         assertThat(action.getCompletedAt()).isNull();
+    }
+
+    @Test
+    void actionRejectedBeforeAdmissionCanRetryWithTheSameIdempotencyKey() {
+        AgentUserAction action = AgentUserAction.builder()
+                .userId(userId)
+                .conversationId(conversation.getId())
+                .toolName("pin_product")
+                .toolVersion("v1")
+                .argumentsJson(ARGUMENTS)
+                .idempotencyKey("client-key")
+                .status(AgentUserActionStatus.RUNNING)
+                .createdAt(NOW)
+                .startedAt(NOW)
+                .build();
+        when(actionRepository.findById(action.getId())).thenReturn(Optional.of(action));
+        when(actionRepository.findByUserIdAndConversationIdAndIdempotencyKey(
+                userId, conversation.getId(), "client-key"))
+                .thenReturn(Optional.of(action));
+
+        service.fail(
+                action.getId(),
+                AgentUserActionStatus.FAILED,
+                AgentMutationAdmission.USER_ACTION_SAFE_MESSAGE
+        );
+
+        assertThat(action.getStatus()).isEqualTo(AgentUserActionStatus.FAILED);
+        assertThat(action.getSafeMessage()).isEqualTo(AgentMutationAdmission.USER_ACTION_SAFE_MESSAGE);
+
+        var reservation = service.reserve(command(ARGUMENTS), ARGUMENTS, "v1");
+
+        assertThat(reservation.execute()).isTrue();
+        assertThat(reservation.actionId()).isEqualTo(action.getId());
+        assertThat(reservation.reconciliationRetry()).isFalse();
+        assertThat(action.getStatus()).isEqualTo(AgentUserActionStatus.RESERVED);
+        assertThat(action.getSafeMessage()).isNull();
     }
 
     @Test

@@ -94,6 +94,7 @@ export function DiscoverChatBlockView({
   onVisibleProductContextChange,
   immutable,
   useLiveCart,
+  agentActionsDisabled,
 }: Readonly<{
   threadId: string
   block: DiscoverChatBlock
@@ -160,6 +161,7 @@ export function DiscoverChatBlockView({
   onVisibleProductContextChange?: VisibleProductContextChange
   immutable: boolean
   useLiveCart: boolean
+  agentActionsDisabled: boolean
 }>) {
   const openProduct = productOpenWithResearchQuery(onOpen, researchQuery)
 
@@ -246,6 +248,7 @@ export function DiscoverChatBlockView({
           onDragProduct={onDragProduct}
           sourceMessageId={block.sourceMessageId}
           onVisibleProductContextChange={onVisibleProductContextChange}
+          agentActionsDisabled={agentActionsDisabled}
         />
         {block.historyHydration === 'loaded' && unavailableCount > 0 ? (
           <div className="mt-ct-system">
@@ -378,6 +381,7 @@ export function DiscoverChatBlockView({
           onDragProduct={onDragProduct}
           sourceMessageId={block.sourceMessageId}
           onVisibleProductContextChange={onVisibleProductContextChange}
+          agentActionsDisabled={agentActionsDisabled}
         />
       </div>
     )
@@ -424,6 +428,7 @@ export function DiscoverChatBlockView({
           <button
             className="mt-ct-addbtn solid"
             type="button"
+            disabled={agentActionsDisabled}
             onClick={() => onAddCart(block.product)}
           >
             <CartIcon /> Add pick
@@ -447,6 +452,7 @@ export function DiscoverChatBlockView({
         <button
           className="mt-ct-addbtn solid"
           type="button"
+          disabled={agentActionsDisabled}
           onClick={() => onAddCart(block.product)}
         >
           Add
@@ -482,7 +488,12 @@ export function DiscoverChatBlockView({
             <span className="mt-ct-friend-name">{block.product.name}</span>
           </button>
           {block.vote === 'up' ? (
-            <button className="mt-ct-addbtn" type="button" onClick={() => onAddCart(block.product)}>
+            <button
+              className="mt-ct-addbtn"
+              type="button"
+              disabled={agentActionsDisabled}
+              onClick={() => onAddCart(block.product)}
+            >
               <CartIcon /> Add their pick
             </button>
           ) : null}
@@ -687,6 +698,7 @@ export function DiscoverChatBlockView({
         onAddCart={onAddCart}
         onOpenCart={onOpenCart}
         onCheckoutHere={onCheckoutHere}
+        agentActionsDisabled={agentActionsDisabled}
       />
     )
   }
@@ -717,6 +729,7 @@ export function DiscoverChatBlockView({
       onOpen={openProduct}
       onAddCart={onAddCart}
       onOpenFullCompare={onOpenFullCompare}
+      agentActionsDisabled={agentActionsDisabled}
     />
   )
 }

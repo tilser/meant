@@ -6,7 +6,8 @@ public record AgentUserActionReservation(
         UUID actionId,
         boolean execute,
         AgentUserActionResult completedResult,
-        UUID merchantId
+        UUID merchantId,
+        boolean reconciliationRetry
 ) {
 
     public AgentUserActionReservation(
@@ -14,6 +15,15 @@ public record AgentUserActionReservation(
             boolean execute,
             AgentUserActionResult completedResult
     ) {
-        this(actionId, execute, completedResult, null);
+        this(actionId, execute, completedResult, null, false);
+    }
+
+    public AgentUserActionReservation(
+            UUID actionId,
+            boolean execute,
+            AgentUserActionResult completedResult,
+            UUID merchantId
+    ) {
+        this(actionId, execute, completedResult, merchantId, false);
     }
 }

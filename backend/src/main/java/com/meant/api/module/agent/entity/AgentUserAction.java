@@ -1,5 +1,6 @@
 package com.meant.api.module.agent.entity;
 
+import com.meant.api.module.agent.constant.AgentMutationAdmission;
 import com.meant.api.module.agent.constant.AgentUserActionStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -69,8 +70,9 @@ public class AgentUserAction {
     }
 
     public void retry() {
-        if (status != AgentUserActionStatus.UNCERTAIN) {
-            throw new IllegalStateException("Only an uncertain user action can be retried");
+        if (status != AgentUserActionStatus.UNCERTAIN && !retryableAdmissionFailure()) {
+            throw new IllegalStateException(
+                    "Only an uncertain action or mutation rejected before admission can be retried");
         }
         status = AgentUserActionStatus.RESERVED;
         messageId = null;
@@ -78,6 +80,11 @@ public class AgentUserAction {
         safeMessage = null;
         startedAt = null;
         completedAt = null;
+    }
+
+    public boolean retryableAdmissionFailure() {
+        return status == AgentUserActionStatus.FAILED
+                && AgentMutationAdmission.USER_ACTION_SAFE_MESSAGE.equals(safeMessage);
     }
 
     public void complete(UUID resultingMessageId, String result, Instant now) {

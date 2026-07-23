@@ -51,12 +51,55 @@ class AgentRunServiceTest {
     }
 
     @Test
-    void leavesTheRunQueuedWhenItsUserAlreadyHasAClaimedRun() {
+    void claimsAQueuedRunWhenTheSameUserIsRunningAnotherConversation() {
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID otherConversationId = UUID.randomUUID();
+        UUID runId = UUID.randomUUID();
+        AgentRun run = queued(runId, conversationId, userId);
+        AgentRun otherConversationRun = AgentRun.builder()
+                .id(UUID.randomUUID())
+                .conversationId(otherConversationId)
+                .userId(userId)
+                .triggeringMessageId(UUID.randomUUID())
+                .status(AgentRunStatus.RUNNING)
+                .model("test-model")
+                .promptVersion("test-v1")
+                .createdAt(NOW.minusSeconds(2))
+                .startedAt(NOW.minusSeconds(1))
+                .executionOwner(UUID.randomUUID())
+                .heartbeatAt(NOW.minusSeconds(1))
+                .leaseExpiresAt(NOW.plusSeconds(30))
+                .build();
+        Fixture fixture = fixture(run);
+        when(fixture.runs().existsByConversationIdAndStatusAndIdNot(any(), any(), any()))
+                .thenAnswer(invocation -> {
+                    UUID requestedConversationId = invocation.getArgument(0);
+                    AgentRunStatus requestedStatus = invocation.getArgument(1);
+                    UUID excludedRunId = invocation.getArgument(2);
+                    return otherConversationRun.getConversationId().equals(requestedConversationId)
+                            && otherConversationRun.getStatus() == requestedStatus
+                            && !otherConversationRun.getId().equals(excludedRunId);
+                });
+
+        var claim = fixture.service().claim(runId);
+
+        assertThat(otherConversationRun.getUserId()).isEqualTo(run.getUserId());
+        assertThat(otherConversationRun.getConversationId()).isNotEqualTo(run.getConversationId());
+        assertThat(otherConversationRun.getStatus()).isEqualTo(AgentRunStatus.RUNNING);
+        assertThat(claim).isPresent();
+        assertThat(run.getStatus()).isEqualTo(AgentRunStatus.RUNNING);
+        verify(fixture.runs()).existsByConversationIdAndStatusAndIdNot(
+                conversationId, AgentRunStatus.RUNNING, runId);
+    }
+
+    @Test
+    void leavesTheRunQueuedWhenItsConversationAlreadyHasAClaimedRun() {
         UUID runId = UUID.randomUUID();
         AgentRun run = queued(runId);
         Fixture fixture = fixture(run);
-        when(fixture.runs().existsByUserIdAndStatusAndIdNot(
-                run.getUserId(), AgentRunStatus.RUNNING, runId)).thenReturn(true);
+        when(fixture.runs().existsByConversationIdAndStatusAndIdNot(
+                run.getConversationId(), AgentRunStatus.RUNNING, runId)).thenReturn(true);
 
         var claim = fixture.service().claim(runId);
 
@@ -260,10 +303,14 @@ class AgentRunServiceTest {
     }
 
     private AgentRun queued(UUID id) {
+        return queued(id, UUID.randomUUID(), UUID.randomUUID());
+    }
+
+    private AgentRun queued(UUID id, UUID conversationId, UUID userId) {
         return AgentRun.builder()
                 .id(id)
-                .conversationId(UUID.randomUUID())
-                .userId(UUID.randomUUID())
+                .conversationId(conversationId)
+                .userId(userId)
                 .triggeringMessageId(UUID.randomUUID())
                 .status(AgentRunStatus.QUEUED)
                 .model("test-model")

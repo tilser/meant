@@ -31,6 +31,7 @@ import com.meant.api.module.agent.service.dto.AgentToolDescriptor;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
 import com.meant.api.module.agent.service.dto.AgentVisibleProductContext;
 import com.meant.api.module.agent.service.dto.AgentVisibleProductReference;
+import com.meant.api.module.agent.service.port.AgentModelGateway;
 import com.meant.api.module.agent.service.tool.AgentTool;
 import com.meant.api.module.agent.service.tool.AgentToolAuthorizationPolicy;
 import com.meant.api.module.agent.service.tool.AgentToolCallExecutor;
@@ -38,13 +39,22 @@ import com.meant.api.module.agent.service.tool.AgentToolRegistry;
 import com.meant.api.module.agent.support.ScriptedAgentModelGateway;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.stubbing.Answer;
 
 class AgentRunCoordinatorTest {
 
@@ -410,6 +420,153 @@ class AgentRunCoordinatorTest {
     }
 
     @Test
+    void sameUserRunsInDifferentConversationsExecuteConcurrently() throws Exception {
+        UUID userId = UUID.randomUUID();
+        AgentRun first = queuedRun(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                userId,
+                Instant.parse("2026-07-23T10:00:00Z")
+        );
+        AgentRun second = queuedRun(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                userId,
+                Instant.parse("2026-07-23T10:00:01Z")
+        );
+        CountDownLatch bothStarted = new CountDownLatch(2);
+        CountDownLatch releaseRuns = new CountDownLatch(1);
+        AtomicInteger activeRuns = new AtomicInteger();
+        AtomicInteger maximumActiveRuns = new AtomicInteger();
+        QueueFixture fixture = queueFixture(List.of(first, second), invocation -> {
+            int active = activeRuns.incrementAndGet();
+            maximumActiveRuns.accumulateAndGet(active, Math::max);
+            bothStarted.countDown();
+            try {
+                assertThat(releaseRuns.await(3, TimeUnit.SECONDS))
+                        .as("both conversation lanes should be able to enter execution")
+                        .isTrue();
+                return defaultModelContext();
+            } finally {
+                activeRuns.decrementAndGet();
+            }
+        });
+
+        coordinator.schedule(first.getId());
+        coordinator.schedule(second.getId());
+
+        try {
+            assertThat(bothStarted.await(3, TimeUnit.SECONDS))
+                    .as("same-user runs in distinct conversations should overlap")
+                    .isTrue();
+            assertThat(maximumActiveRuns).hasValue(2);
+        } finally {
+            releaseRuns.countDown();
+        }
+        assertThat(fixture.completed().await(3, TimeUnit.SECONDS)).isTrue();
+    }
+
+    @Test
+    void runsInOneConversationExecuteInFifoOrderWithoutOverlap() throws Exception {
+        UUID conversationId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        AgentRun first = queuedRun(
+                UUID.randomUUID(),
+                conversationId,
+                userId,
+                Instant.parse("2026-07-23T10:00:00Z")
+        );
+        AgentRun second = queuedRun(
+                UUID.randomUUID(),
+                conversationId,
+                userId,
+                Instant.parse("2026-07-23T10:00:01Z")
+        );
+        CountDownLatch firstStarted = new CountDownLatch(1);
+        CountDownLatch secondStarted = new CountDownLatch(1);
+        CountDownLatch releaseFirst = new CountDownLatch(1);
+        List<UUID> executionOrder = new CopyOnWriteArrayList<>();
+        AtomicInteger activeRuns = new AtomicInteger();
+        AtomicInteger maximumActiveRuns = new AtomicInteger();
+        QueueFixture fixture = queueFixture(List.of(first, second), invocation -> {
+            UUID runId = invocation.getArgument(0);
+            executionOrder.add(runId);
+            int active = activeRuns.incrementAndGet();
+            maximumActiveRuns.accumulateAndGet(active, Math::max);
+            try {
+                if (runId.equals(first.getId())) {
+                    firstStarted.countDown();
+                    assertThat(releaseFirst.await(3, TimeUnit.SECONDS))
+                            .as("the test should release the first FIFO entry")
+                            .isTrue();
+                } else {
+                    secondStarted.countDown();
+                }
+                return defaultModelContext();
+            } finally {
+                activeRuns.decrementAndGet();
+            }
+        });
+
+        coordinator.schedule(second.getId());
+        coordinator.schedule(first.getId());
+
+        assertThat(firstStarted.await(3, TimeUnit.SECONDS))
+                .as("the older run should execute even when the newer run was scheduled first")
+                .isTrue();
+        try {
+            assertThat(secondStarted.await(250, TimeUnit.MILLISECONDS))
+                    .as("the next run must not enter the same conversation lane early")
+                    .isFalse();
+        } finally {
+            releaseFirst.countDown();
+        }
+        assertThat(fixture.completed().await(3, TimeUnit.SECONDS)).isTrue();
+        assertThat(executionOrder).containsExactly(first.getId(), second.getId());
+        assertThat(maximumActiveRuns).hasValue(1);
+    }
+
+    @Test
+    void cancelledHeadBetweenQueueLookupAndClaimPromptlyStartsTheNextRun() throws Exception {
+        UUID conversationId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        AgentRun cancelledHead = queuedRun(
+                UUID.randomUUID(),
+                conversationId,
+                userId,
+                Instant.parse("2026-07-23T10:00:00Z")
+        );
+        AgentRun next = queuedRun(
+                UUID.randomUUID(),
+                conversationId,
+                userId,
+                Instant.parse("2026-07-23T10:00:01Z")
+        );
+        CountDownLatch nextStarted = new CountDownLatch(1);
+        List<UUID> executionOrder = new CopyOnWriteArrayList<>();
+        QueueFixture fixture = queueFixture(
+                List.of(cancelledHead, next),
+                invocation -> {
+                    UUID runId = invocation.getArgument(0);
+                    executionOrder.add(runId);
+                    nextStarted.countDown();
+                    return defaultModelContext();
+                },
+                Set.of(cancelledHead.getId())
+        );
+
+        coordinator.schedule(cancelledHead.getId());
+
+        assertThat(nextStarted.await(3, TimeUnit.SECONDS))
+                .as("a cancelled head must not strand the next queued run")
+                .isTrue();
+        assertThat(fixture.completed().await(3, TimeUnit.SECONDS)).isTrue();
+        assertThat(executionOrder).containsExactly(next.getId());
+        verify(fixture.runService()).claim(cancelledHead.getId());
+        verify(fixture.runService()).claim(next.getId());
+    }
+
+    @Test
     void unresolvedProductIntentWaitsBeforeTheModelOrAnyToolStarts() {
         UUID runId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();
@@ -758,7 +915,7 @@ class AgentRunCoordinatorTest {
                 .createdAt(Instant.now())
                 .build();
         when(runs.findById(runId)).thenReturn(Optional.of(run));
-        when(runs.findFirstByUserIdAndStatusInOrderByCreatedAtAscIdAsc(any(), any()))
+        when(runs.findFirstByConversationIdAndStatusInOrderByCreatedAtAscIdAsc(any(), any()))
                 .thenReturn(Optional.of(run), Optional.empty(), Optional.empty());
         when(runService.claim(runId)).thenReturn(Optional.of(executionOwner));
         when(runService.cancellationRequested(runId, executionOwner)).thenReturn(cancelled);
@@ -805,6 +962,141 @@ class AgentRunCoordinatorTest {
                 messageLedger,
                 executionOwner
         );
+    }
+
+    private QueueFixture queueFixture(
+            List<AgentRun> queuedRuns,
+            Answer<AgentModelContext> contextAnswer
+    ) {
+        return queueFixture(queuedRuns, contextAnswer, Set.of());
+    }
+
+    private QueueFixture queueFixture(
+            List<AgentRun> queuedRuns,
+            Answer<AgentModelContext> contextAnswer,
+            Set<UUID> cancelledBeforeClaim
+    ) {
+        AgentRunRepository runs = mock(AgentRunRepository.class);
+        AgentRunService runService = mock(AgentRunService.class);
+        AgentContextAssembler contextAssembler = mock(AgentContextAssembler.class);
+        AgentToolRegistry registry = mock(AgentToolRegistry.class);
+        AgentToolAuthorizationPolicy authorizationPolicy = mock(AgentToolAuthorizationPolicy.class);
+        AgentToolCallExecutor toolExecutor = mock(AgentToolCallExecutor.class);
+        AgentProductClarificationService productClarificationService =
+                mock(AgentProductClarificationService.class);
+        AgentProductClarificationContextService productClarificationContextService =
+                mock(AgentProductClarificationContextService.class);
+        AgentReadIntentResolver readIntentResolver = mock(AgentReadIntentResolver.class);
+        AgentMessageLedgerService messageLedger = mock(AgentMessageLedgerService.class);
+        AgentJsonSupport jsonSupport = mock(AgentJsonSupport.class);
+        AgentModelGateway modelGateway = (request, textDeltaConsumer, cancellationRequested) ->
+                model("Completed.", List.of());
+        AgentToolDescriptor readDescriptor = new AgentToolDescriptor(
+                "search_catalog",
+                "Search",
+                "{\"type\":\"object\",\"additionalProperties\":false}",
+                "1",
+                AgentToolRisk.READ
+        );
+        Map<UUID, AgentRun> runsById = new HashMap<>();
+        Map<UUID, AgentRunStatus> statesById = new HashMap<>();
+        Map<UUID, UUID> ownersById = new HashMap<>();
+        Object stateMonitor = new Object();
+        CountDownLatch completed = new CountDownLatch(queuedRuns.size() - cancelledBeforeClaim.size());
+        queuedRuns.forEach(run -> {
+            runsById.put(run.getId(), run);
+            statesById.put(run.getId(), AgentRunStatus.QUEUED);
+            ownersById.put(run.getId(), UUID.randomUUID());
+        });
+
+        when(runs.findById(any())).thenAnswer(invocation ->
+                Optional.ofNullable(runsById.get(invocation.getArgument(0))));
+        when(runs.findFirstByConversationIdAndStatusInOrderByCreatedAtAscIdAsc(any(), any()))
+                .thenAnswer(invocation -> {
+                    UUID conversationId = invocation.getArgument(0);
+                    List<AgentRunStatus> requestedStatuses = invocation.getArgument(1);
+                    synchronized (stateMonitor) {
+                        return queuedRuns.stream()
+                                .filter(run -> run.getConversationId().equals(conversationId))
+                                .filter(run -> requestedStatuses.contains(statesById.get(run.getId())))
+                                .min(Comparator.comparing(AgentRun::getCreatedAt)
+                                        .thenComparing(AgentRun::getId));
+                    }
+                });
+        when(runService.claim(any())).thenAnswer(invocation -> {
+            UUID runId = invocation.getArgument(0);
+            AgentRun requestedRun = runsById.get(runId);
+            synchronized (stateMonitor) {
+                if (requestedRun == null || statesById.get(runId) != AgentRunStatus.QUEUED) {
+                    return Optional.empty();
+                }
+                if (cancelledBeforeClaim.contains(runId)) {
+                    statesById.put(runId, AgentRunStatus.CANCELLED);
+                    return Optional.empty();
+                }
+                boolean conversationAlreadyRunning = queuedRuns.stream()
+                        .filter(run -> run.getConversationId().equals(requestedRun.getConversationId()))
+                        .anyMatch(run -> statesById.get(run.getId()) == AgentRunStatus.RUNNING);
+                if (conversationAlreadyRunning) {
+                    return Optional.empty();
+                }
+                statesById.put(runId, AgentRunStatus.RUNNING);
+                return Optional.of(ownersById.get(runId));
+            }
+        });
+        when(runService.cancellationRequested(any(), any())).thenReturn(false);
+        when(contextAssembler.assemble(any())).thenAnswer(contextAnswer);
+        when(productClarificationService.unresolvedIntent(any())).thenReturn(Optional.empty());
+        when(readIntentResolver.resolve(any())).thenReturn(Optional.empty());
+        when(registry.descriptors()).thenReturn(List.of(readDescriptor));
+        when(authorizationPolicy.available(any(), any())).thenReturn(List.of(readDescriptor));
+        when(messageLedger.appendTerminalAssistant(any(), any(), anyString(),
+                org.mockito.ArgumentMatchers.anyBoolean())).thenAnswer(invocation -> {
+                    UUID runId = invocation.getArgument(0);
+                    synchronized (stateMonitor) {
+                        if (statesById.replace(runId, AgentRunStatus.RUNNING, AgentRunStatus.COMPLETED)) {
+                            completed.countDown();
+                        }
+                    }
+                    return null;
+                });
+
+        coordinator = new AgentRunCoordinator(
+                runs,
+                runService,
+                contextAssembler,
+                registry,
+                authorizationPolicy,
+                toolExecutor,
+                productClarificationService,
+                productClarificationContextService,
+                readIntentResolver,
+                messageLedger,
+                modelGateway,
+                mock(AgentMetrics.class),
+                jsonSupport,
+                properties()
+        );
+        return new QueueFixture(runService, completed);
+    }
+
+    private AgentRun queuedRun(
+            UUID runId,
+            UUID conversationId,
+            UUID userId,
+            Instant createdAt
+    ) {
+        return AgentRun.builder()
+                .id(runId)
+                .conversationId(conversationId)
+                .userId(userId)
+                .triggeringMessageId(UUID.randomUUID())
+                .status(AgentRunStatus.QUEUED)
+                .model("primary-model")
+                .promptVersion("test-v1")
+                .buyerIp("203.0.113.42")
+                .createdAt(createdAt)
+                .build();
     }
 
     private AgentModelContext defaultModelContext() {
@@ -879,5 +1171,8 @@ class AgentRunCoordinatorTest {
             AgentMessageLedgerService messageLedger,
             UUID executionOwner
     ) {
+    }
+
+    private record QueueFixture(AgentRunService runService, CountDownLatch completed) {
     }
 }

@@ -28,6 +28,7 @@ function DiscoverChatProduct({
   onDig,
   onShelfAdd,
   onDragProduct,
+  agentActionsDisabled,
 }: Readonly<{
   product: Product
   index: number
@@ -53,6 +54,7 @@ function DiscoverChatProduct({
   ) => void
   onShelfAdd: (product: Product, sourceElement: HTMLElement) => void
   onDragProduct: (event: ReactDragEvent<HTMLElement>, product: Product) => void
+  agentActionsDisabled: boolean
 }>) {
   return (
     <div
@@ -87,6 +89,7 @@ function DiscoverChatProduct({
         <button
           className="mt-ct-addbtn"
           type="button"
+          disabled={agentActionsDisabled}
           onClick={(event) => {
             event.stopPropagation()
             onAddCart(product)
@@ -97,6 +100,7 @@ function DiscoverChatProduct({
         <button
           className={`mt-ct-pinbtn ${pinned ? 'on' : ''}`}
           type="button"
+          disabled={agentActionsDisabled}
           onClick={(event) => {
             event.stopPropagation()
             onPin(product)
@@ -107,6 +111,7 @@ function DiscoverChatProduct({
         <button
           className={`mt-ct-watchbtn ${watched ? 'on' : ''}`}
           type="button"
+          disabled={agentActionsDisabled}
           onClick={(event) => {
             event.stopPropagation()
             onWatch(product)
@@ -120,6 +125,7 @@ function DiscoverChatProduct({
         <button
           className="mt-ct-askchip"
           type="button"
+          disabled={agentActionsDisabled}
           onClick={(event) => {
             event.stopPropagation()
             onDig('reviews', product)
@@ -130,6 +136,7 @@ function DiscoverChatProduct({
         <button
           className="mt-ct-askchip"
           type="button"
+          disabled={agentActionsDisabled}
           onClick={(event) => {
             event.stopPropagation()
             onDig('code', product)
@@ -140,6 +147,7 @@ function DiscoverChatProduct({
         <button
           className="mt-ct-askchip"
           type="button"
+          disabled={agentActionsDisabled}
           onClick={(event) => {
             event.stopPropagation()
             onDig('similar', product, query, qualificationId)
@@ -175,6 +183,7 @@ export function DiscoverProductBatch({
   onDragProduct,
   sourceMessageId,
   onVisibleProductContextChange,
+  agentActionsDisabled = false,
 }: Readonly<{
   products: readonly Product[]
   query?: string
@@ -203,6 +212,7 @@ export function DiscoverProductBatch({
   onDragProduct: (event: ReactDragEvent<HTMLElement>, product: Product) => void
   sourceMessageId?: string
   onVisibleProductContextChange?: VisibleProductContextChange
+  agentActionsDisabled?: boolean
 }>) {
   const isPhone = useMediaQuery('(max-width: 720px)')
   const [page, setPage] = useState(0)
@@ -388,17 +398,24 @@ export function DiscoverProductBatch({
             onDig={onDig}
             onShelfAdd={onShelfAddProduct}
             onDragProduct={onDragProduct}
+            agentActionsDisabled={agentActionsDisabled}
           />
         ))}
       </div>
       <div className="mt-ct-batch-foot">
-        <button className="mt-ct-suggchip" type="button" onClick={() => onJustPick(products)}>
+        <button
+          className="mt-ct-suggchip"
+          type="button"
+          disabled={agentActionsDisabled}
+          onClick={() => onJustPick(products)}
+        >
           Just pick one for me
         </button>
         {products.length >= 2 ? (
           <button
             className="mt-ct-suggchip ghost"
             type="button"
+            disabled={agentActionsDisabled}
             onClick={() => onCompareHere(products)}
           >
             Compare here

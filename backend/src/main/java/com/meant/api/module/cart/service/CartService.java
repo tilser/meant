@@ -3,6 +3,7 @@ package com.meant.api.module.cart.service;
 import static com.meant.api.common.util.CollectionUtils.safeList;
 import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
 
+import com.meant.api.common.service.UserMutationExecutionLane;
 import com.meant.api.module.cart.constant.CartSnapshotPurpose;
 import com.meant.api.module.cart.entity.Cart;
 import com.meant.api.module.cart.entity.CartLine;
@@ -96,6 +97,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 import com.meant.api.module.merchant.constant.MerchantIntegrationProvider;
 import com.meant.api.module.merchant.service.dto.MerchantExecutionPolicy;
@@ -133,12 +135,20 @@ public class CartService {
     private final CheckoutUpdateReconciliationService checkoutUpdateReconciliationService;
     private final CheckoutCancellationPolicy checkoutCancellationPolicy;
     private final UserCheckoutDetailsService userCheckoutDetailsService;
+    private final UserMutationExecutionLane userMutationExecutionLane;
 
     public CartResult create(@NotNull @Valid CreateCartCommand command) {
         return create(command, null);
     }
 
     public CartResult create(@NotNull @Valid CreateCartCommand command, UUID idempotencyKey) {
+        return executeMutation(
+                command.userId(),
+                () -> createInMutationLane(command, idempotencyKey)
+        );
+    }
+
+    private CartResult createInMutationLane(CreateCartCommand command, UUID idempotencyKey) {
         UserCommerceContextResult commerceContext = userCommerceContextService.find(command.userId());
         ResolvedItems resolved = resolveCreate(command.userId(), command.addItems(), commerceContext);
         validateExactVariantSelections(resolved.offers());
@@ -174,6 +184,13 @@ public class CartService {
     }
 
     public CartResult get(@NotNull @Valid GetCartQuery query) {
+        if (query.refresh()) {
+            return executeMutation(query.userId(), () -> getInternal(query));
+        }
+        return getInternal(query);
+    }
+
+    private CartResult getInternal(GetCartQuery query) {
         Cart cart = findCart(query.cartId(), query.userId());
         if (!query.refresh()) {
             return cartResultMapper.from(cart);
@@ -255,6 +272,13 @@ public class CartService {
     }
 
     public CartResult update(@NotNull @Valid UpdateCartCommand command, UUID idempotencyKey) {
+        return executeMutation(
+                command.userId(),
+                () -> updateInMutationLane(command, idempotencyKey)
+        );
+    }
+
+    private CartResult updateInMutationLane(UpdateCartCommand command, UUID idempotencyKey) {
         Cart cart = findCart(command.cartId(), command.userId());
         cartReplacementService.validateIdentifiers(cart, command);
         UserCommerceContextResult commerceContext = userCommerceContextService.find(command.userId());
@@ -344,6 +368,13 @@ public class CartService {
     }
 
     public CheckoutResult checkout(@NotNull @Valid GetCheckoutQuery query, UUID idempotencyKey) {
+        return executeMutation(
+                query.userId(),
+                () -> checkoutInMutationLane(query, idempotencyKey)
+        );
+    }
+
+    private CheckoutResult checkoutInMutationLane(GetCheckoutQuery query, UUID idempotencyKey) {
         Cart cart = findCart(query.cartId(), query.userId());
         CartRoutingTarget target = checkoutRoutingTarget(cart);
         MerchantCartProvider provider = target.merchantProvider();
@@ -391,6 +422,13 @@ public class CartService {
     }
 
     public CheckoutResult getCheckout(@NotNull @Valid GetCheckoutQuery query) {
+        if (query.refresh()) {
+            return executeMutation(query.userId(), () -> getCheckoutInternal(query));
+        }
+        return getCheckoutInternal(query);
+    }
+
+    private CheckoutResult getCheckoutInternal(GetCheckoutQuery query) {
         Cart cart = findCart(query.cartId(), query.userId());
         if (!hasText(cart.getCheckoutId())) {
             throw CartException.notFound("Checkout not found for cart: " + query.cartId());
@@ -443,6 +481,16 @@ public class CartService {
 
     public CheckoutResult updateCheckout(
             @NotNull @Valid UpdateCheckoutCommand command,
+            UUID idempotencyKey
+    ) {
+        return executeMutation(
+                command.userId(),
+                () -> updateCheckoutInMutationLane(command, idempotencyKey)
+        );
+    }
+
+    private CheckoutResult updateCheckoutInMutationLane(
+            UpdateCheckoutCommand command,
             UUID idempotencyKey
     ) {
         Cart cart = findCart(command.cartId(), command.userId());
@@ -653,6 +701,13 @@ public class CartService {
     }
 
     public CheckoutCompletionResult completeCheckout(@NotNull @Valid CompleteCheckoutCommand command) {
+        return executeMutation(
+                command.userId(),
+                () -> completeCheckoutInMutationLane(command)
+        );
+    }
+
+    private CheckoutCompletionResult completeCheckoutInMutationLane(CompleteCheckoutCommand command) {
         Cart cart = findCart(command.cartId(), command.userId());
         MerchantCartProvider provider = findProvider(cart.getMerchantId(), cart.getMerchantDomain());
         Cart checkoutCart = ensureHandoffWhenDirectCompletionUnavailable(
@@ -693,11 +748,25 @@ public class CartService {
     }
 
     public CheckoutConsentResult recordCheckoutConsent(@NotNull @Valid CreateCheckoutConsentCommand command) {
+        return executeMutation(
+                command.userId(),
+                () -> recordCheckoutConsentInMutationLane(command)
+        );
+    }
+
+    private CheckoutConsentResult recordCheckoutConsentInMutationLane(CreateCheckoutConsentCommand command) {
         Cart cart = findCart(command.cartId(), command.userId());
         return cartCheckoutConsentService.recordConsent(cart, command);
     }
 
     public CheckoutCompletionResult cancelCheckout(@NotNull @Valid CancelCheckoutCommand command) {
+        return executeMutation(
+                command.userId(),
+                () -> cancelCheckoutInMutationLane(command)
+        );
+    }
+
+    private CheckoutCompletionResult cancelCheckoutInMutationLane(CancelCheckoutCommand command) {
         Cart cart = findCart(command.cartId(), command.userId());
         if (!hasText(cart.getCheckoutId()) || !cart.getCheckoutId().equals(command.checkoutId())) {
             throw CartException.rejected("Checkout session does not match cart");
@@ -745,6 +814,16 @@ public class CartService {
     }
 
     public void cancel(@NotNull @Valid CancelCartCommand command) {
+        executeMutation(
+                command.userId(),
+                () -> {
+                    cancelInMutationLane(command);
+                    return null;
+                }
+        );
+    }
+
+    private void cancelInMutationLane(CancelCartCommand command) {
         Cart cart = findCart(command.cartId(), command.userId());
         CancelCartRequest request = new CancelCartRequest(cart.getRemoteCartId());
         CartRoutingTarget target = routingTarget(cart);
@@ -767,6 +846,15 @@ public class CartService {
 
     private Cart findCart(UUID cartId, UUID userId) {
         return cartPersistenceService.findCart(cartId, userId);
+    }
+
+    private <T> T executeMutation(UUID userId, Supplier<T> mutation) {
+        try {
+            return userMutationExecutionLane.execute(userId, mutation);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw CartException.rejected("The cart mutation was interrupted before it started.");
+        }
     }
 
     private CreateCartRequest createCartRequest(

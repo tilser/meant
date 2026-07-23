@@ -38,6 +38,171 @@ export function registerPendingAgentCartRun(
   }
 }
 
+/** Removes exactly the pending run whose durable conversation has been synchronized. */
+export function settlePendingAgentCartRun(
+  current: Readonly<Record<string, PendingAgentCartRun>>,
+  runId: string,
+  conversationId: string,
+): Record<string, PendingAgentCartRun> {
+  if (current[runId]?.conversationId !== conversationId) return current
+  const next = { ...current }
+  delete next[runId]
+  return next
+}
+
+function partitionAliases(
+  fingerprints: AgentCartPartitionFingerprints,
+  partitionId: string,
+): string[] {
+  return Object.entries(fingerprints.aliases).flatMap(([alias, owner]) =>
+    owner === partitionId ? [alias] : [],
+  )
+}
+
+function rebaseAgentCartFingerprintsAfterReplacement(
+  replacement: MerchantCartStateReplacement,
+  submitted: AgentCartPartitionFingerprints,
+  before: AgentCartPartitionFingerprints,
+  after: AgentCartPartitionFingerprints,
+): AgentCartPartitionFingerprints {
+  if (!agentCartReplacementUnchangedSinceSubmission(replacement, submitted, before)) {
+    return submitted
+  }
+
+  const aliases = replacementAliases(replacement)
+  const submittedAlias = aliases.find((alias) => hasOwnAlias(submitted, alias))
+  const submittedPartition = submittedAlias ? submitted.aliases[submittedAlias] : null
+  const afterPartitions = new Set(
+    aliases.flatMap((alias) => {
+      const owner = after.aliases[alias]
+      return owner ? [owner] : []
+    }),
+  )
+  if (afterPartitions.size !== 1) return submitted
+
+  const afterPartition = [...afterPartitions][0]!
+  const afterRevision = after.revisions[afterPartition]
+  if (!afterRevision) return submitted
+  if (
+    afterPartition !== submittedPartition &&
+    Object.prototype.hasOwnProperty.call(submitted.revisions, afterPartition)
+  ) {
+    return submitted
+  }
+
+  const nextAliases = { ...submitted.aliases }
+  const nextRevisions = { ...submitted.revisions }
+  if (submittedPartition) {
+    partitionAliases(submitted, submittedPartition).forEach((alias) => {
+      delete nextAliases[alias]
+    })
+    delete nextRevisions[submittedPartition]
+  }
+
+  let copiedAlias = false
+  partitionAliases(after, afterPartition).forEach((alias) => {
+    if (!Object.prototype.hasOwnProperty.call(nextAliases, alias)) {
+      nextAliases[alias] = afterPartition
+      copiedAlias = true
+    }
+  })
+  if (!copiedAlias) return submitted
+  nextRevisions[afterPartition] = afterRevision
+  return { aliases: nextAliases, revisions: nextRevisions }
+}
+
+/**
+ * Advances only safely matching merchant partitions for later FIFO runs in
+ * the same conversation after an authoritative replacement is applied.
+ */
+export function rebasePendingAgentCartRunsAfterReplacements(
+  current: Readonly<Record<string, PendingAgentCartRun>>,
+  settledRunId: string,
+  conversationId: string,
+  replacements: readonly MerchantCartStateReplacement[],
+  before: AgentCartPartitionFingerprints,
+  after: AgentCartPartitionFingerprints,
+): Record<string, PendingAgentCartRun> {
+  if (replacements.length === 0) return current
+  let changed = false
+  let settledRunSeen = false
+  const next = Object.fromEntries(
+    Object.entries(current).map(([runId, pendingRun]) => {
+      if (runId === settledRunId && pendingRun.conversationId === conversationId) {
+        settledRunSeen = true
+        return [runId, pendingRun]
+      }
+      if (!settledRunSeen || pendingRun.conversationId !== conversationId) {
+        return [runId, pendingRun]
+      }
+      let fingerprints = pendingRun.cartFingerprints
+      if (fingerprints) {
+        replacements.forEach((replacement) => {
+          if (!fingerprints) return
+          const rebased = rebaseAgentCartFingerprintsAfterReplacement(
+            replacement,
+            fingerprints,
+            before,
+            after,
+          )
+          if (rebased !== fingerprints) {
+            changed = true
+            fingerprints = rebased
+          }
+        })
+      }
+      return [
+        runId,
+        fingerprints === pendingRun.cartFingerprints
+          ? pendingRun
+          : { ...pendingRun, cartFingerprints: fingerprints },
+      ]
+    }),
+  )
+  return changed ? next : (current as Record<string, PendingAgentCartRun>)
+}
+
+/** Records only the partitions that were actually replaced from an agent result. */
+export function agentCartProvenanceAfterReplacements(
+  current: AgentCartPartitionFingerprints | null | undefined,
+  replacements: readonly MerchantCartStateReplacement[],
+  after: AgentCartPartitionFingerprints,
+): AgentCartPartitionFingerprints {
+  const aliases = { ...(current?.aliases ?? {}) }
+  const revisions = { ...(current?.revisions ?? {}) }
+  replacements.forEach((replacement) => {
+    const replacementAliasList = replacementAliases(replacement)
+    const replacedPartitions = new Set(
+      replacementAliasList.flatMap((alias) => {
+        const owner = aliases[alias]
+        return owner ? [owner] : []
+      }),
+    )
+    replacedPartitions.forEach((partitionId) => {
+      Object.entries(aliases).forEach(([alias, owner]) => {
+        if (owner === partitionId) delete aliases[alias]
+      })
+      delete revisions[partitionId]
+    })
+
+    const afterPartitions = new Set(
+      replacementAliasList.flatMap((alias) => {
+        const owner = after.aliases[alias]
+        return owner ? [owner] : []
+      }),
+    )
+    if (afterPartitions.size !== 1) return
+    const afterPartition = [...afterPartitions][0]!
+    const afterRevision = after.revisions[afterPartition]
+    if (!afterRevision) return
+    partitionAliases(after, afterPartition).forEach((alias) => {
+      aliases[alias] = afterPartition
+    })
+    revisions[afterPartition] = afterRevision
+  })
+  return { aliases, revisions }
+}
+
 export const TERMINAL_AGENT_RUN_STATUSES: ReadonlySet<AgentRunStatusProfile> = new Set([
   'WAITING_FOR_USER',
   'COMPLETED',
@@ -222,6 +387,36 @@ function replacementAliases(replacement: MerchantCartStateReplacement): string[]
     identityAlias('key', replacement.merchantKey),
     identityAlias('key', replacement.snapshot.merchantKey),
   ])
+}
+
+/**
+ * Detects an active local cart for the same merchant scope under a different
+ * cart identity. This lets an older inactive cart read settle without wiping
+ * the replacement cart.
+ */
+export function agentCartReplacementSupersededByCurrentPartition(
+  replacement: MerchantCartStateReplacement,
+  current: AgentCartPartitionFingerprints,
+): boolean {
+  const cartAliases = uniqueAliases([
+    identityAlias('cart', replacement.snapshot.cartId),
+    identityAlias('remote-cart', replacement.snapshot.remoteCartId),
+  ])
+  const stableAliases = replacementAliases(replacement).filter(
+    (alias) => !alias.startsWith('cart:') && !alias.startsWith('remote-cart:'),
+  )
+  const currentPartitions = new Set(
+    stableAliases.flatMap((alias) => {
+      const owner = current.aliases[alias]
+      return owner ? [owner] : []
+    }),
+  )
+  if (currentPartitions.size !== 1) return false
+  const currentPartition = [...currentPartitions][0]!
+  return (
+    cartAliases.length > 0 &&
+    cartAliases.every((alias) => current.aliases[alias] !== currentPartition)
+  )
 }
 
 function hasOwnAlias(fingerprints: AgentCartPartitionFingerprints, alias: string): boolean {

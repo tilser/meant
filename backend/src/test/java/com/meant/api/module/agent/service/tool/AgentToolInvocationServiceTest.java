@@ -7,6 +7,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.meant.api.module.agent.constant.AgentMutationAdmission;
 import com.meant.api.module.agent.constant.AgentRunStatus;
 import com.meant.api.module.agent.constant.AgentToolInvocationStatus;
 import com.meant.api.module.agent.constant.AgentToolRisk;
@@ -109,6 +110,44 @@ class AgentToolInvocationServiceTest {
                 org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any()
         );
+    }
+
+    @Test
+    void mutationRejectedBeforeAdmissionCanRetryWithTheSameIdempotencyIdentity() {
+        AgentToolInvocation invocation = runningInvocation(NOW.minusSeconds(1));
+        when(invocationRepository.findById(invocation.getId())).thenReturn(Optional.of(invocation));
+        when(invocationRepository.findByIdempotencyKeyForUpdate("idem-1"))
+                .thenReturn(Optional.of(invocation));
+        when(jsonSupport.bounded(ARGUMENTS)).thenReturn(ARGUMENTS);
+
+        service.fail(
+                run.getId(),
+                invocation.getId(),
+                "initial-call",
+                "prepare_carts",
+                AgentToolInvocationStatus.FAILED,
+                AgentMutationAdmission.FAILURE_CLASSIFICATION,
+                "The tool could not start before its deadline.",
+                30
+        );
+
+        assertThat(invocation.getStatus()).isEqualTo(AgentToolInvocationStatus.FAILED);
+        assertThat(invocation.getFailureClassification())
+                .isEqualTo(AgentMutationAdmission.FAILURE_CLASSIFICATION);
+
+        var reservation = service.reserve(
+                run.getId(),
+                new AgentModelToolCall("retry-call", "prepare_carts", ARGUMENTS),
+                descriptor(),
+                ARGUMENTS,
+                "idem-1"
+        );
+
+        assertThat(reservation.execute()).isTrue();
+        assertThat(reservation.invocationId()).isEqualTo(invocation.getId());
+        assertThat(reservation.reconciliationRetry()).isFalse();
+        assertThat(invocation.getStatus()).isEqualTo(AgentToolInvocationStatus.PROPOSED);
+        assertThat(invocation.getFailureClassification()).isNull();
     }
 
     @Test

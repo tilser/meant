@@ -1,5 +1,6 @@
 package com.meant.api.module.agent.entity;
 
+import com.meant.api.module.agent.constant.AgentMutationAdmission;
 import com.meant.api.module.agent.constant.AgentToolInvocationStatus;
 import com.meant.api.module.agent.constant.AgentToolRisk;
 import jakarta.persistence.Column;
@@ -88,9 +89,12 @@ public class AgentToolInvocation {
     }
 
     public void retry() {
-        if (status != AgentToolInvocationStatus.UNCERTAIN
-                && !(status == AgentToolInvocationStatus.FAILED && riskClass == AgentToolRisk.READ)) {
-            throw new IllegalStateException("Only an uncertain mutation or failed read can be retried");
+        boolean retryableFailure = status == AgentToolInvocationStatus.FAILED
+                && (riskClass == AgentToolRisk.READ
+                        || AgentMutationAdmission.FAILURE_CLASSIFICATION.equals(failureClassification));
+        if (status != AgentToolInvocationStatus.UNCERTAIN && !retryableFailure) {
+            throw new IllegalStateException(
+                    "Only an uncertain mutation, failed read, or mutation rejected before admission can be retried");
         }
         status = AgentToolInvocationStatus.PROPOSED;
         resultJson = null;

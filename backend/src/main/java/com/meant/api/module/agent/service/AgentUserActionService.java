@@ -2,6 +2,7 @@ package com.meant.api.module.agent.service;
 
 import com.meant.api.common.constant.ApiErrorCode;
 import com.meant.api.common.exception.ApiException;
+import com.meant.api.module.agent.constant.AgentMutationAdmission;
 import com.meant.api.module.agent.constant.AgentToolRisk;
 import com.meant.api.module.agent.constant.AgentUserActionStatus;
 import com.meant.api.module.agent.exception.AgentException;
@@ -36,6 +37,7 @@ public class AgentUserActionService {
     private final AgentJsonSupport jsonSupport;
     private final AgentToolSchemaValidator schemaValidator;
     private final AgentMetrics metrics;
+    private final AgentMutationExecutionLane mutationExecutionLane;
     private final AgentProperties properties;
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
@@ -53,20 +55,25 @@ public class AgentUserActionService {
             return reservation.completedResult();
         }
         persistenceService.start(reservation.actionId());
-        Future<AgentToolExecutionResult> future = executor.submit(() -> tool.execute(
-                new AgentToolExecutionContext(
-                        command.userId(),
-                        command.conversationId(),
-                        null,
-                        reservation.actionId(),
-                        command.summary(),
-                        reservation.actionId()
-                ).withBuyerIp(command.buyerIp())
-                        .withMerchantId(reservation.merchantId()),
-                arguments
+        AgentToolExecutionContext context = new AgentToolExecutionContext(
+                command.userId(),
+                command.conversationId(),
+                null,
+                reservation.actionId(),
+                command.summary(),
+                reservation.actionId()
+        ).withBuyerIp(command.buyerIp())
+                .withMerchantId(reservation.merchantId());
+        AgentMutationExecutionLane.Attempt attempt =
+                mutationExecutionLane.newAttempt(properties.toolDeadline());
+        Future<AgentToolExecutionResult> future = executor.submit(() -> mutationExecutionLane.execute(
+                command.userId(),
+                tool.descriptor().riskClass(),
+                attempt,
+                () -> tool.execute(context, arguments)
         ));
         try {
-            AgentToolExecutionResult result = future.get(properties.toolDeadline().toMillis(), TimeUnit.MILLISECONDS);
+            AgentToolExecutionResult result = future.get(attempt.remainingNanos(), TimeUnit.NANOSECONDS);
             AgentUserActionResult completed = persistenceService.complete(reservation.actionId(), command, result);
             metrics.tool(
                     tool.descriptor().name(),
@@ -77,11 +84,18 @@ public class AgentUserActionService {
             return completed;
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
+            boolean definitelyNotStarted = attempt.cancelBeforeStart();
             future.cancel(true);
             persistenceService.fail(
                     reservation.actionId(),
-                    uncertainStatus(tool.descriptor().riskClass()),
-                    "The action was interrupted before its outcome could be confirmed."
+                    unconfirmedStatus(
+                            tool.descriptor().riskClass(),
+                            definitelyNotStarted,
+                            reservation.reconciliationRetry()
+                    ),
+                    definitelyNotStarted && !reservation.reconciliationRetry()
+                            ? "The action was interrupted before it started."
+                            : "The action was interrupted before its outcome could be confirmed."
             );
             metrics.tool(
                     tool.descriptor().name(),
@@ -89,16 +103,26 @@ public class AgentUserActionService {
                     "cancelled",
                     elapsedMilliseconds(started)
             );
+            if (definitelyNotStarted && !reservation.reconciliationRetry()) {
+                throw AgentException.conflict("The action did not start. Try again.");
+            }
             throw AgentException.actionUncertain(
                     HttpStatus.CONFLICT,
                     "The action was interrupted before its outcome could be confirmed. Try again."
             );
         } catch (TimeoutException exception) {
+            boolean definitelyNotStarted = attempt.cancelBeforeStart();
             future.cancel(true);
             persistenceService.fail(
                     reservation.actionId(),
-                    uncertainStatus(tool.descriptor().riskClass()),
-                    "The action timed out before its outcome could be confirmed."
+                    unconfirmedStatus(
+                            tool.descriptor().riskClass(),
+                            definitelyNotStarted,
+                            reservation.reconciliationRetry()
+                    ),
+                    definitelyNotStarted && !reservation.reconciliationRetry()
+                            ? AgentMutationAdmission.USER_ACTION_SAFE_MESSAGE
+                            : "The action timed out before its outcome could be confirmed."
             );
             metrics.tool(
                     tool.descriptor().name(),
@@ -106,12 +130,39 @@ public class AgentUserActionService {
                     "timeout",
                     elapsedMilliseconds(started)
             );
+            if (definitelyNotStarted && !reservation.reconciliationRetry()) {
+                throw AgentException.conflict("The action could not start in time. Try again.");
+            }
             throw AgentException.actionUncertain(
                     HttpStatus.REQUEST_TIMEOUT,
                     "The action timed out. Try again."
             );
         } catch (ExecutionException exception) {
             Throwable cause = exception.getCause();
+            if (cause instanceof TimeoutException) {
+                persistenceService.fail(
+                        reservation.actionId(),
+                        reservation.reconciliationRetry()
+                                ? AgentUserActionStatus.UNCERTAIN
+                                : AgentUserActionStatus.FAILED,
+                        reservation.reconciliationRetry()
+                                ? "The earlier action outcome is still unconfirmed."
+                                : AgentMutationAdmission.USER_ACTION_SAFE_MESSAGE
+                );
+                metrics.tool(
+                        tool.descriptor().name(),
+                        tool.descriptor().riskClass(),
+                        "timeout",
+                        elapsedMilliseconds(started)
+                );
+                if (reservation.reconciliationRetry()) {
+                    throw AgentException.actionUncertain(
+                            HttpStatus.REQUEST_TIMEOUT,
+                            "The earlier action outcome is still uncertain. Try again."
+                    );
+                }
+                throw AgentException.conflict("The action could not start in time. Try again.");
+            }
             boolean uncertainMutation = outcomeUncertain(tool.descriptor().riskClass(), cause);
             String safeMessage = cause instanceof ApiException apiException
                     ? apiException.getSafeMessage()
@@ -155,8 +206,14 @@ public class AgentUserActionService {
         return java.time.Duration.ofNanos(System.nanoTime() - started).toMillis();
     }
 
-    private AgentUserActionStatus uncertainStatus(AgentToolRisk risk) {
-        return risk == AgentToolRisk.READ ? AgentUserActionStatus.FAILED : AgentUserActionStatus.UNCERTAIN;
+    private AgentUserActionStatus unconfirmedStatus(
+            AgentToolRisk risk,
+            boolean definitelyNotStarted,
+            boolean reconciliationRetry
+    ) {
+        return !reconciliationRetry && (definitelyNotStarted || risk == AgentToolRisk.READ)
+                ? AgentUserActionStatus.FAILED
+                : AgentUserActionStatus.UNCERTAIN;
     }
 
     @PreDestroy

@@ -79,7 +79,8 @@ public class AgentUserActionPersistenceService {
                                         .map(AgentResultMapper::artifact)
                                         .toList()
                         ),
-                        conversation.getMerchantId()
+                        conversation.getMerchantId(),
+                        false
                 );
             }
             if (!action.getToolVersion().equals(toolVersion)) {
@@ -97,10 +98,12 @@ public class AgentUserActionPersistenceService {
                         "The action idempotency key was already used with a different tool version."
                 );
             }
-            if (action.getStatus() == AgentUserActionStatus.UNCERTAIN) {
+            if (action.getStatus() == AgentUserActionStatus.UNCERTAIN
+                    || action.retryableAdmissionFailure()) {
+                boolean reconciliationRetry = action.getStatus() == AgentUserActionStatus.UNCERTAIN;
                 action.retry();
                 return new AgentUserActionReservation(
-                        action.getId(), true, null, conversation.getMerchantId());
+                        action.getId(), true, null, conversation.getMerchantId(), reconciliationRetry);
             }
             if (action.getStatus() == AgentUserActionStatus.RESERVED
                     || action.getStatus() == AgentUserActionStatus.RUNNING) {
@@ -119,7 +122,7 @@ public class AgentUserActionPersistenceService {
                 .createdAt(clock.instant())
                 .build());
         return new AgentUserActionReservation(
-                action.getId(), true, null, conversation.getMerchantId());
+                action.getId(), true, null, conversation.getMerchantId(), false);
     }
 
     @Transactional

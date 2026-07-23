@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.meant.api.common.service.UserMutationExecutionLane;
 import com.meant.api.module.cart.exception.CartException;
 import com.meant.api.module.cart.service.command.CreateCartCommand;
 import com.meant.api.module.cart.service.dto.CartRoutingTarget;
@@ -62,7 +63,8 @@ class CartMerchantScopeIsolationTest {
                         new com.meant.api.module.cart.properties.CartRetryProperties(java.time.Duration.ofSeconds(2)),
                         new CartRetrySleeper()),
                 new CheckoutUpdateReconciliationService(), new CheckoutCancellationPolicy(),
-                mock(com.meant.api.module.user.service.UserCheckoutDetailsService.class));
+                mock(com.meant.api.module.user.service.UserCheckoutDetailsService.class),
+                new UserMutationExecutionLane());
         CreateCartCommand command = new CreateCartCommand(
                 UUID.randomUUID(), null, null,
                 List.of(new CreateCartCommand.AddItem("shop-1", 1), new CreateCartCommand.AddItem("shop-2", 1)),

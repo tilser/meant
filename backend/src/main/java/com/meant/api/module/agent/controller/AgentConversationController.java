@@ -150,7 +150,7 @@ public class AgentConversationController {
     @ResponseStatus(HttpStatus.ACCEPTED)
     @Operation(
             summary = "Queue an agent turn",
-            description = "Cancels the current run when necessary and queues this turn behind it."
+            description = "Queues behind an active run in the same conversation; other conversations can run concurrently."
     )
     public SubmitAgentTurnResponse submitTurn(
             @AuthenticationPrincipal Jwt jwt,

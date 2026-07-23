@@ -24,8 +24,8 @@ public interface AgentRunRepository extends JpaRepository<AgentRun, UUID> {
 
     Optional<AgentRun> findByTriggeringMessageId(UUID triggeringMessageId);
 
-    Optional<AgentRun> findFirstByUserIdAndStatusInOrderByCreatedAtAscIdAsc(
-            UUID userId,
+    Optional<AgentRun> findFirstByConversationIdAndStatusInOrderByCreatedAtAscIdAsc(
+            UUID conversationId,
             Collection<AgentRunStatus> statuses
     );
 
@@ -49,8 +49,8 @@ public interface AgentRunRepository extends JpaRepository<AgentRun, UUID> {
             Pageable pageable
     );
 
-    boolean existsByUserIdAndStatusAndIdNot(
-            UUID userId,
+    boolean existsByConversationIdAndStatusAndIdNot(
+            UUID conversationId,
             AgentRunStatus status,
             UUID id
     );

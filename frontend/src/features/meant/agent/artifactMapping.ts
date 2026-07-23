@@ -2,6 +2,7 @@ import type {
   AgentArtifactProfile,
   AgentConversationDetailProfile,
   AgentMessageProfile,
+  CartProfile,
   CanonicalProductProfile,
   ProductReviewsProfile,
 } from '../../../lib/apiClient'
@@ -15,6 +16,7 @@ import type {
 } from '../chat/types'
 import { productFromCanonical } from '../product/groupedProductMapping'
 import type { AppliedCartCode, MerchantCartStateReplacement } from '../cart/types'
+import { cartSnapshotFromProfile } from '../cart/utils'
 import type {
   CartDeliveryGroup,
   CartDeliveryOption,
@@ -894,6 +896,17 @@ export function latestCartSnapshotArtifacts(
   )
 }
 
+/**
+ * Reconciles only cart snapshots written by the settling run. Historical
+ * partitions from other runs must not overwrite newer local cart intent.
+ */
+export function latestCartSnapshotArtifactsForRunSettlement(
+  artifacts: readonly AgentArtifactProfile[],
+  runId: string,
+): AgentArtifactProfile[] {
+  return latestCartSnapshotArtifacts(artifacts.filter((artifact) => artifact.runId === runId))
+}
+
 export interface AgentProductInteractionState {
   pinned: ReadonlySet<string>
   watched: ReadonlySet<string>
@@ -1199,6 +1212,127 @@ export function cartStateReplacementsFromAgentArtifacts(
       },
     ]
   })
+}
+
+type CartProfileLine = NonNullable<CartProfile['lines']>[number]
+
+function cartCandidateForProfileLine(
+  line: CartProfileLine,
+  candidates: readonly CartItem[],
+): CartItem | null {
+  return (
+    candidates.find(
+      (candidate) => candidate.cartLineId && candidate.cartLineId === line.cartLineId,
+    ) ??
+    candidates.find(
+      (candidate) =>
+        candidate.remoteCartLineId && candidate.remoteCartLineId === line.remoteCartLineId,
+    ) ??
+    candidates.find((candidate) => candidate.offerKey && candidate.offerKey === line.offerKey) ??
+    candidates.find(
+      (candidate) =>
+        candidate.productVariantId && candidate.productVariantId === line.productVariantId,
+    ) ??
+    null
+  )
+}
+
+/**
+ * Projects the durable cart read model into a complete local merchant partition.
+ * Every server line must resolve to either a known product or an existing local
+ * line; otherwise callers retry reconciliation without applying partial state.
+ */
+export function cartStateReplacementFromCartProfile(
+  profile: CartProfile,
+  products: readonly Product[],
+  candidates: readonly CartItem[],
+  fallback: MerchantCartStateReplacement,
+): MerchantCartStateReplacement | null {
+  const merchant =
+    profile.merchantDomain?.trim() ||
+    profile.provider?.trim() ||
+    fallback.snapshot.merchant ||
+    'Merchant'
+  const routingScopeKey = profile.routingScopeKey ?? fallback.routingScopeKey
+  const merchantKey = cartMerchantKey({
+    merchant,
+    merchantId: profile.merchantId,
+    merchantDomain: profile.merchantDomain,
+    merchantScopeKey: routingScopeKey,
+  })
+  const scopedCandidates = [...fallback.lines, ...candidates].filter(
+    (candidate) =>
+      candidate.cartId === profile.cartId ||
+      candidate.remoteCartId === profile.remoteCartId ||
+      fallback.lines.includes(candidate),
+  )
+  const deliveryGroups = (
+    profile.deliveryGroups as readonly (CartDeliveryGroup | null | undefined)[] | undefined
+  )?.filter((group): group is CartDeliveryGroup => Boolean(group))
+  const lines = (profile.lines ?? []).flatMap((line): CartItem[] => {
+    const offerKey = line.offerKey?.trim() || null
+    const candidate = cartCandidateForProfileLine(line, scopedCandidates)
+    const product =
+      productForOffer(products, offerKey) ??
+      products.find((item) => item.id === line.productId) ??
+      null
+    const productId = candidate?.id ?? product?.id
+    if (!productId) return []
+    const quantity = Math.max(1, line.quantity)
+    return [
+      {
+        ...candidate,
+        id: productId,
+        merchant,
+        qty: quantity,
+        merchantId: profile.merchantId ?? candidate?.merchantId,
+        merchantDomain: profile.merchantDomain ?? candidate?.merchantDomain,
+        provider: line.provider ?? profile.provider ?? candidate?.provider,
+        merchantIntegrationId:
+          line.merchantIntegrationId ??
+          profile.merchantIntegrationId ??
+          candidate?.merchantIntegrationId,
+        externalMerchantId:
+          line.externalMerchantId ?? profile.externalMerchantId ?? candidate?.externalMerchantId,
+        routingScopeKey,
+        merchantScopeKey: routingScopeKey ?? merchantKey,
+        productVariantId: line.productVariantId ?? candidate?.productVariantId,
+        cartId: profile.cartId,
+        remoteCartId: profile.remoteCartId,
+        checkoutUrl: profile.checkoutUrl ?? null,
+        continueUrl: profile.continueUrl ?? null,
+        cartLineId: line.cartLineId,
+        remoteCartLineId: line.remoteCartLineId,
+        offerKey,
+        cartTotalAmount: profile.totalAmount ?? null,
+        cartSubtotalAmount: profile.subtotalAmount ?? null,
+        cartCurrency: profile.currency ?? null,
+        deliveryGroups: deliveryGroups ?? [],
+        productTitle: line.productTitle ?? product?.name ?? candidate?.productTitle,
+        variantTitle: line.variantTitle ?? candidate?.variantTitle,
+        unitPriceAmount:
+          unitAmount(line.subtotalAmount, quantity) ??
+          unitAmount(line.totalAmount, quantity) ??
+          candidate?.unitPriceAmount,
+        lineTotalAmount: line.totalAmount ?? candidate?.lineTotalAmount,
+        orderCurrency: line.currency ?? profile.currency ?? candidate?.orderCurrency,
+        syncing: false,
+        syncError: null,
+      },
+    ]
+  })
+  if (lines.length !== (profile.lines ?? []).length) return null
+  return {
+    merchantKey,
+    merchantId: profile.merchantId ?? null,
+    merchantDomain: profile.merchantDomain ?? null,
+    provider: profile.provider ?? null,
+    merchantIntegrationId: profile.merchantIntegrationId ?? null,
+    externalMerchantId: profile.externalMerchantId ?? null,
+    routingScopeKey: routingScopeKey ?? null,
+    snapshot: cartSnapshotFromProfile(profile, merchantKey, merchant),
+    lines,
+  }
 }
 
 function discountCodes(artifact: AgentArtifactProfile): FoundDiscountCode[] {

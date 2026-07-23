@@ -10,6 +10,9 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.meant.api.common.service.UserMutationExecutionLane;
+import com.meant.api.module.agent.constant.AgentToolRisk;
+import com.meant.api.module.agent.service.AgentMutationExecutionLane;
 import com.meant.api.module.cart.constant.CartAppliedCodeType;
 import com.meant.api.module.cart.entity.Cart;
 import com.meant.api.module.cart.entity.CartAppliedCode;
@@ -113,6 +116,7 @@ class CartServiceTest {
     private UserCheckoutDetailsService userCheckoutDetailsService;
     private SelectedOfferCartRoutingService routing;
     private Merchant merchant;
+    private UserMutationExecutionLane mutationExecutionLane;
 
     @BeforeEach
     void setUp() {
@@ -166,6 +170,7 @@ class CartServiceTest {
                     Instant.parse("2026-06-16T11:08:00Z")
             );
         });
+        mutationExecutionLane = new UserMutationExecutionLane();
         cartService = new CartService(
                 providerLookup,
                 new CartBuyerContextService(commerceContextService),
@@ -189,7 +194,8 @@ class CartServiceTest {
                         new CartRetrySleeper()),
                 new CheckoutUpdateReconciliationService(),
                 new CheckoutCancellationPolicy(),
-                userCheckoutDetailsService
+                userCheckoutDetailsService,
+                mutationExecutionLane
         );
         cartDispatchService.cartToolResult = cartToolResult();
     }
@@ -954,10 +960,135 @@ class CartServiceTest {
     }
 
     @Test
-    void concurrentCheckoutCreationConvergesOnOneLogicalCheckout() throws Exception {
+    void agentAndDirectCartMutationsShareTheSameUserLane() throws Exception {
+        AgentMutationExecutionLane agentLane = new AgentMutationExecutionLane(mutationExecutionLane);
+        CountDownLatch agentEntered = new CountDownLatch(1);
+        CountDownLatch releaseAgent = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            Future<?> agentMutation = executor.submit(() -> agentLane.execute(
+                    USER_ID,
+                    AgentToolRisk.REVERSIBLE_MUTATION,
+                    java.time.Duration.ofSeconds(2),
+                    () -> {
+                        agentEntered.countDown();
+                        try {
+                            releaseAgent.await();
+                        } catch (InterruptedException exception) {
+                            Thread.currentThread().interrupt();
+                        }
+                        return null;
+                    }
+            ));
+            assertThat(agentEntered.await(1, TimeUnit.SECONDS)).isTrue();
+
+            Future<CartResult> directMutation = executor.submit(() -> cartService.create(new CreateCartCommand(
+                    USER_ID,
+                    merchant.getId(),
+                    null,
+                    List.of(new CreateCartCommand.AddItem("gid://shopify/ProductVariant/1", 1)),
+                    null,
+                    List.of(),
+                    List.of(),
+                    List.of(),
+                    List.of(),
+                    List.of(),
+                    null
+            )));
+
+            assertThatThrownBy(() -> directMutation.get(50, TimeUnit.MILLISECONDS))
+                    .isInstanceOf(java.util.concurrent.TimeoutException.class);
+            releaseAgent.countDown();
+
+            agentMutation.get(1, TimeUnit.SECONDS);
+            assertThat(directMutation.get(1, TimeUnit.SECONDS).totalQuantity()).isEqualTo(1);
+        } finally {
+            releaseAgent.countDown();
+        }
+    }
+
+    @Test
+    void remoteRefreshJoinsTheMutationLaneWhileLocalReadStaysParallel() throws Exception {
         UUID cartId = UUID.randomUUID();
         cartRepository.save(cart(cartId, null));
-        checkoutDispatchService.concurrentCreates = new CountDownLatch(2);
+        AgentMutationExecutionLane agentLane = new AgentMutationExecutionLane(mutationExecutionLane);
+        CountDownLatch agentEntered = new CountDownLatch(1);
+        CountDownLatch releaseAgent = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            Future<?> agentMutation = executor.submit(() -> agentLane.execute(
+                    USER_ID,
+                    AgentToolRisk.REVERSIBLE_MUTATION,
+                    java.time.Duration.ofSeconds(2),
+                    () -> {
+                        agentEntered.countDown();
+                        try {
+                            releaseAgent.await();
+                        } catch (InterruptedException exception) {
+                            Thread.currentThread().interrupt();
+                        }
+                        return null;
+                    }
+            ));
+            assertThat(agentEntered.await(1, TimeUnit.SECONDS)).isTrue();
+
+            assertThat(cartService.get(new GetCartQuery(cartId, USER_ID, false)).cartId())
+                    .isEqualTo(cartId);
+            Future<CartResult> refresh = executor.submit(
+                    () -> cartService.get(new GetCartQuery(cartId, USER_ID, true)));
+            assertThatThrownBy(() -> refresh.get(50, TimeUnit.MILLISECONDS))
+                    .isInstanceOf(java.util.concurrent.TimeoutException.class);
+
+            releaseAgent.countDown();
+            agentMutation.get(1, TimeUnit.SECONDS);
+            assertThat(refresh.get(1, TimeUnit.SECONDS).cartId()).isEqualTo(cartId);
+        } finally {
+            releaseAgent.countDown();
+        }
+    }
+
+    @Test
+    void remoteCheckoutRefreshJoinsTheMutationLaneWhileLocalReadStaysParallel() throws Exception {
+        UUID cartId = UUID.randomUUID();
+        cartRepository.save(cart(cartId, null));
+        cartService.checkout(new GetCheckoutQuery(cartId, USER_ID, false));
+        AgentMutationExecutionLane agentLane = new AgentMutationExecutionLane(mutationExecutionLane);
+        CountDownLatch agentEntered = new CountDownLatch(1);
+        CountDownLatch releaseAgent = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            Future<?> agentMutation = executor.submit(() -> agentLane.execute(
+                    USER_ID,
+                    AgentToolRisk.REVERSIBLE_MUTATION,
+                    java.time.Duration.ofSeconds(2),
+                    () -> {
+                        agentEntered.countDown();
+                        try {
+                            releaseAgent.await();
+                        } catch (InterruptedException exception) {
+                            Thread.currentThread().interrupt();
+                        }
+                        return null;
+                    }
+            ));
+            assertThat(agentEntered.await(1, TimeUnit.SECONDS)).isTrue();
+
+            assertThat(cartService.getCheckout(new GetCheckoutQuery(cartId, USER_ID, false)).cartId())
+                    .isEqualTo(cartId);
+            Future<CheckoutResult> refresh = executor.submit(
+                    () -> cartService.getCheckout(new GetCheckoutQuery(cartId, USER_ID, true)));
+            assertThatThrownBy(() -> refresh.get(50, TimeUnit.MILLISECONDS))
+                    .isInstanceOf(java.util.concurrent.TimeoutException.class);
+
+            releaseAgent.countDown();
+            agentMutation.get(1, TimeUnit.SECONDS);
+            assertThat(refresh.get(1, TimeUnit.SECONDS).cartId()).isEqualTo(cartId);
+        } finally {
+            releaseAgent.countDown();
+        }
+    }
+
+    @Test
+    void concurrentCheckoutCreationIsSerializedIntoOneRemoteCheckout() throws Exception {
+        UUID cartId = UUID.randomUUID();
+        cartRepository.save(cart(cartId, null));
 
         try (var executor = Executors.newFixedThreadPool(2)) {
             Future<CheckoutResult> first = executor.submit(
@@ -971,7 +1102,7 @@ class CartServiceTest {
             assertThat(firstResult.checkoutId()).isEqualTo("gid://shopify/Checkout/1");
             assertThat(secondResult.checkoutId()).isEqualTo(firstResult.checkoutId());
             assertThat(cartRepository.carts.get(cartId).getCheckoutId()).isEqualTo(firstResult.checkoutId());
-            assertThat(checkoutDispatchService.createCount).isEqualTo(2);
+            assertThat(checkoutDispatchService.createCount).isEqualTo(1);
         }
     }
 

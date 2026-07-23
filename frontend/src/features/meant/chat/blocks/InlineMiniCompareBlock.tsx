@@ -11,12 +11,14 @@ export function InlineMiniCompareBlock({
   onOpen,
   onAddCart,
   onOpenFullCompare,
+  agentActionsDisabled = false,
 }: Readonly<{
   block: Extract<DiscoverChatBlock, { type: 'minicompare' }>
   deliveryLocations: readonly UserLocation[]
   onOpen: (product: Product, products?: readonly Product[]) => void
   onAddCart: (product: Product) => void
   onOpenFullCompare: (products: readonly Product[]) => void
+  agentActionsDisabled?: boolean
 }>) {
   const pick = block.products[block.pickIndex] ?? block.products[0]
   const gridStyle: CSSProperties = {
@@ -66,7 +68,12 @@ export function InlineMiniCompareBlock({
           <span>
             <b>{pick.name}</b> wins this quick pass on match, price, reviews, and fit gaps.
           </span>
-          <button className="mt-ct-addbtn solid" type="button" onClick={() => onAddCart(pick)}>
+          <button
+            className="mt-ct-addbtn solid"
+            type="button"
+            disabled={agentActionsDisabled}
+            onClick={() => onAddCart(pick)}
+          >
             <CartIcon /> Add pick
           </button>
         </div>
@@ -74,6 +81,7 @@ export function InlineMiniCompareBlock({
       <button
         className="mt-ct-mini-full"
         type="button"
+        disabled={agentActionsDisabled}
         onClick={() => onOpenFullCompare(block.products)}
       >
         Open full compare

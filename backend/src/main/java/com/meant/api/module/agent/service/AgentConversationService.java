@@ -1,7 +1,9 @@
 package com.meant.api.module.agent.service;
 
 import com.meant.api.module.agent.constant.AgentConversationStatus;
+import com.meant.api.module.agent.constant.AgentRunStatus;
 import com.meant.api.module.agent.entity.AgentConversation;
+import com.meant.api.module.agent.entity.AgentRun;
 import com.meant.api.module.agent.exception.AgentException;
 import com.meant.api.module.agent.repository.AgentArtifactReferenceRepository;
 import com.meant.api.module.agent.repository.AgentConversationRepository;
@@ -110,6 +112,12 @@ public class AgentConversationService {
         long latestCursor = runRepository.findFirstByConversationIdOrderByCreatedAtDesc(conversation.getId())
                 .map(run -> run.getLastEventCursor())
                 .orElse(0L);
+        UUID currentRunId = runRepository.findFirstByConversationIdAndStatusInOrderByCreatedAtAscIdAsc(
+                        conversation.getId(),
+                        List.of(AgentRunStatus.RUNNING, AgentRunStatus.QUEUED)
+                )
+                .map(AgentRun::getId)
+                .orElse(null);
         return new AgentConversationResult(
                 conversation.getId(),
                 conversation.getTitle(),
@@ -119,6 +127,7 @@ public class AgentConversationService {
                 conversation.getMerchantId(),
                 conversation.getActiveMissionId(),
                 conversation.getLastSequenceNumber(),
+                currentRunId,
                 latestCursor,
                 messages,
                 artifacts,

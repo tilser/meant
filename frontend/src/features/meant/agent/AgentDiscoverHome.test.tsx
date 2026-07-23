@@ -34,6 +34,7 @@ const props = {
   productDetailChatRequest: null,
   discoverFindRequest: null,
   homeRequestId: 0,
+  agentRunSettlementRevision: 0,
   newsletter: false,
   onOpen: () => undefined,
   onToggleSave: () => undefined,

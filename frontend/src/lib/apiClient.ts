@@ -1778,6 +1778,20 @@ export async function createCart(input: {
   return parseJsonResponse<CartProfile>(response, 'Failed to create cart')
 }
 
+export async function getCart(
+  cartId: string,
+  options?: AccountBoundRequestOptions & { refresh?: boolean },
+): Promise<CartProfile> {
+  const response = await fetch(
+    `${API_URL}/api/carts/${encodeURIComponent(cartId)}?refresh=${options?.refresh ?? false}`,
+    {
+      headers: await authHeaders(options?.expectedUserId),
+      signal: options?.signal,
+    },
+  )
+  return parseJsonResponse<CartProfile>(response, 'Failed to get cart')
+}
+
 export async function updateCart(input: {
   cartId: string
   addItems?: readonly SelectedOfferCartAddItemInput[]
@@ -2151,6 +2165,7 @@ export interface AgentConversationDetailProfile extends AgentConversationSummary
   rollingSummary: string | null
   summaryVersion: number
   latestCursor: number
+  currentRunId?: string | null
   messages: AgentMessageProfile[]
   artifacts: AgentArtifactProfile[]
 }

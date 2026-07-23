@@ -31,20 +31,26 @@ import { resolveCartableOffer } from './cart/cartOfferResolver'
 import type { MerchantCartSnapshot, MerchantCartStateReplacement } from './cart/types'
 import { useCartController } from './cart/useCartController'
 import { AgentDiscoverView } from './agent/AgentDiscoverView'
-import { agentActionQueueFor } from './agent/actionQueue'
+import { commerceActionQueueFor } from './agent/actionQueue'
 import {
   cartStateReplacementsFromAgentArtifacts,
+  cartStateReplacementFromCartProfile,
   currentAgentProductSnapshots,
-  latestCartSnapshotArtifacts,
+  latestCartSnapshotArtifactsForRunSettlement,
   mergeAgentProductSnapshots,
   type AgentProductSnapshot,
 } from './agent/artifactMapping'
 import {
+  agentCartProvenanceAfterReplacements,
   agentCartPartitionFingerprints,
   agentCartReplacementUnchangedSinceSubmission,
+  agentCartReplacementSupersededByCurrentPartition,
   agentCartStateFingerprint,
   isTerminalAgentRunStatus,
+  rebasePendingAgentCartRunsAfterReplacements,
   registerPendingAgentCartRun,
+  settlePendingAgentCartRun,
+  type AgentCartPartitionFingerprints,
   type PendingAgentCartRun,
 } from './agent/cartSync'
 import { CompareView } from './compare/CompareView'
@@ -102,6 +108,7 @@ import {
   deleteUserProductSearchPreference,
   exportUserInventory,
   getCartCheckout,
+  getCart,
   getCompleteAgentConversation,
   getCurrentUser,
   getAgentRun,
@@ -625,7 +632,7 @@ export function MeantApp() {
   const userId = session?.user?.id
   const userEmail = session?.user?.email
   const commerceOperationQueue = useMemo(
-    () => agentActionQueueFor(userId ?? 'signed-out'),
+    () => commerceActionQueueFor(userId ?? 'signed-out'),
     [userId],
   )
   const providerAvatar = authProviderAvatarUrl(session?.user)
@@ -635,6 +642,12 @@ export function MeantApp() {
   const [pendingAgentCartRuns, setPendingAgentCartRuns] = useSessionStoredState<
     Record<string, PendingAgentCartRun>
   >(accountSessionStorageKey('meant.agentPendingCartRuns', userId), {})
+  const [agentCartProvenance, setAgentCartProvenance] =
+    useSessionStoredState<AgentCartPartitionFingerprints | null>(
+      accountSessionStorageKey('meant.agentCartProvenance', userId),
+      null,
+    )
+  const [agentRunSettlementRevision, setAgentRunSettlementRevision] = useState(0)
   const [accountStateOwnerId, setAccountStateOwnerId] = useState<string | null>(userId ?? null)
   const [accountStateVersion, setAccountStateVersion] = useState(0)
   const [searchSuggestions, setSearchSuggestions] = useState<string[]>([])
@@ -723,6 +736,8 @@ export function MeantApp() {
   activeUserIdRef.current = userId
   const pendingAgentCartRunsRef = useRef(pendingAgentCartRuns)
   pendingAgentCartRunsRef.current = pendingAgentCartRuns
+  const agentCartProvenanceRef = useRef(agentCartProvenance)
+  agentCartProvenanceRef.current = agentCartProvenance
   const productSearchPreferencesQueueRef = useRef<Promise<void>>(Promise.resolve())
   const productSearchPreferencesPendingOperationsRef = useRef(0)
   const productSearchPreferencesRefreshPendingRef = useRef(false)
@@ -779,6 +794,23 @@ export function MeantApp() {
       setPendingAgentCartRuns(next)
     },
     [setPendingAgentCartRuns],
+  )
+
+  const recordAgentCartProvenance = useCallback(
+    (
+      replacements: readonly MerchantCartStateReplacement[],
+      after: AgentCartPartitionFingerprints,
+    ) => {
+      if (replacements.length === 0) return
+      const next = agentCartProvenanceAfterReplacements(
+        agentCartProvenanceRef.current,
+        replacements,
+        after,
+      )
+      agentCartProvenanceRef.current = next
+      setAgentCartProvenance(next)
+    },
+    [setAgentCartProvenance],
   )
 
   useEffect(() => {
@@ -967,18 +999,29 @@ export function MeantApp() {
     [commerceOperationQueue],
   )
 
+  const runUniqueCommerceMutation = useCallback(
+    async <T,>(key: string, operation: () => Promise<T>): Promise<T> => {
+      return commerceOperationQueue.enqueueUnique(key, operation)
+    },
+    [commerceOperationQueue],
+  )
+
   const addSelectedOfferToCartGuarded = useCallback(
     async (...args: Parameters<typeof addSelectedOfferToCart>) => {
-      return runCommerceMutation(() => addSelectedOfferToCart(...args))
+      const [product, offerKey] = args
+      const key = JSON.stringify(['add-to-cart', product.id, offerKey.trim()])
+      return runUniqueCommerceMutation(key, () => addSelectedOfferToCart(...args))
     },
-    [addSelectedOfferToCart, runCommerceMutation],
+    [addSelectedOfferToCart, runUniqueCommerceMutation],
   )
 
   const addToCartGuarded = useCallback(
     async (...args: Parameters<typeof addToCart>) => {
-      return runCommerceMutation(() => addToCart(...args))
+      const [productId, merchant] = args
+      const key = JSON.stringify(['add-to-cart', productId, merchant])
+      return runUniqueCommerceMutation(key, () => addToCart(...args))
     },
-    [addToCart, runCommerceMutation],
+    [addToCart, runUniqueCommerceMutation],
   )
 
   const removeFromCartGuarded = useCallback(
@@ -1037,12 +1080,23 @@ export function MeantApp() {
 
   const addProductOfferToCartResolved = useCallback(
     async (product: Product, offer: Offer): Promise<boolean> => {
-      return runCommerceMutation(async () => {
+      const exactOfferKey = offer.offerKey?.trim()
+      const key = exactOfferKey
+        ? JSON.stringify(['add-to-cart', product.id, exactOfferKey])
+        : JSON.stringify([
+            'add-to-cart',
+            product.id,
+            offer.provider ?? null,
+            offer.merchantIntegrationId ?? null,
+            offer.externalMerchantId ?? null,
+            offer.merchant,
+            offer.productVariantId ?? null,
+          ])
+      return runUniqueCommerceMutation(key, async () => {
         const requestedUserId = userId
         if (!requestedUserId || activeUserIdRef.current !== requestedUserId) {
           return false
         }
-        const exactOfferKey = offer.offerKey?.trim()
         if (exactOfferKey) {
           return addSelectedOfferToCart(product, exactOfferKey)
         }
@@ -1062,7 +1116,13 @@ export function MeantApp() {
         }
       })
     },
-    [addProductOfferToCart, addSelectedOfferToCart, deliveryLocations, runCommerceMutation, userId],
+    [
+      addProductOfferToCart,
+      addSelectedOfferToCart,
+      deliveryLocations,
+      runUniqueCommerceMutation,
+      userId,
+    ],
   )
   const savedListProducts = useMemo(
     () =>
@@ -1721,10 +1781,14 @@ export function MeantApp() {
         : []
       if (safeReplacements.length > 0) {
         replaceMerchantCartStatesRef.current(safeReplacements)
+        recordAgentCartProvenance(
+          safeReplacements,
+          agentCartPartitionFingerprints(getCurrentCart(), getCurrentCartSnapshots()),
+        )
       }
       return getCurrentCart()
     },
-    [getCurrentCart, getCurrentCartSnapshots, userId],
+    [getCurrentCart, getCurrentCartSnapshots, recordAgentCartProvenance, userId],
   )
 
   const registerAgentCartRun = useCallback(
@@ -1739,6 +1803,38 @@ export function MeantApp() {
       )
     },
     [updatePendingAgentCartRuns, userId],
+  )
+
+  const settleAgentCartRun = useCallback(
+    (
+      runId: string,
+      conversationId: string,
+      appliedReplacements: readonly MerchantCartStateReplacement[] = [],
+      beforeReplacement?: ReturnType<typeof agentCartPartitionFingerprints>,
+      afterReplacement?: ReturnType<typeof agentCartPartitionFingerprints>,
+    ) => {
+      let settled = false
+      updatePendingAgentCartRuns((current) => {
+        const rebased =
+          beforeReplacement && afterReplacement
+            ? rebasePendingAgentCartRunsAfterReplacements(
+                current,
+                runId,
+                conversationId,
+                appliedReplacements,
+                beforeReplacement,
+                afterReplacement,
+              )
+            : current
+        const withoutSettledRun = settlePendingAgentCartRun(rebased, runId, conversationId)
+        settled = withoutSettledRun !== rebased
+        return withoutSettledRun
+      })
+      if (settled) {
+        setAgentRunSettlementRevision((current) => current + 1)
+      }
+    },
+    [updatePendingAgentCartRuns],
   )
 
   useEffect(() => {
@@ -1787,8 +1883,10 @@ export function MeantApp() {
           if (controller.signal.aborted || activeUserIdRef.current !== userId) return
           const productSnapshots = currentAgentProductSnapshots(conversation.artifacts)
           registerAgentProducts(productSnapshots)
-          const runArtifacts = conversation.artifacts.filter((artifact) => artifact.runId === runId)
-          const currentCartArtifacts = latestCartSnapshotArtifacts(runArtifacts)
+          const currentCartArtifacts = latestCartSnapshotArtifactsForRunSettlement(
+            conversation.artifacts,
+            runId,
+          )
           const replacementProducts = [
             ...allKnownProductsRef.current,
             ...productSnapshots.map((snapshot) => snapshot.product),
@@ -1797,30 +1895,166 @@ export function MeantApp() {
             currentCartArtifacts,
             replacementProducts,
           )
-          const liveCart = getCurrentCart()
-          const liveSnapshots = getCurrentCartSnapshots()
-          const currentCartRevision = agentCartPartitionFingerprints(liveCart, liveSnapshots)
-          const safeReplacements = pendingRun.cartFingerprints
-            ? replacements.filter((replacement) =>
-                agentCartReplacementUnchangedSinceSubmission(
-                  replacement,
-                  pendingRun.cartFingerprints,
-                  currentCartRevision,
-                ),
-              )
-            : pendingRun.cartFingerprint === agentCartStateFingerprint(liveCart, liveSnapshots)
-              ? replacements
-              : []
-          if (safeReplacements.length > 0) {
-            replaceMerchantCartStatesRef.current(safeReplacements)
-          }
-          updatePendingAgentCartRuns((current) => {
-            if (current[runId]?.conversationId !== conversationId) return current
-            const next = { ...current }
-            delete next[runId]
-            return next
+          const settlement = await commerceOperationQueue.enqueue(async () => {
+            if (controller.signal.aborted || activeUserIdRef.current !== userId) return null
+            const liveCart = getCurrentCart()
+            const liveSnapshots = getCurrentCartSnapshots()
+            const currentCartRevision = agentCartPartitionFingerprints(liveCart, liveSnapshots)
+            const currentLegacyFingerprint = agentCartStateFingerprint(liveCart, liveSnapshots)
+            const baselineSafeAtStart = new Set(
+              pendingRun.cartFingerprints
+                ? replacements.filter((replacement) =>
+                    agentCartReplacementUnchangedSinceSubmission(
+                      replacement,
+                      pendingRun.cartFingerprints,
+                      currentCartRevision,
+                    ),
+                  )
+                : pendingRun.cartFingerprint === currentLegacyFingerprint
+                  ? replacements
+                  : [],
+            )
+            const provenanceSafeAtStart = new Set(
+              agentCartProvenanceRef.current
+                ? replacements.filter((replacement) =>
+                    agentCartReplacementUnchangedSinceSubmission(
+                      replacement,
+                      agentCartProvenanceRef.current ?? undefined,
+                      currentCartRevision,
+                    ),
+                  )
+                : [],
+            )
+            const resolved = await Promise.all(
+              replacements.map(async (artifactReplacement) => {
+                const cartId = artifactReplacement.snapshot.cartId
+                if (!cartId) {
+                  return {
+                    artifactReplacement,
+                    authoritativeReplacement: null,
+                    supersededInactiveCart: false,
+                  }
+                }
+                try {
+                  const profile = await getCart(cartId, {
+                    expectedUserId: userId,
+                    refresh: false,
+                    signal: controller.signal,
+                  })
+                  if (!profile.active) {
+                    return {
+                      artifactReplacement,
+                      authoritativeReplacement: null,
+                      supersededInactiveCart: agentCartReplacementSupersededByCurrentPartition(
+                        artifactReplacement,
+                        currentCartRevision,
+                      ),
+                    }
+                  }
+                  const authoritative = cartStateReplacementFromCartProfile(
+                    profile,
+                    replacementProducts,
+                    getCurrentCart(),
+                    artifactReplacement,
+                  )
+                  if (authoritative) {
+                    return {
+                      artifactReplacement,
+                      authoritativeReplacement: authoritative,
+                      supersededInactiveCart: false,
+                    }
+                  }
+                } catch (error) {
+                  if (controller.signal.aborted) throw error
+                  if (
+                    error instanceof ApiError &&
+                    error.status === 404 &&
+                    agentCartReplacementSupersededByCurrentPartition(
+                      artifactReplacement,
+                      currentCartRevision,
+                    )
+                  ) {
+                    return {
+                      artifactReplacement,
+                      authoritativeReplacement: null,
+                      supersededInactiveCart: true,
+                    }
+                  }
+                  // Retry settlement rather than applying a potentially stale run artifact.
+                }
+                return {
+                  artifactReplacement,
+                  authoritativeReplacement: null,
+                  supersededInactiveCart: false,
+                }
+              }),
+            )
+            if (controller.signal.aborted || activeUserIdRef.current !== userId) return null
+
+            const beforeReplacement = agentCartPartitionFingerprints(
+              getCurrentCart(),
+              getCurrentCartSnapshots(),
+            )
+            const unchangedDuringFetch = new Set(
+              resolved
+                .filter(({ artifactReplacement }) =>
+                  agentCartReplacementUnchangedSinceSubmission(
+                    artifactReplacement,
+                    currentCartRevision,
+                    beforeReplacement,
+                  ),
+                )
+                .map(({ artifactReplacement }) => artifactReplacement),
+            )
+            const appliedReplacements = resolved.flatMap(
+              ({ artifactReplacement, authoritativeReplacement }) => {
+                if (!unchangedDuringFetch.has(artifactReplacement)) return []
+                if (
+                  authoritativeReplacement &&
+                  (baselineSafeAtStart.has(artifactReplacement) ||
+                    provenanceSafeAtStart.has(artifactReplacement))
+                ) {
+                  return [authoritativeReplacement]
+                }
+                return []
+              },
+            )
+            if (appliedReplacements.length > 0) {
+              replaceMerchantCartStatesRef.current(appliedReplacements)
+            }
+            const afterReplacement =
+              appliedReplacements.length > 0
+                ? agentCartPartitionFingerprints(getCurrentCart(), getCurrentCartSnapshots())
+                : undefined
+            if (afterReplacement) {
+              recordAgentCartProvenance(appliedReplacements, afterReplacement)
+            }
+            const retrySettlement = resolved.some(
+              ({ authoritativeReplacement, supersededInactiveCart }) =>
+                !authoritativeReplacement && !supersededInactiveCart,
+            )
+            return {
+              appliedReplacements,
+              beforeReplacement,
+              afterReplacement,
+              retrySettlement,
+            }
           })
-          if (safeReplacements.length > 0) return
+          if (!settlement) return
+          if (settlement.retrySettlement) {
+            retryNeeded = true
+            continue
+          }
+          settleAgentCartRun(
+            runId,
+            conversationId,
+            settlement.appliedReplacements,
+            settlement.afterReplacement ? settlement.beforeReplacement : undefined,
+            settlement.afterReplacement,
+          )
+          if (settlement.appliedReplacements.length > 0) {
+            return
+          }
         } catch (error) {
           if (controller.signal.aborted) return
           if (error instanceof ApiError && [400, 403, 404].includes(error.status)) {
@@ -1842,10 +2076,13 @@ export function MeantApp() {
     }
   }, [
     accountStateCurrent,
+    commerceOperationQueue,
     getCurrentCart,
     getCurrentCartSnapshots,
     pendingAgentCartRuns,
+    recordAgentCartProvenance,
     registerAgentProducts,
+    settleAgentCartRun,
     updatePendingAgentCartRuns,
     userId,
   ])
@@ -2900,6 +3137,7 @@ export function MeantApp() {
             productDetailChatRequest={currentProductDetailChatRequest}
             discoverFindRequest={currentDiscoverFindRequest}
             homeRequestId={discoverHomeRequestId}
+            agentRunSettlementRevision={agentRunSettlementRevision}
             newsletter={user.newsletter}
             onOpen={(product, products, researchQuery) =>
               openProduct(product, products ?? allKnownProducts, researchQuery)

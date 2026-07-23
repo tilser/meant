@@ -88,7 +88,7 @@ class AgentTurnServiceTest {
                 "203.0.113.42"
         ));
 
-        verify(runs, never()).findFirstByUserIdAndStatusInOrderByCreatedAtAscIdAsc(any(), any());
+        verify(runs, never()).findFirstByConversationIdAndStatusInOrderByCreatedAtAscIdAsc(any(), any());
         assertThat(accepted.userMessage().runId()).isEqualTo(accepted.runId());
         assertThat(accepted.userMessage().sequenceNumber()).isEqualTo(1);
         assertThat(accepted.userMessage().correlationId()).isEqualTo("client-turn-1");

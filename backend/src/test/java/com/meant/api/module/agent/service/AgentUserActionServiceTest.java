@@ -9,6 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.meant.api.common.constant.ApiErrorCode;
+import com.meant.api.common.service.UserMutationExecutionLane;
 import com.meant.api.module.agent.constant.AgentToolRisk;
 import com.meant.api.module.agent.constant.AgentUserActionStatus;
 import com.meant.api.module.agent.exception.AgentException;
@@ -25,6 +26,8 @@ import com.meant.api.module.user.exception.SelectedOfferResolutionException;
 import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -81,6 +84,7 @@ class AgentUserActionServiceTest {
                 json,
                 schema,
                 mock(AgentMetrics.class),
+                new AgentMutationExecutionLane(new UserMutationExecutionLane()),
                 properties()
         );
 
@@ -144,6 +148,7 @@ class AgentUserActionServiceTest {
                 json,
                 schema,
                 mock(AgentMetrics.class),
+                new AgentMutationExecutionLane(new UserMutationExecutionLane()),
                 properties()
         );
 
@@ -202,6 +207,7 @@ class AgentUserActionServiceTest {
                 json,
                 schema,
                 mock(AgentMetrics.class),
+                new AgentMutationExecutionLane(new UserMutationExecutionLane()),
                 properties()
         );
 
@@ -217,12 +223,117 @@ class AgentUserActionServiceTest {
         }
     }
 
+    @Test
+    void waitingNewMutationTimesOutAsFailedWithoutExecuting() throws Exception {
+        assertWaitingTimeout(false, ApiErrorCode.AGENT_CONFLICT, AgentUserActionStatus.FAILED);
+    }
+
+    @Test
+    void waitingReconciliationRetryPreservesTheEarlierUncertainOutcome() throws Exception {
+        assertWaitingTimeout(
+                true,
+                ApiErrorCode.AGENT_ACTION_UNCERTAIN,
+                AgentUserActionStatus.UNCERTAIN
+        );
+    }
+
+    private void assertWaitingTimeout(
+            boolean reconciliationRetry,
+            ApiErrorCode expectedErrorCode,
+            AgentUserActionStatus expectedStatus
+    ) throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID actionId = UUID.randomUUID();
+        UserMutationExecutionLane sharedLane = new UserMutationExecutionLane();
+        CountDownLatch laneEntered = new CountDownLatch(1);
+        CountDownLatch releaseLane = new CountDownLatch(1);
+        Thread holder = Thread.ofVirtual().start(() -> {
+            try {
+                sharedLane.execute(userId, () -> {
+                    laneEntered.countDown();
+                    try {
+                        releaseLane.await();
+                    } catch (InterruptedException exception) {
+                        Thread.currentThread().interrupt();
+                    }
+                    return null;
+                });
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        assertThat(laneEntered.await(1, TimeUnit.SECONDS)).isTrue();
+
+        AgentToolRegistry registry = mock(AgentToolRegistry.class);
+        AgentUserActionPersistenceService persistence = mock(AgentUserActionPersistenceService.class);
+        AgentJsonSupport json = mock(AgentJsonSupport.class);
+        AtomicBoolean executed = new AtomicBoolean();
+        AgentTool tool = new AgentTool() {
+            @Override
+            public AgentToolDescriptor descriptor() {
+                return new AgentToolDescriptor(
+                        "prepare_carts",
+                        "Prepare carts",
+                        "{\"type\":\"object\"}",
+                        "v1",
+                        AgentToolRisk.REVERSIBLE_MUTATION
+                );
+            }
+
+            @Override
+            public AgentToolExecutionResult execute(AgentToolExecutionContext context, String argumentsJson) {
+                executed.set(true);
+                return AgentToolExecutionResult.read("{}", "done", java.util.List.of());
+            }
+        };
+        when(registry.required("prepare_carts")).thenReturn(tool);
+        when(json.validateArguments("{}")).thenReturn("{}");
+        RecordAgentUserActionCommand command = new RecordAgentUserActionCommand(
+                userId,
+                UUID.randomUUID(),
+                "prepare_carts",
+                "{}",
+                "stable-key",
+                "Prepare cart"
+        );
+        when(persistence.reserve(command, "{}", "v1"))
+                .thenReturn(new AgentUserActionReservation(
+                        actionId,
+                        true,
+                        null,
+                        null,
+                        reconciliationRetry
+                ));
+        AgentUserActionService service = new AgentUserActionService(
+                registry,
+                persistence,
+                json,
+                mock(AgentToolSchemaValidator.class),
+                mock(AgentMetrics.class),
+                new AgentMutationExecutionLane(sharedLane),
+                properties()
+        );
+
+        try {
+            assertThatThrownBy(() -> service.perform(command))
+                    .isInstanceOfSatisfying(AgentException.class, exception ->
+                            assertThat(exception.getErrorCode()).isEqualTo(expectedErrorCode));
+            verify(persistence).fail(eq(actionId), eq(expectedStatus), any(String.class));
+            assertThat(executed).isFalse();
+        } finally {
+            service.shutdown();
+            releaseLane.countDown();
+            holder.join(1000);
+        }
+        assertThat(executed).isFalse();
+    }
+
     private AgentProperties properties() {
         return new AgentProperties(
                 true, "model", "fallback", "https://example.test", "key", "Meant",
                 "https://example.test", "v1", "v1", 0, 1000, 8, 20, 5, 4, 40,
                 64000, 24000, 2, Duration.ofMinutes(2), Duration.ofSeconds(30),
-                Duration.ofMillis(10), Duration.ofSeconds(10), Duration.ofMillis(10), 128,
+                Duration.ofMillis(100), Duration.ofSeconds(10), Duration.ofMillis(10), 128,
                 Duration.ofDays(1), Duration.ofMinutes(5)
         );
     }

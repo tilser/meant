@@ -24,10 +24,12 @@ import com.meant.api.module.agent.service.command.DeleteAgentConversationCommand
 import com.meant.api.module.agent.service.command.CreateAgentConversationCommand;
 import com.meant.api.module.agent.service.command.RecordAgentUserActionCommand;
 import com.meant.api.module.agent.service.command.SubmitAgentTurnCommand;
-import com.meant.api.module.agent.service.dto.AgentMessageResult;
+import com.meant.api.module.agent.service.dto.AgentConversationResult;
 import com.meant.api.module.agent.service.dto.AgentConversationSummaryResult;
-import com.meant.api.module.agent.service.dto.AgentUserActionResult;
+import com.meant.api.module.agent.service.dto.AgentMessageResult;
 import com.meant.api.module.agent.service.dto.SubmitAgentTurnResult;
+import com.meant.api.module.agent.service.dto.AgentUserActionResult;
+import com.meant.api.module.agent.service.query.GetAgentConversationQuery;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
 import java.util.List;
@@ -73,6 +75,47 @@ class AgentConversationControllerTest {
         assertThat(commandCaptor.getValue().userId()).isEqualTo(userId);
         assertThat(commandCaptor.getValue().merchantId()).isEqualTo(merchantId);
         assertThat(response.merchantId()).isEqualTo(merchantId);
+    }
+
+    @Test
+    void returnsTheCurrentRunIdAndLatestCursorInConversationDetails() {
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID currentRunId = UUID.randomUUID();
+        Instant now = Instant.now();
+        AgentConversationService conversationService = mock(AgentConversationService.class);
+        when(conversationService.get(any())).thenReturn(new AgentConversationResult(
+                conversationId,
+                "Trail shoes",
+                AgentConversationStatus.ACTIVE,
+                null,
+                0,
+                null,
+                null,
+                4L,
+                currentRunId,
+                9L,
+                List.of(),
+                List.of(),
+                now,
+                now
+        ));
+        AgentConversationController controller = new AgentConversationController(
+                conversationService,
+                mock(AgentTurnService.class),
+                mock(AgentRunCoordinator.class),
+                mock(AgentUserActionService.class)
+        );
+
+        var response = controller.get(jwt(userId), conversationId, 0L, 100);
+
+        ArgumentCaptor<GetAgentConversationQuery> queryCaptor =
+                ArgumentCaptor.forClass(GetAgentConversationQuery.class);
+        verify(conversationService).get(queryCaptor.capture());
+        assertThat(queryCaptor.getValue().userId()).isEqualTo(userId);
+        assertThat(queryCaptor.getValue().conversationId()).isEqualTo(conversationId);
+        assertThat(response.currentRunId()).isEqualTo(currentRunId);
+        assertThat(response.latestCursor()).isEqualTo(9L);
     }
 
     @Test

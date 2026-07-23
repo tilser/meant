@@ -1,10 +1,12 @@
 package com.meant.api.module.agent.service.tool;
 
+import com.meant.api.module.agent.constant.AgentMutationAdmission;
 import com.meant.api.module.agent.constant.AgentToolInvocationStatus;
 import com.meant.api.module.agent.constant.AgentToolRisk;
 import com.meant.api.module.agent.exception.AgentException;
 import com.meant.api.module.agent.properties.AgentProperties;
 import com.meant.api.module.agent.service.AgentJsonSupport;
+import com.meant.api.module.agent.service.AgentMutationExecutionLane;
 import com.meant.api.module.agent.service.AgentRunService;
 import com.meant.api.module.agent.service.dto.AgentExecutedToolCall;
 import com.meant.api.module.agent.service.dto.AgentModelToolCall;
@@ -40,6 +42,7 @@ public class AgentToolCallExecutor {
     private final AgentRunService runService;
     private final AgentJsonSupport jsonSupport;
     private final AgentToolSchemaValidator schemaValidator;
+    private final AgentMutationExecutionLane mutationExecutionLane;
     private final AgentProperties properties;
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
@@ -162,11 +165,18 @@ public class AgentToolCallExecutor {
         invocationService.start(
                 context.runId(), reservation.invocationId(), call.id(), call.name(), context.executionOwner());
         AgentToolExecutionContext reservedContext = context.withIdempotencyKey(reservation.invocationId());
-        Future<AgentToolExecutionResult> future = executor.submit(() -> tool.execute(reservedContext, arguments));
+        AgentMutationExecutionLane.Attempt attempt =
+                mutationExecutionLane.newAttempt(properties.toolDeadline());
+        Future<AgentToolExecutionResult> future = executor.submit(() -> mutationExecutionLane.execute(
+                context.userId(),
+                descriptor.riskClass(),
+                attempt,
+                () -> tool.execute(reservedContext, arguments)
+        ));
         try {
             AgentToolExecutionResult result = future.get(
-                    properties.toolDeadline().toMillis(),
-                    TimeUnit.MILLISECONDS
+                    attempt.remainingNanos(),
+                    TimeUnit.NANOSECONDS
             );
             invocationService.complete(
                     context.runId(),
@@ -184,37 +194,67 @@ public class AgentToolCallExecutor {
             );
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
+            boolean definitelyNotStarted = attempt.cancelBeforeStart();
             future.cancel(true);
             invocationService.fail(
                     context.runId(),
                     reservation.invocationId(),
                     call.id(),
                     call.name(),
-                    descriptor.riskClass() == AgentToolRisk.READ
-                            ? AgentToolInvocationStatus.CANCELLED
-                            : AgentToolInvocationStatus.UNCERTAIN,
+                    reservation.reconciliationRetry()
+                            ? AgentToolInvocationStatus.UNCERTAIN
+                            : (definitelyNotStarted || descriptor.riskClass() == AgentToolRisk.READ
+                                    ? AgentToolInvocationStatus.CANCELLED
+                                    : AgentToolInvocationStatus.UNCERTAIN),
                     "interrupted",
-                    "The tool was interrupted before its outcome could be confirmed.",
+                    definitelyNotStarted && !reservation.reconciliationRetry()
+                            ? "The tool was interrupted before it started."
+                            : "The tool was interrupted before its outcome could be confirmed.",
                     elapsedMilliseconds(started),
                     context.executionOwner()
             );
             throw new CancellationException("Agent tool execution was interrupted");
         } catch (TimeoutException exception) {
+            boolean definitelyNotStarted = attempt.cancelBeforeStart();
             future.cancel(true);
             return failed(
                     context,
                     call,
                     reservation.invocationId(),
                     started,
-                    descriptor.riskClass() == AgentToolRisk.READ
-                            ? AgentToolInvocationStatus.FAILED
-                            : AgentToolInvocationStatus.UNCERTAIN,
-                    "timeout",
-                    "The tool timed out. Try again.",
+                    reservation.reconciliationRetry()
+                            ? AgentToolInvocationStatus.UNCERTAIN
+                            : (definitelyNotStarted || descriptor.riskClass() == AgentToolRisk.READ
+                                    ? AgentToolInvocationStatus.FAILED
+                                    : AgentToolInvocationStatus.UNCERTAIN),
+                    definitelyNotStarted && !reservation.reconciliationRetry()
+                            ? AgentMutationAdmission.FAILURE_CLASSIFICATION
+                            : "timeout",
+                    definitelyNotStarted && !reservation.reconciliationRetry()
+                            ? "The tool could not start before its deadline. Try again."
+                            : "The tool timed out. Try again.",
                     true
             );
         } catch (ExecutionException exception) {
             Throwable cause = exception.getCause();
+            if (cause instanceof TimeoutException) {
+                return failed(
+                        context,
+                        call,
+                        reservation.invocationId(),
+                        started,
+                        reservation.reconciliationRetry()
+                                ? AgentToolInvocationStatus.UNCERTAIN
+                                : AgentToolInvocationStatus.FAILED,
+                        reservation.reconciliationRetry()
+                                ? "timeout"
+                                : AgentMutationAdmission.FAILURE_CLASSIFICATION,
+                        reservation.reconciliationRetry()
+                                ? "The earlier mutation outcome is still unconfirmed. Try again."
+                                : "The tool could not start before its wait limit. Try again.",
+                        true
+                );
+            }
             boolean uncertainMutation = descriptor.riskClass() != AgentToolRisk.READ
                     && !(cause instanceof AgentException);
             String message = cause instanceof AgentException agentException

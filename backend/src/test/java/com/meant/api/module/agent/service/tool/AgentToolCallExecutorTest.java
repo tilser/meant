@@ -10,10 +10,13 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.meant.api.common.service.UserMutationExecutionLane;
+import com.meant.api.module.agent.constant.AgentMutationAdmission;
 import com.meant.api.module.agent.constant.AgentToolInvocationStatus;
 import com.meant.api.module.agent.constant.AgentToolRisk;
 import com.meant.api.module.agent.properties.AgentProperties;
 import com.meant.api.module.agent.service.AgentJsonSupport;
+import com.meant.api.module.agent.service.AgentMutationExecutionLane;
 import com.meant.api.module.agent.service.AgentRunService;
 import com.meant.api.module.agent.service.dto.AgentModelToolCall;
 import com.meant.api.module.agent.service.dto.AgentToolDescriptor;
@@ -23,6 +26,9 @@ import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -80,6 +86,7 @@ class AgentToolCallExecutorTest {
                 runService,
                 jsonSupport,
                 mock(AgentToolSchemaValidator.class),
+                new AgentMutationExecutionLane(new UserMutationExecutionLane()),
                 properties()
         );
         AgentToolExecutionContext context = new AgentToolExecutionContext(
@@ -127,6 +134,7 @@ class AgentToolCallExecutorTest {
                 runService,
                 jsonSupport,
                 new AgentToolSchemaValidator(objectMapper),
+                new AgentMutationExecutionLane(new UserMutationExecutionLane()),
                 properties()
         );
         AgentToolExecutionContext context = new AgentToolExecutionContext(
@@ -142,6 +150,114 @@ class AgentToolCallExecutorTest {
                 .contains("\"code\":\"invalid_arguments\"")
                 .contains("$.query is required.")
                 .contains("\"retryable\":true");
+    }
+
+    @Test
+    void waitingNewMutationTimesOutAsFailedWithoutExecuting() throws Exception {
+        assertWaitingTimeout(false, AgentToolInvocationStatus.FAILED);
+    }
+
+    @Test
+    void waitingReconciliationRetryPreservesTheEarlierUncertainOutcome() throws Exception {
+        assertWaitingTimeout(true, AgentToolInvocationStatus.UNCERTAIN);
+    }
+
+    private void assertWaitingTimeout(
+            boolean reconciliationRetry,
+            AgentToolInvocationStatus expectedStatus
+    ) throws Exception {
+        UUID userId = UUID.randomUUID();
+        UserMutationExecutionLane sharedLane = new UserMutationExecutionLane();
+        CountDownLatch laneEntered = new CountDownLatch(1);
+        CountDownLatch releaseLane = new CountDownLatch(1);
+        Thread holder = Thread.ofVirtual().start(() -> {
+            try {
+                sharedLane.execute(userId, () -> {
+                    laneEntered.countDown();
+                    try {
+                        releaseLane.await();
+                    } catch (InterruptedException exception) {
+                        Thread.currentThread().interrupt();
+                    }
+                    return null;
+                });
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        assertThat(laneEntered.await(1, TimeUnit.SECONDS)).isTrue();
+
+        AgentTool tool = mock(AgentTool.class);
+        AgentToolDescriptor descriptor = new AgentToolDescriptor(
+                "prepare_carts",
+                "Prepare carts",
+                "{\"type\":\"object\"}",
+                "v1",
+                AgentToolRisk.REVERSIBLE_MUTATION
+        );
+        when(tool.descriptor()).thenReturn(descriptor);
+        AtomicBoolean executed = new AtomicBoolean();
+        when(tool.execute(any(), anyString())).thenAnswer(invocation -> {
+            executed.set(true);
+            throw new AssertionError("Waiting mutation must not execute");
+        });
+        AgentToolAuthorizationPolicy authorizationPolicy = mock(AgentToolAuthorizationPolicy.class);
+        when(authorizationPolicy.authorized(any(), eq(descriptor))).thenReturn(true);
+        when(authorizationPolicy.authorizedInvocation(any(), eq(descriptor), anyString())).thenReturn(true);
+        AgentToolInvocationService invocationService = mock(AgentToolInvocationService.class);
+        UUID invocationId = UUID.randomUUID();
+        when(invocationService.reserve(any(), any(), eq(descriptor), anyString(), anyString(), isNull()))
+                .thenReturn(new AgentToolInvocationReservation(
+                        invocationId,
+                        true,
+                        null,
+                        List.of(),
+                        reconciliationRetry
+                ));
+        AgentJsonSupport jsonSupport = mock(AgentJsonSupport.class);
+        when(jsonSupport.validateArguments(anyString())).thenReturn("{}");
+        when(jsonSupport.write(any())).thenReturn("{\"success\":false}");
+        executor = new AgentToolCallExecutor(
+                new AgentToolRegistry(List.of(tool)),
+                authorizationPolicy,
+                invocationService,
+                mock(AgentRunService.class),
+                jsonSupport,
+                mock(AgentToolSchemaValidator.class),
+                new AgentMutationExecutionLane(sharedLane),
+                properties()
+        );
+        AgentToolExecutionContext context = new AgentToolExecutionContext(
+                userId,
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                "add this to cart"
+        );
+
+        try {
+            var result = executor.execute(context, new AgentModelToolCall("call-wait", "prepare_carts", "{}"));
+
+            assertThat(result.successful()).isFalse();
+            verify(invocationService).fail(
+                    eq(context.runId()),
+                    eq(invocationId),
+                    eq("call-wait"),
+                    eq("prepare_carts"),
+                    eq(expectedStatus),
+                    eq(reconciliationRetry
+                            ? "timeout"
+                            : AgentMutationAdmission.FAILURE_CLASSIFICATION),
+                    anyString(),
+                    anyLong(),
+                    isNull()
+            );
+            assertThat(executed).isFalse();
+        } finally {
+            releaseLane.countDown();
+            holder.join(1000);
+        }
+        assertThat(executed).isFalse();
     }
 
     private AgentProperties properties() {

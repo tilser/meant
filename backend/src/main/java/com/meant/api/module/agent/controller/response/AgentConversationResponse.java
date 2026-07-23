@@ -17,6 +17,11 @@ public record AgentConversationResponse(
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED) UUID merchantId,
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED) UUID activeMissionId,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED) long latestSequence,
+        @Schema(
+                description = "Oldest running or queued run in this conversation, if one is active",
+                requiredMode = Schema.RequiredMode.NOT_REQUIRED
+        )
+        UUID currentRunId,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED) long latestCursor,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED) List<AgentMessageResponse> messages,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED) List<AgentArtifactResponse> artifacts,
@@ -34,6 +39,7 @@ public record AgentConversationResponse(
                 result.merchantId(),
                 result.activeMissionId(),
                 result.latestSequence(),
+                result.currentRunId(),
                 result.latestCursor(),
                 result.messages().stream().map(AgentMessageResponse::from).toList(),
                 result.artifacts().stream().map(AgentArtifactResponse::from).toList(),

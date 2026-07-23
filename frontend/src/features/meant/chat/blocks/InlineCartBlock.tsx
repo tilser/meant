@@ -11,6 +11,7 @@ export function InlineCartBlock({
   onAddCart,
   onOpenCart,
   onCheckoutHere,
+  agentActionsDisabled = false,
 }: Readonly<{
   cart: readonly CartItem[]
   products: readonly Product[]
@@ -33,6 +34,7 @@ export function InlineCartBlock({
   onAddCart: (product: Product) => void
   onOpenCart: () => void
   onCheckoutHere: () => void
+  agentActionsDisabled?: boolean
 }>) {
   const lines = cartLines(cart, products)
   const alerts = computeSmartAlerts(lines, products)
@@ -67,6 +69,7 @@ export function InlineCartBlock({
                 <button
                   className="mt-ct-cart-fix"
                   type="button"
+                  disabled={agentActionsDisabled}
                   onClick={() => {
                     const product = productById.get(alert.fix?.id ?? '')
                     if (product) {

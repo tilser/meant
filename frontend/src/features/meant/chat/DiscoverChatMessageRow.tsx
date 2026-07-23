@@ -275,6 +275,7 @@ export function DiscoverChatMessageRow({
   onVisibleProductContextChange,
   immutable = false,
   useLiveCart = false,
+  agentActionsDisabled = false,
   deletable,
   removing = false,
 }: Readonly<{
@@ -352,6 +353,7 @@ export function DiscoverChatMessageRow({
   onVisibleProductContextChange?: VisibleProductContextChange
   immutable?: boolean
   useLiveCart?: boolean
+  agentActionsDisabled?: boolean
   deletable?: boolean
   removing?: boolean
 }>) {
@@ -478,6 +480,7 @@ export function DiscoverChatMessageRow({
                 onVisibleProductContextChange={onVisibleProductContextChange}
                 immutable={immutable}
                 useLiveCart={useLiveCart}
+                agentActionsDisabled={agentActionsDisabled}
               />
             ))}
             {message.pending ? (

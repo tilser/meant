@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 
+import type { CartProfile } from '../../../lib/apiClient'
 import { InlineCartBlock } from '../chat/blocks/InlineCartBlock'
 import { InlineCheckoutBlock } from '../chat/blocks/InlineCheckoutBlock'
 import { InlineMiniCompareBlock } from '../chat/blocks/InlineMiniCompareBlock'
@@ -13,15 +14,20 @@ import { resolveLiveCartItem } from '../cart/cartPartition'
 import { ProductReviewsPanel } from '../product/ProductReviewsPanel'
 import type { CartItem, Product } from '../types'
 import { cartGroups, cartLines } from '../utils'
-import { agentActionQueueFor, SerializedAgentActionQueue } from './actionQueue'
+import { commerceActionQueueFor, SerializedAgentActionQueue } from './actionQueue'
+import { cartStateReplacementFromCartProfile } from './artifactMapping'
 import {
+  agentCartProvenanceAfterReplacements,
   agentCartPartitionFingerprints,
   agentCartReplacementUnchangedSinceSubmission,
+  agentCartReplacementSupersededByCurrentPartition,
   agentCartStateFingerprint,
   isTerminalAgentRunStatus,
   liveCartQuantityAfterDelta,
   optimisticAgentCartQuantityChange,
+  rebasePendingAgentCartRunsAfterReplacements,
   registerPendingAgentCartRun,
+  settlePendingAgentCartRun,
 } from './cartSync'
 
 function product(id: string, name: string, offerKey: string, price: number): Product {
@@ -289,6 +295,291 @@ describe('agent commerce artifacts reuse the established components', () => {
     expect(pending['run-unknown']?.cartFingerprint).toBeUndefined()
   })
 
+  test('signals one settlement only for the matching pending run', () => {
+    const pending = registerPendingAgentCartRun({}, 'run-1', 'conversation-1', undefined)
+
+    expect(settlePendingAgentCartRun(pending, 'run-1', 'conversation-other')).toBe(pending)
+
+    const settled = settlePendingAgentCartRun(pending, 'run-1', 'conversation-1')
+    expect(settled).not.toBe(pending)
+    expect(settled['run-1']).toBeUndefined()
+    expect(settlePendingAgentCartRun(settled, 'run-1', 'conversation-1')).toBe(settled)
+  })
+
+  test('rebases only the safely replaced partition for another pending run', () => {
+    const merchantA = {
+      ...cart[0]!,
+      merchantId: 'merchant-a',
+      merchantIntegrationId: 'integration-a',
+    }
+    const merchantB = {
+      ...cart[0]!,
+      id: second.id,
+      offerKey: 'offer-2',
+      cartId: 'cart-2',
+      cartLineId: 'line-2',
+      merchantId: 'merchant-b',
+      merchantIntegrationId: 'integration-b',
+    }
+    const replacementLine = { ...merchantA, qty: 2 }
+    const replacement: MerchantCartStateReplacement = {
+      merchantKey: 'merchant-a',
+      merchantId: 'merchant-a',
+      merchantDomain: null,
+      provider: null,
+      merchantIntegrationId: 'integration-a',
+      externalMerchantId: null,
+      routingScopeKey: null,
+      snapshot: {
+        merchantKey: 'merchant-a',
+        merchant: 'Running Shop',
+        cartId: 'cart-1',
+        remoteCartId: null,
+        checkoutUrl: null,
+        continueUrl: null,
+        subtotalAmount: 258,
+        totalAmount: 258,
+        currency: 'USD',
+        appliedCodes: [],
+      },
+      lines: [replacementLine],
+    }
+    const submitted = agentCartPartitionFingerprints([merchantA, merchantB], {})
+    const pending = registerPendingAgentCartRun(
+      registerPendingAgentCartRun(
+        registerPendingAgentCartRun({}, 'run-1', 'conversation-1', submitted),
+        'run-other',
+        'conversation-other',
+        submitted,
+      ),
+      'run-2',
+      'conversation-1',
+      submitted,
+    )
+    const beforeReplacement = agentCartPartitionFingerprints(
+      [merchantA, { ...merchantB, qty: 3 }],
+      {},
+    )
+    const afterReplacement = agentCartPartitionFingerprints(
+      [replacementLine, { ...merchantB, qty: 3 }],
+      { 'merchant-a': replacement.snapshot },
+    )
+    const rebased = rebasePendingAgentCartRunsAfterReplacements(
+      pending,
+      'run-1',
+      'conversation-1',
+      [replacement],
+      beforeReplacement,
+      afterReplacement,
+    )
+    const runTwoRevision = rebased['run-2']?.cartFingerprints
+
+    expect(runTwoRevision).toBeDefined()
+    expect(rebased['run-other']).toBe(pending['run-other'])
+    expect(
+      agentCartReplacementUnchangedSinceSubmission(replacement, runTwoRevision, afterReplacement),
+    ).toBe(true)
+    const submittedMerchantBPartition = submitted.aliases['merchant:merchant-b']
+    const rebasedMerchantBPartition = runTwoRevision?.aliases['merchant:merchant-b']
+    expect(rebasedMerchantBPartition).toBe(submittedMerchantBPartition)
+    expect(runTwoRevision?.revisions[rebasedMerchantBPartition!]).toBe(
+      submitted.revisions[submittedMerchantBPartition!],
+    )
+    expect(runTwoRevision?.revisions[rebasedMerchantBPartition!]).not.toBe(
+      afterReplacement.revisions[afterReplacement.aliases['merchant:merchant-b']!],
+    )
+  })
+
+  test('records agent provenance across conversations without trusting a local edit', () => {
+    const submitted = agentCartPartitionFingerprints(cart, {})
+    const replacement: MerchantCartStateReplacement = {
+      merchantKey: 'running-shop',
+      merchantId: null,
+      merchantDomain: 'running.example',
+      provider: 'test',
+      merchantIntegrationId: null,
+      externalMerchantId: null,
+      routingScopeKey: null,
+      snapshot: {
+        merchantKey: 'running-shop',
+        merchant: 'Running Shop',
+        cartId: 'cart-1',
+        remoteCartId: 'remote-cart-1',
+        checkoutUrl: null,
+        continueUrl: null,
+        subtotalAmount: 258,
+        totalAmount: 258,
+        currency: 'USD',
+        appliedCodes: [],
+      },
+      lines: [{ ...cart[0]!, qty: 2, merchantDomain: 'running.example' }],
+    }
+    const after = agentCartPartitionFingerprints(replacement.lines, {
+      'running-shop': replacement.snapshot,
+    })
+    const provenance = agentCartProvenanceAfterReplacements(null, [replacement], after)
+    const laterRunReplacement = {
+      ...replacement,
+      lines: [{ ...replacement.lines[0]!, qty: 3 }],
+    }
+
+    expect(
+      agentCartReplacementUnchangedSinceSubmission(laterRunReplacement, provenance, after),
+    ).toBe(true)
+    expect(
+      agentCartReplacementUnchangedSinceSubmission(
+        replacement,
+        provenance,
+        agentCartPartitionFingerprints([{ ...replacement.lines[0]!, qty: 3 }], {
+          'running-shop': replacement.snapshot,
+        }),
+      ),
+    ).toBe(false)
+    expect(
+      agentCartReplacementUnchangedSinceSubmission(laterRunReplacement, submitted, after),
+    ).toBe(false)
+  })
+
+  test('projects every line from the authoritative cart read into the replacement', () => {
+    const fallback: MerchantCartStateReplacement = {
+      merchantKey: 'running-scope',
+      merchantId: 'merchant-1',
+      merchantDomain: 'running.example',
+      provider: 'test',
+      merchantIntegrationId: 'integration-1',
+      externalMerchantId: 'external-1',
+      routingScopeKey: 'running-scope',
+      snapshot: {
+        merchantKey: 'running-scope',
+        merchant: 'running.example',
+        cartId: 'cart-1',
+        remoteCartId: 'remote-cart-1',
+        checkoutUrl: null,
+        continueUrl: null,
+        subtotalAmount: 129,
+        totalAmount: 129,
+        currency: 'USD',
+        appliedCodes: [],
+      },
+      lines: cart,
+    }
+    const profile: CartProfile = {
+      cartId: 'cart-1',
+      merchantId: 'merchant-1',
+      merchantDomain: 'running.example',
+      provider: 'test',
+      merchantIntegrationId: 'integration-1',
+      externalMerchantId: 'external-1',
+      routingScopeKey: 'running-scope',
+      endpoint: 'https://running.example/mcp',
+      remoteCartId: 'remote-cart-1',
+      totalQuantity: 3,
+      totalAmount: '407',
+      subtotalAmount: '407',
+      currency: 'USD',
+      active: true,
+      createdAt: '2026-07-23T10:00:00Z',
+      updatedAt: '2026-07-23T10:01:00Z',
+      refreshedAt: '2026-07-23T10:01:00Z',
+      appliedCodes: [],
+      deliveryGroups: [],
+      messages: [],
+      lines: [
+        {
+          cartLineId: 'line-1',
+          remoteCartLineId: 'remote-line-1',
+          productId: 'remote-product-1',
+          productTitle: first.name,
+          productVariantId: 'product-1-variant',
+          quantity: 2,
+          subtotalAmount: '258',
+          totalAmount: '258',
+          currency: 'USD',
+          offerKey: 'offer-1',
+          createdAt: '2026-07-23T10:00:00Z',
+          updatedAt: '2026-07-23T10:01:00Z',
+        },
+        {
+          cartLineId: 'line-2',
+          remoteCartLineId: 'remote-line-2',
+          productId: 'remote-product-2',
+          productTitle: second.name,
+          productVariantId: 'product-2-variant',
+          quantity: 1,
+          subtotalAmount: '149',
+          totalAmount: '149',
+          currency: 'USD',
+          offerKey: 'offer-2',
+          createdAt: '2026-07-23T10:01:00Z',
+          updatedAt: '2026-07-23T10:01:00Z',
+        },
+      ],
+    }
+
+    const replacement = cartStateReplacementFromCartProfile(
+      profile,
+      [first, second],
+      cart,
+      fallback,
+    )
+
+    expect(replacement?.lines).toHaveLength(2)
+    expect(replacement?.lines.map((line) => [line.id, line.qty, line.cartLineId])).toEqual([
+      ['product-1', 2, 'line-1'],
+      ['product-2', 1, 'line-2'],
+    ])
+    expect(replacement?.snapshot.totalAmount).toBe(407)
+  })
+
+  test('recognizes an inactive artifact cart superseded by the live cart in the same scope', () => {
+    const staleReplacement: MerchantCartStateReplacement = {
+      merchantKey: 'running-scope',
+      merchantId: 'merchant-1',
+      merchantDomain: 'running.example',
+      provider: 'test',
+      merchantIntegrationId: 'integration-1',
+      externalMerchantId: 'external-1',
+      routingScopeKey: 'running-scope',
+      snapshot: {
+        merchantKey: 'running-scope',
+        merchant: 'Running Shop',
+        cartId: 'cart-old',
+        remoteCartId: 'remote-cart-old',
+        checkoutUrl: null,
+        continueUrl: null,
+        subtotalAmount: 129,
+        totalAmount: 129,
+        currency: 'USD',
+        appliedCodes: [],
+      },
+      lines: [
+        {
+          ...cart[0]!,
+          merchantId: 'merchant-1',
+          merchantDomain: 'running.example',
+          routingScopeKey: 'running-scope',
+          merchantScopeKey: 'running-scope',
+          cartId: 'cart-old',
+          remoteCartId: 'remote-cart-old',
+        },
+      ],
+    }
+    const replacementCart = staleReplacement.lines.map((line) => ({
+      ...line,
+      cartId: 'cart-new',
+      remoteCartId: 'remote-cart-new',
+    }))
+    const current = agentCartPartitionFingerprints(replacementCart, {})
+
+    expect(agentCartReplacementSupersededByCurrentPartition(staleReplacement, current)).toBe(true)
+    expect(
+      agentCartReplacementSupersededByCurrentPartition(
+        { ...staleReplacement, snapshot: { ...staleReplacement.snapshot, cartId: 'cart-new' } },
+        current,
+      ),
+    ).toBe(false)
+  })
+
   test('fails closed for the transient flat partition schema stored by an older build', () => {
     const replacement: MerchantCartStateReplacement = {
       merchantKey: 'merchant-a',
@@ -396,11 +687,11 @@ describe('agent commerce artifacts reuse the established components', () => {
   })
 
   test('keeps one commerce queue per account across view remounts', () => {
-    expect(agentActionQueueFor('queue-test-account')).toBe(
-      agentActionQueueFor('queue-test-account'),
+    expect(commerceActionQueueFor('queue-test-account')).toBe(
+      commerceActionQueueFor('queue-test-account'),
     )
-    expect(agentActionQueueFor('queue-test-account')).not.toBe(
-      agentActionQueueFor('queue-test-other-account'),
+    expect(commerceActionQueueFor('queue-test-account')).not.toBe(
+      commerceActionQueueFor('queue-test-other-account'),
     )
   })
 
@@ -566,6 +857,42 @@ describe('agent commerce artifacts reuse the established components', () => {
     expect(markup).toContain('>Similar<')
     expect(markup).toContain('Compare here')
     expect(markup).toContain('Just pick one')
+    expect(markup).not.toContain('disabled=""')
+  })
+
+  test('disables agent product CTAs while a conversation run is active', () => {
+    const markup = renderToStaticMarkup(
+      <DiscoverProductBatch
+        products={[first, second]}
+        query="running shoes"
+        deliveryLocations={[]}
+        preferences={[]}
+        savedSet={new Set()}
+        savePendingSet={new Set()}
+        pinnedSet={new Set()}
+        watchedSet={new Set()}
+        shelfProductSet={new Set()}
+        onOpen={() => undefined}
+        onToggleSave={() => undefined}
+        onAddCart={() => undefined}
+        onPin={() => undefined}
+        onWatch={() => undefined}
+        onDig={() => undefined}
+        onJustPick={() => undefined}
+        onCompareHere={() => undefined}
+        onShelfAddProduct={() => undefined}
+        onDragProduct={() => undefined}
+        agentActionsDisabled
+      />,
+    )
+
+    expect(markup).toContain('class="mt-ct-addbtn" type="button" disabled=""')
+    expect(markup).toContain('class="mt-ct-pinbtn " type="button" disabled=""')
+    expect(markup).toContain('class="mt-ct-watchbtn " type="button" disabled=""')
+    expect(markup).toContain('class="mt-ct-askchip" type="button" disabled=""')
+    expect(markup).toContain('class="mt-ct-suggchip" type="button" disabled=""')
+    expect(markup).toContain('class="mt-ct-suggchip ghost" type="button" disabled=""')
+    expect(markup).not.toContain('class="mt-save " type="button" aria-label="Save" disabled=""')
   })
 
   test('renders the merchant domain instead of the Shopify transport identity at checkout', () => {
@@ -642,6 +969,16 @@ describe('agent commerce artifacts reuse the established components', () => {
         onOpenFullCompare={() => undefined}
       />,
     )
+    const busyCompareMarkup = renderToStaticMarkup(
+      <InlineMiniCompareBlock
+        block={comparison}
+        deliveryLocations={[]}
+        onOpen={() => undefined}
+        onAddCart={() => undefined}
+        onOpenFullCompare={() => undefined}
+        agentActionsDisabled
+      />,
+    )
     const cartMarkup = renderToStaticMarkup(
       <InlineCartBlock
         cart={cart}
@@ -702,6 +1039,9 @@ describe('agent commerce artifacts reuse the established components', () => {
     expect(compareMarkup).toContain('Inline compare')
     expect(compareMarkup).toContain('Add pick')
     expect(compareMarkup).toContain('Open full compare')
+    expect(compareMarkup).not.toContain('disabled=""')
+    expect(busyCompareMarkup).toContain('class="mt-ct-addbtn solid" type="button" disabled=""')
+    expect(busyCompareMarkup).toContain('class="mt-ct-mini-full" type="button" disabled=""')
     expect(cartMarkup).toContain('Cart in chat')
     expect(cartMarkup).toContain('Quantity for Grounded trail shoe')
     expect(cartMarkup).toContain('Checkout here')

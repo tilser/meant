@@ -14,6 +14,7 @@ public record AgentConversationResult(
         UUID merchantId,
         UUID activeMissionId,
         long latestSequence,
+        UUID currentRunId,
         long latestCursor,
         List<AgentMessageResult> messages,
         List<AgentArtifactResult> artifacts,

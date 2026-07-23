@@ -14,6 +14,7 @@ import {
   currentAgentProductSnapshots,
   discoverMessagesFromAgentConversation,
   latestCartSnapshotArtifacts,
+  latestCartSnapshotArtifactsForRunSettlement,
   mergeAgentProductSnapshots,
   productFromAgentArtifact,
   productInteractionState,
@@ -572,6 +573,53 @@ describe('agent artifact mapping', () => {
 
     expect(snapshot.map((item) => item.artifactId)).toEqual([emptyCart.artifactId])
     expect(cartItemsFromAgentArtifacts(snapshot, products)).toEqual([])
+  })
+
+  test('reconciles only cart snapshots written by the settled run', () => {
+    const olderCart = artifact({
+      type: 'CART',
+      stableKey: 'cart:settlement-old',
+      runId: 'run-cart-old',
+      messageId: 'message-cart-old',
+      cartId: 'cart-old',
+      createdAt: '2026-07-18T12:01:00Z',
+      payloadJson: JSON.stringify({
+        cartId: 'cart-old',
+        routingScopeKey: 'shopify:external:settlement-merchant',
+      }),
+    })
+    const newerCart = artifact({
+      type: 'CART',
+      stableKey: 'cart:settlement-new',
+      runId: 'run-cart-new',
+      messageId: 'message-cart-new',
+      cartId: 'cart-new',
+      createdAt: '2026-07-18T12:02:00Z',
+      payloadJson: JSON.stringify({
+        cartId: 'cart-new',
+        routingScopeKey: 'shopify:external:settlement-merchant',
+      }),
+    })
+    const readArtifact = artifact({
+      type: 'PRODUCT',
+      stableKey: 'product:settlement-read',
+      runId: 'run-read',
+      canonicalProductKey: 'product-settlement-read',
+      createdAt: '2026-07-18T12:03:00Z',
+    })
+    const artifacts = [newerCart, readArtifact, olderCart]
+
+    expect(
+      latestCartSnapshotArtifactsForRunSettlement(artifacts, 'run-cart-old').map(
+        (item) => item.artifactId,
+      ),
+    ).toEqual([olderCart.artifactId])
+    expect(
+      latestCartSnapshotArtifactsForRunSettlement(artifacts, 'run-cart-new').map(
+        (item) => item.artifactId,
+      ),
+    ).toEqual([newerCart.artifactId])
+    expect(latestCartSnapshotArtifactsForRunSettlement(artifacts, 'run-read')).toEqual([])
   })
 
   test('maps an authoritative empty cart after removal to an empty block and replacement', () => {
