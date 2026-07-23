@@ -96,6 +96,14 @@ export function InlineCartBlock({
                 <div className="mt-mono mt-ct-cart-meta">
                   {line.merchant} · {line.delivery}
                 </div>
+                {line.syncing || line.syncError ? (
+                  <div
+                    className={`mt-mono mt-ct-cart-sync${line.syncError ? ' is-error' : ''}`}
+                    role="status"
+                  >
+                    {line.syncError ?? 'Saving…'}
+                  </div>
+                ) : null}
               </div>
               <div className="mt-ct-cart-actions">
                 <div className="mt-qty" aria-label={`Quantity for ${line.product.name}`}>

@@ -56,6 +56,7 @@ const props = {
   onReadAgentCart: () => [],
   onCaptureAgentCartRevision: () => undefined,
   onAgentCartSnapshot: () => [],
+  onUpdateCartQuantity: () => undefined,
   onProductDetailChatRequestHandled: () => undefined,
   onFlashMessage: () => undefined,
 } satisfies AgentDiscoverViewProps

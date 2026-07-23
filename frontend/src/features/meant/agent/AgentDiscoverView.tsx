@@ -71,8 +71,6 @@ import type {
   ProductId,
   UserLocation,
 } from '../types'
-import { cartItemIdentity } from '../utils'
-import { resolveLiveCartItem } from '../cart/cartPartition'
 import {
   cartStateReplacementsFromAgentArtifacts,
   currentAgentProductSnapshots,
@@ -84,7 +82,7 @@ import {
 import type { MerchantCartStateReplacement } from '../cart/types'
 import {
   isTerminalAgentRunStatus,
-  liveCartQuantityAfterDelta,
+  optimisticAgentCartQuantityChange,
   type AgentCartPartitionFingerprints,
 } from './cartSync'
 import {
@@ -262,6 +260,11 @@ export interface AgentDiscoverViewProps {
     replacements: readonly MerchantCartStateReplacement[],
     submittedCartRevision: AgentCartPartitionFingerprints | undefined,
   ) => readonly CartItem[]
+  onUpdateCartQuantity: (
+    sourceItem: CartItem,
+    quantity: number,
+    identity: string,
+  ) => Promise<void> | void
   onAgentRunSubmitted?: (
     runId: string,
     conversationId: string,
@@ -313,6 +316,7 @@ export function AgentDiscoverView({
   onReadAgentCart,
   onCaptureAgentCartRevision,
   onAgentCartSnapshot,
+  onUpdateCartQuantity,
   onAgentRunSubmitted,
   onProductDetailChatRequestHandled,
   onFlashMessage,
@@ -332,6 +336,7 @@ export function AgentDiscoverView({
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [actionPending, setActionPending] = useState<ReadonlySet<string>>(new Set())
+  const [optimisticCart, setOptimisticCart] = useState<readonly CartItem[] | null>(null)
   const [autoRemovingMessageKeys, setAutoRemovingMessageKeys] = useState<ReadonlySet<string>>(
     new Set(),
   )
@@ -356,6 +361,8 @@ export function AgentDiscoverView({
   const recoveryInFlightRef = useRef(new Set<string>())
   const refreshListsRequestRef = useRef(0)
   const actionPendingRef = useRef(new Set<string>())
+  const optimisticCartRef = useRef<readonly CartItem[] | null>(null)
+  const cartMutationSequenceRef = useRef(0)
   const actionIdempotencyRef = useRef(new AgentActionRequestIdentityStore())
   const visibleProductContextRef = useRef<{
     conversationId: string
@@ -840,7 +847,7 @@ export function AgentDiscoverView({
     [interactionState.pinned, products],
   )
   const watchedSet = useMemo(() => new Set<ProductId>(), [])
-  const visibleCart = cart
+  const visibleCart = optimisticCart ?? cart
 
   const allMessages = useMemo(() => {
     const localMessages = activeConversationId
@@ -1379,23 +1386,6 @@ export function AgentDiscoverView({
     )
   }
 
-  const latestArtifactCartLine = (
-    id: ProductId,
-    merchant: string,
-    identity?: string,
-    sourceItem?: CartItem,
-  ) => {
-    const liveCart = onReadAgentCart()
-    if (sourceItem) {
-      return resolveLiveCartItem(liveCart, sourceItem, identity)
-    }
-    const candidates = liveCart.filter((line) =>
-      identity
-        ? cartItemIdentity(line) === identity
-        : line.id === id && (line.merchant === merchant || liveCart.length === 1),
-    )
-    return candidates.length === 1 ? candidates[0]! : null
-  }
   const updateCartQuantity = (
     _messageId: string,
     _blockIndex: number,
@@ -1407,32 +1397,35 @@ export function AgentDiscoverView({
     quantityDelta?: number,
     sourceItem?: CartItem,
   ) => {
-    const targetConversationId = activeConversationId
-    if (!targetConversationId) return
-    void actionQueue
-      .enqueue(async () => {
-        const line = latestArtifactCartLine(id, merchant, identity, sourceItem)
-        if (!line?.cartId || !line.cartLineId) {
-          setError('This cart changed. Open the full cart to review its current items.')
-          return null
-        }
-        const liveQuantity =
-          quantityDelta === undefined
-            ? quantity
-            : liveCartQuantityAfterDelta(line.qty, quantityDelta)
-        return executeAction(
-          targetConversationId,
-          liveQuantity <= 0 ? 'remove_cart_line' : 'update_cart_line',
-          liveQuantity <= 0
-            ? { cartId: line.cartId, cartLineId: line.cartLineId }
-            : { cartId: line.cartId, cartLineId: line.cartLineId, quantity: liveQuantity },
-          liveQuantity <= 0
-            ? `Removed ${line.productTitle ?? id} from cart`
-            : 'Updated cart quantity',
-        )
-      })
+    const change = optimisticAgentCartQuantityChange(
+      optimisticCartRef.current ?? onReadAgentCart(),
+      id,
+      merchant,
+      quantity,
+      identity,
+      quantityDelta,
+      sourceItem,
+    )
+    if (!change) {
+      setError('This cart changed. Open the full cart to review its current items.')
+      return
+    }
+
+    optimisticCartRef.current = change.cart
+    setOptimisticCart(change.cart)
+    setError(null)
+    const mutationSequence = cartMutationSequenceRef.current + 1
+    cartMutationSequenceRef.current = mutationSequence
+
+    void Promise.resolve()
+      .then(() => onUpdateCartQuantity(change.target, change.quantity, change.identity))
       .catch((caught) => {
         setError(caught instanceof Error ? caught.message : 'Could not update this cart.')
+      })
+      .finally(() => {
+        if (cartMutationSequenceRef.current !== mutationSequence) return
+        optimisticCartRef.current = null
+        setOptimisticCart(null)
       })
   }
   const removeCartLine = (

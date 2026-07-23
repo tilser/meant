@@ -1,7 +1,8 @@
 import type { AgentRunStatusProfile } from '../../../lib/apiClient'
-import { cartMerchantKey } from '../utils'
+import { resolveLiveCartItem } from '../cart/cartPartition'
+import { cartItemIdentity, cartMerchantKey } from '../utils'
 import type { MerchantCartSnapshot, MerchantCartStateReplacement } from '../cart/types'
-import type { CartItem } from '../types'
+import type { CartItem, ProductId } from '../types'
 
 /** Alias ownership is compact; each complete revision is serialized only once. */
 export interface AgentCartPartitionFingerprints {
@@ -271,4 +272,58 @@ export function agentCartStateFingerprint(
 /** Historical rows express intent as a delta; current server-owned quantity remains authoritative. */
 export function liveCartQuantityAfterDelta(currentQuantity: number, delta: number): number {
   return Math.max(0, currentQuantity + delta)
+}
+
+export interface OptimisticAgentCartQuantityChange {
+  cart: CartItem[]
+  identity: string
+  quantity: number
+  target: CartItem
+}
+
+/**
+ * Applies a cart-card intent to the current live cart immediately. Historical cards express
+ * quantity controls as deltas, so a stale displayed quantity can never overwrite the live value.
+ */
+export function optimisticAgentCartQuantityChange(
+  cart: readonly CartItem[],
+  id: ProductId,
+  merchant: string,
+  quantity: number,
+  identity?: string,
+  quantityDelta?: number,
+  sourceItem?: CartItem,
+): OptimisticAgentCartQuantityChange | null {
+  const target = sourceItem
+    ? resolveLiveCartItem(cart, sourceItem, identity)
+    : (() => {
+        const candidates = cart.filter((line) =>
+          identity
+            ? cartItemIdentity(line) === identity
+            : line.id === id && (line.merchant === merchant || cart.length === 1),
+        )
+        return candidates.length === 1 ? candidates[0]! : null
+      })()
+  if (!target) return null
+
+  const targetIdentity = cartItemIdentity(target)
+  const nextQuantity =
+    quantityDelta === undefined
+      ? Math.max(0, quantity)
+      : liveCartQuantityAfterDelta(target.qty, quantityDelta)
+  const nextCart =
+    nextQuantity <= 0
+      ? cart.filter((line) => cartItemIdentity(line) !== targetIdentity)
+      : cart.map((line) =>
+          cartItemIdentity(line) === targetIdentity
+            ? { ...line, qty: nextQuantity, syncing: true, syncError: null }
+            : line,
+        )
+
+  return {
+    cart: nextCart,
+    identity: targetIdentity,
+    quantity: nextQuantity,
+    target,
+  }
 }

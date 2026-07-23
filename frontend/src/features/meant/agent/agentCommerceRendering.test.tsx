@@ -20,6 +20,7 @@ import {
   agentCartStateFingerprint,
   isTerminalAgentRunStatus,
   liveCartQuantityAfterDelta,
+  optimisticAgentCartQuantityChange,
   registerPendingAgentCartRun,
 } from './cartSync'
 
@@ -337,6 +338,36 @@ describe('agent commerce artifacts reuse the established components', () => {
     expect(liveCartQuantityAfterDelta(3, 1)).toBe(4)
     expect(liveCartQuantityAfterDelta(3, -1)).toBe(2)
     expect(liveCartQuantityAfterDelta(0, -1)).toBe(0)
+  })
+
+  test('projects cart-card quantity changes immediately from the live cart', () => {
+    const liveLine = { ...cart[0]!, qty: 3 }
+    const historicalLine = { ...liveLine, qty: 1 }
+
+    const increased = optimisticAgentCartQuantityChange(
+      [liveLine],
+      historicalLine.id,
+      historicalLine.merchant,
+      2,
+      undefined,
+      1,
+      historicalLine,
+    )
+
+    expect(increased?.quantity).toBe(4)
+    expect(increased?.cart[0]).toMatchObject({ qty: 4, syncing: true, syncError: null })
+
+    const removed = optimisticAgentCartQuantityChange(
+      increased?.cart ?? [],
+      liveLine.id,
+      liveLine.merchant,
+      0,
+      increased?.identity,
+      undefined,
+      liveLine,
+    )
+    expect(removed?.quantity).toBe(0)
+    expect(removed?.cart).toEqual([])
   })
 
   test('serializes rapid cart intents and keeps processing after a failed action', async () => {

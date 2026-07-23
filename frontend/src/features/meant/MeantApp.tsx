@@ -25,6 +25,7 @@ import { useSupabaseAuth } from './auth/useSupabaseAuth'
 import { CartPopover } from './cart/CartPopover'
 import { CartCheckoutDialog } from './cart/CartCheckoutDialog'
 import { CartView } from './cart/CartView'
+import { resolveLiveCartItem } from './cart/cartPartition'
 import type { ActiveCheckoutSession, CheckoutAssistantContext } from './cart/checkoutTypes'
 import { resolveCartableOffer } from './cart/cartOfferResolver'
 import type { MerchantCartSnapshot, MerchantCartStateReplacement } from './cart/types'
@@ -992,6 +993,18 @@ export function MeantApp() {
       return runCommerceMutation(() => updateQty(...args))
     },
     [runCommerceMutation, updateQty],
+  )
+
+  const updateAgentCartQuantity = useCallback(
+    (sourceItem: CartItem, quantity: number, identity: string) =>
+      runCommerceMutation(async () => {
+        const liveItem = resolveLiveCartItem(getCurrentCart(), sourceItem, identity)
+        if (!liveItem) {
+          throw new Error('This cart changed. Open the full cart to review its current items.')
+        }
+        await updateQty(liveItem.id, liveItem.merchant, quantity, cartItemIdentity(liveItem))
+      }),
+    [getCurrentCart, runCommerceMutation, updateQty],
   )
 
   const applyCartCodeGuarded = useCallback(
@@ -2912,6 +2925,7 @@ export function MeantApp() {
             onReadAgentCart={getCurrentCart}
             onCaptureAgentCartRevision={captureAgentCartRevision}
             onAgentCartSnapshot={registerAgentCartSnapshot}
+            onUpdateCartQuantity={updateAgentCartQuantity}
             onAgentRunSubmitted={registerAgentCartRun}
             onProductDetailChatRequestHandled={(requestId) => {
               setProductDetailChatRequest((current) => (current?.id === requestId ? null : current))
