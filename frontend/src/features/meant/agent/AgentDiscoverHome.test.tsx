@@ -37,6 +37,7 @@ const props = {
   newsletter: false,
   onOpen: () => undefined,
   onToggleSave: () => undefined,
+  onAddSelectedOfferToCart: async () => true,
   onCompareProducts: () => undefined,
   onCheckout: () => undefined,
   activeCheckout: null,

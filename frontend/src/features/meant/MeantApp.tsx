@@ -2905,6 +2905,7 @@ export function MeantApp() {
               openProduct(product, products ?? allKnownProducts, researchQuery)
             }
             onToggleSave={toggleSave}
+            onAddSelectedOfferToCart={addSelectedOfferToCartGuarded}
             onCompareProducts={compareChatProducts}
             onCheckout={checkoutInChat}
             activeCheckout={activeCheckout?.source === 'chat' ? activeCheckout : null}

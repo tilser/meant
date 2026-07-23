@@ -102,6 +102,7 @@ import { mergeAnchoredLocalMessages, type AnchoredLocalMessage } from './localMe
 import { AgentWorkingIndicator } from './AgentWorkingIndicator'
 import { agentWorkingStage } from './agentWorkingState'
 import { threadFromAgentConversationSummary } from './conversationHistory'
+import { addChatProductToCart, exactProductOfferKey } from './chatCartAddition'
 
 const NEWSLETTER_SUBSCRIBED_MESSAGE =
   'You are subscribed to the newsletter. If you want to unsubscribe, you can do so in your account settings.'
@@ -237,6 +238,7 @@ export interface AgentDiscoverViewProps {
   newsletter: boolean
   onOpen: (product: Product, products?: readonly Product[], researchQuery?: string | null) => void
   onToggleSave: (product: Product) => void
+  onAddSelectedOfferToCart: (product: Product, offerKey: string) => Promise<boolean>
   onCompareProducts: (products: readonly Product[]) => void
   onCheckout: (payload: CheckoutPayload) => Promise<void> | void
   activeCheckout: ActiveCheckoutSession | null
@@ -296,6 +298,7 @@ export function AgentDiscoverView({
   newsletter,
   onOpen,
   onToggleSave,
+  onAddSelectedOfferToCart,
   onCompareProducts,
   onCheckout,
   activeCheckout,
@@ -1303,17 +1306,11 @@ export function AgentDiscoverView({
     [actionQueue, activeConversationId, executeAction, expectedUserId],
   )
 
-  const exactOfferKey = (product: Product): string | null =>
-    product.canonicalProduct?.recommendedOfferKey ??
-    product.canonicalProduct?.offers[0]?.key ??
-    product.offers.find((offer) => offer.offerKey)?.offerKey ??
-    null
-
   const togglePin = (product: Product) => {
     const pinned = interactionState.pinned.has(product.id)
     void performAction(
       pinned ? 'unpin_product' : 'pin_product',
-      { canonicalProductKey: product.id, offerKey: exactOfferKey(product) ?? undefined },
+      { canonicalProductKey: product.id, offerKey: exactProductOfferKey(product) ?? undefined },
       `${pinned ? 'Unpinned' : 'Pinned'} ${product.name}`,
     )
   }
@@ -1324,7 +1321,10 @@ export function AgentDiscoverView({
         pinnedProducts.map((product) =>
           performAction(
             'unpin_product',
-            { canonicalProductKey: product.id, offerKey: exactOfferKey(product) ?? undefined },
+            {
+              canonicalProductKey: product.id,
+              offerKey: exactProductOfferKey(product) ?? undefined,
+            },
             `Unpinned ${product.name}`,
           ),
         ),
@@ -1337,20 +1337,20 @@ export function AgentDiscoverView({
     appendUnavailableFeatureMessage()
   }
   const addToCart = (product: Product) => {
-    const offerKey = exactOfferKey(product)
-    if (!offerKey) {
-      setError('This product does not have an exact purchasable offer yet.')
-      return
-    }
-    void performAction(
-      'prepare_carts',
-      { offers: [{ offerKey, quantity: 1 }] },
-      `Added ${product.name} to cart`,
-    )
+    setError(null)
+    void addChatProductToCart(product, onAddSelectedOfferToCart).then((result) => {
+      if (result !== 'added') {
+        setError(
+          result === 'missing-offer'
+            ? 'This product does not have an exact purchasable offer yet.'
+            : 'Could not add this item to the merchant cart.',
+        )
+      }
+    })
   }
   const dig = (kind: 'reviews' | 'code' | 'similar', product: Product) => {
     const key = product.id
-    const offerKey = exactOfferKey(product) ?? undefined
+    const offerKey = exactProductOfferKey(product) ?? undefined
     if (kind === 'reviews') {
       void performAction(
         'get_product_reviews',
