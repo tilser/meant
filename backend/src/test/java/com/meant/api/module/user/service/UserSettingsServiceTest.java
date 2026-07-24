@@ -122,7 +122,15 @@ class UserSettingsServiceTest {
                         false,
                         null,
                         null,
-                        List.of(new UserLocationCommand("Czechia", "CZ", "Prague")),
+                        List.of(new UserLocationCommand(
+                                "geonames:3067696",
+                                "Czechia",
+                                "CZ",
+                                "10",
+                                null,
+                                "Prague",
+                                "Prague"
+                        )),
                         null,
                         Set.of(),
                         List.of()
@@ -133,7 +141,15 @@ class UserSettingsServiceTest {
         assertThat(userSettingsLocationRepository.deleteCalls).isOne();
         assertThat(userSettingsLocationRepository.saveAllCalls).isOne();
         assertThat(result.locations())
-                .containsExactly(new UserLocationResult("Czechia", "CZ", "Prague"));
+                .containsExactly(new UserLocationResult(
+                        "geonames:3067696",
+                        "Czechia",
+                        "CZ",
+                        "10",
+                        null,
+                        "Prague",
+                        "Prague"
+                ));
     }
 
     private EnsureUserProfileCommand profileCommand() {

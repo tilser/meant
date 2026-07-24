@@ -7,6 +7,7 @@ import com.meant.api.module.user.constant.UserProductSearchFilterState;
 import com.meant.api.module.user.constant.UserProductSearchQuestionTarget;
 import com.meant.api.module.user.service.dto.UserProductSearchPreferenceResult;
 import com.meant.api.module.user.service.dto.UserProductSearchQualificationPlan;
+import com.meant.api.module.user.service.dto.UserLocationResult;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
 import com.meant.api.module.user.service.query.GenerateUserProductSearchQualificationQuery;
 import java.math.BigDecimal;
@@ -190,19 +191,28 @@ public class UserProductSearchQualificationPlanResolver {
             GenerateUserProductSearchQualificationQuery query,
             List<String> violations
     ) {
-        List<String> values = filter.value() == null ? List.of() : List.of(filter.value().country());
         if (filter.state() == UserProductSearchFilterState.VALUE
-                && filter.provenance().source() == UserProductSearchDecisionSource.PROFILE
-                && (filter.value() == null
-                        || filter.value().region() != null
-                        || filter.value().postalCode() != null)) {
-            violations.add("SHIPS_TO profile provenance may supply only a saved country");
-            return new UserProductSearchQualificationPlan.LocationFilter(
-                    UserProductSearchFilterState.MISSING,
-                    null,
-                    UserProductSearchQualificationPlan.Provenance.none()
+                && filter.provenance().source() == UserProductSearchDecisionSource.PROFILE) {
+            var savedLocation = savedProfileLocation(filter, query.settings());
+            if (savedLocation == null) {
+                violations.add("SHIPS_TO profile value does not match a saved location");
+                return new UserProductSearchQualificationPlan.LocationFilter(
+                        UserProductSearchFilterState.MISSING,
+                        null,
+                        UserProductSearchQualificationPlan.Provenance.none()
+                );
+            }
+            filter = new UserProductSearchQualificationPlan.LocationFilter(
+                    filter.state(),
+                    new UserProductSearchQualificationPlan.Location(
+                            savedLocation.code(),
+                            savedLocation.region(),
+                            savedLocation.postalCode()
+                    ),
+                    filter.provenance()
             );
         }
+        List<String> values = filter.value() == null ? List.of() : List.of(filter.value().country());
         if (filter.state() == UserProductSearchFilterState.VALUE
                 && filter.value() != null
                 && !locationDetailsMatchEvidence(
@@ -256,6 +266,12 @@ public class UserProductSearchQualificationPlanResolver {
             UserProductSearchQuestionTarget target,
             GenerateUserProductSearchQualificationQuery query
     ) {
+        if (provenance.source() == UserProductSearchDecisionSource.PROFILE) {
+            return safe(query.settings().locations()).stream().anyMatch(saved ->
+                    saved.code().equalsIgnoreCase(location.country())
+                            && java.util.Objects.equals(saved.region(), location.region())
+                            && java.util.Objects.equals(saved.postalCode(), location.postalCode()));
+        }
         String evidence = normalize(provenance.evidence());
         return regionMentioned(
                         provenance.evidence(),
@@ -263,6 +279,28 @@ public class UserProductSearchQualificationPlanResolver {
                         rawSource(provenance.source(), target, query),
                         location.region())
                 && optionalPhraseMentioned(evidence, location.postalCode());
+    }
+
+    private UserLocationResult savedProfileLocation(
+            UserProductSearchQualificationPlan.LocationFilter filter,
+            UserSettingsResult settings
+    ) {
+        if (filter.value() == null) {
+            return null;
+        }
+        String evidence = normalize(filter.provenance().evidence());
+        List<UserLocationResult> countryMatches = safe(settings.locations()).stream()
+                .filter(location -> location.code().equalsIgnoreCase(filter.value().country()))
+                .toList();
+        if (countryMatches.size() <= 1) {
+            return countryMatches.isEmpty() ? null : countryMatches.get(0);
+        }
+        return countryMatches.stream()
+                .filter(location -> containsPhrase(evidence, normalize(location.city()))
+                        || containsPhrase(evidence, normalize(location.regionName()))
+                        || containsPhrase(evidence, normalize(location.postalCode())))
+                .findFirst()
+                .orElse(countryMatches.get(0));
     }
 
     private boolean regionMentioned(
@@ -514,6 +552,9 @@ public class UserProductSearchQualificationPlanResolver {
             safe(settings.locations()).forEach(location -> {
                 values.add(location.country());
                 values.add(location.code());
+                values.add(location.region());
+                values.add(location.postalCode());
+                values.add(location.regionName());
                 values.add(location.city());
             });
         }

@@ -61,7 +61,12 @@ class UserProductSearchQualificationPlanMapperTest {
 
         assertThat(filters.available()).isTrue();
         assertThat(filters.conditions()).containsExactly(CatalogDiscoveryCondition.NEW);
-        assertThat(filters.shipsTo().country()).isEqualTo("US");
+        assertThat(filters.shipsTo())
+                .satisfies(location -> {
+                    assertThat(location.country()).isEqualTo("US");
+                    assertThat(location.region()).isEqualTo("CA");
+                    assertThat(location.postalCode()).isEqualTo("90210");
+                });
         assertThat(filters.shipsFrom()).extracting(location -> location.country()).containsExactly("CA");
         assertThat(filters.price().min()).isEqualTo(5000L);
         assertThat(filters.price().max()).isEqualTo(15000L);

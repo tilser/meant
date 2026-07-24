@@ -107,7 +107,13 @@ public class UserProductSearchHashService {
 
     private String locationsValue(List<UserLocationResult> locations) {
         return locations.stream()
-                .map(location -> Stream.of(location.country(), location.code(), location.city())
+                .map(location -> Stream.of(
+                                location.id(),
+                                location.country(),
+                                location.code(),
+                                location.region(),
+                                location.postalCode(),
+                                location.city())
                         .map(this::value)
                         .collect(Collectors.joining("|")))
                 .collect(Collectors.joining(";"));

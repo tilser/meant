@@ -45,6 +45,27 @@ class UserProductSearchCatalogInputBuilderTest {
     }
 
     @Test
+    void copiesSavedUcpRegionAndPostalCodeIntoCatalogContext() {
+        UserProductSearchCatalogInput input = builder.build(
+                "running shoes",
+                intent("running shoes"),
+                settings(new UserLocationResult(
+                        "geonames:5128581",
+                        "United States",
+                        "US",
+                        "NY",
+                        "10001",
+                        "New York",
+                        "New York"
+                ))
+        );
+
+        assertThat(input.context().addressCountry()).isEqualTo("US");
+        assertThat(input.context().addressRegion()).isEqualTo("NY");
+        assertThat(input.context().postalCode()).isEqualTo("10001");
+    }
+
+    @Test
     void buildsRangePriceFilter() {
         UserProductSearchCatalogInput input = builder.build(
                 "linen shirt between 50 and 100 USD",

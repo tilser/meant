@@ -2,9 +2,10 @@ package com.meant.api.module.user.service;
 
 import static com.meant.api.common.util.CollectionUtils.safeList;
 
-import com.meant.api.module.user.constant.UserClothingFit;
+import com.meant.api.common.util.CountryCodeNormalizer;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryFilters;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryLocation;
+import com.meant.api.module.user.constant.UserClothingFit;
 import com.meant.api.module.user.exception.UnsupportedProductSearchCurrencyException;
 import com.meant.api.module.user.service.dto.ShoppingFilterResult;
 import com.meant.api.module.user.service.dto.UserLocationResult;
@@ -143,14 +144,15 @@ public class UserProductSearchCatalogInputBuilder {
                 : parsedPrice(qualifiedFilters);
         String searchQuery = searchQuery(queryIntent.searchQuery(), parsedPrice);
         CatalogDiscoveryLocation shipsTo = qualifiedFilters == null ? null : qualifiedFilters.shipsTo();
-        String country = shipsTo != null
-                ? shipsTo.country()
-                : countryCode(settings.location());
+        CatalogDiscoveryLocation contextLocation = shipsTo != null
+                ? shipsTo
+                : catalogLocation(settings.location());
+        String country = contextLocation == null ? null : contextLocation.country();
         String currency = SEARCH_CURRENCY;
         CatalogSearchContext context = context(
                 country,
-                shipsTo == null ? null : shipsTo.region(),
-                shipsTo == null ? null : shipsTo.postalCode(),
+                contextLocation == null ? null : contextLocation.region(),
+                contextLocation == null ? null : contextLocation.postalCode(),
                 currency,
                 intent(
                         originalQuery,
@@ -398,11 +400,24 @@ public class UserProductSearchCatalogInputBuilder {
             return null;
         }
         return "User delivery location signals: " + safeList(locations).stream()
-                .map(location -> "%s, %s (%s)".formatted(
-                        location.city(),
-                        location.country(),
-                        location.code()))
+                .map(this::locationIntent)
                 .collect(Collectors.joining("; "));
+    }
+
+    private String locationIntent(UserLocationResult location) {
+        List<String> ucpLocation = new ArrayList<>();
+        ucpLocation.add(location.code());
+        if (location.region() != null && !location.region().isBlank()) {
+            ucpLocation.add("UCP region=" + location.region());
+        }
+        if (location.postalCode() != null && !location.postalCode().isBlank()) {
+            ucpLocation.add("postal_code=" + location.postalCode());
+        }
+        return "%s, %s (%s)".formatted(
+                location.city(),
+                location.country(),
+                String.join("; ", ucpLocation)
+        );
     }
 
     private String clothingFitIntent(String clothingFit) {
@@ -498,9 +513,9 @@ public class UserProductSearchCatalogInputBuilder {
         if (location == null) {
             return null;
         }
-        String code = location.code();
-        if (code != null && code.matches("(?i)[A-Z]{2}")) {
-            return code.toUpperCase(Locale.ROOT);
+        String code = CountryCodeNormalizer.normalizeAlpha2(location.code());
+        if (code != null) {
+            return code;
         }
         String country = location.country() == null ? "" : location.country().trim().toLowerCase(Locale.ROOT);
         return switch (country) {
@@ -512,6 +527,13 @@ public class UserProductSearchCatalogInputBuilder {
             case "new zealand" -> "NZ";
             default -> null;
         };
+    }
+
+    private CatalogDiscoveryLocation catalogLocation(UserLocationResult location) {
+        String country = countryCode(location);
+        return country == null
+                ? null
+                : new CatalogDiscoveryLocation(country, location.region(), location.postalCode());
     }
 
     private String currencyFromAmount(String amount) {

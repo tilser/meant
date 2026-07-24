@@ -217,7 +217,10 @@ export function canMerchantShip(merchant: string, locations: DeliveryLocations):
     return true
   }
   return locations.some((location) => {
-    const shipsToCountry = coverage.ships === 'global' || coverage.ships.includes(location.code)
+    const countryCode = normalizedCountryCode(location.code)
+    const shipsToCountry =
+      coverage.ships === 'global' ||
+      coverage.ships.some((code) => normalizedCountryCode(code) === countryCode)
     if (!shipsToCountry) {
       return false
     }
@@ -241,13 +244,16 @@ function merchantCoverage(merchant: string) {
 }
 
 function countryLabel(code: string): string {
-  const normalized = code.trim().toUpperCase()
-  const location =
-    LOCATIONS.find((candidate) => candidate.code.toUpperCase() === normalized) ??
-    (normalized === 'GB'
-      ? LOCATIONS.find((candidate) => candidate.code.toUpperCase() === 'UK')
-      : undefined)
+  const normalized = normalizedCountryCode(code)
+  const location = LOCATIONS.find(
+    (candidate) => normalizedCountryCode(candidate.code) === normalized,
+  )
   return location?.country ?? normalized
+}
+
+function normalizedCountryCode(code: string): string {
+  const normalized = code.trim().toUpperCase()
+  return normalized === 'UK' ? 'GB' : normalized
 }
 
 export function merchantDeliveryCoverageSummary(merchant: string): string {

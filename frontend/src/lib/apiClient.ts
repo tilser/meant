@@ -38,9 +38,29 @@ export interface ShoppingFilterProfile {
 }
 
 export interface UserSettingsLocation {
+  id: string
   country: string
   code: string
+  region: string | null
+  postalCode: string | null
+  regionName: string | null
   city: string
+}
+
+export interface LocationSuggestionProfile {
+  id: string
+  city: string
+  regionName: string | null
+  countryName: string
+  country: string
+  region: string | null
+  postalCode: string | null
+}
+
+export interface LocationSuggestionPageProfile {
+  suggestions: LocationSuggestionProfile[]
+  attribution: string
+  attributionUrl: string
 }
 
 export interface UserProductSearchPreferenceProfile {
@@ -1105,8 +1125,8 @@ export async function updateUserSettings(
       budget: typeof input.budget === 'number' ? input.budget : undefined,
       budgetUnlimited: input.budget === null ? true : undefined,
       clothingFit: input.clothingFit,
-      location: input.location,
-      locations: input.locations,
+      location: input.location ? { id: input.location.id } : input.location,
+      locations: input.locations?.map((location) => ({ id: location.id })),
       filterIds: input.filterIds,
       preferenceDescription: input.preferenceDescription,
       productSearchPreferences: input.productSearchPreferences,
@@ -1114,6 +1134,25 @@ export async function updateUserSettings(
     signal: options?.signal,
   })
   return parseJsonResponse<UserSettingsProfile>(response, 'Failed to update user settings')
+}
+
+export async function searchLocationSuggestions(
+  query: string,
+  options?: AccountBoundRequestOptions & { language?: string; limit?: number },
+): Promise<LocationSuggestionPageProfile> {
+  const parameters = new URLSearchParams({
+    query,
+    language: options?.language ?? 'en',
+    limit: String(options?.limit ?? 8),
+  })
+  const response = await fetch(`${API_URL}/api/locations/suggestions?${parameters}`, {
+    headers: await authHeaders(options?.expectedUserId),
+    signal: options?.signal,
+  })
+  return parseJsonResponse<LocationSuggestionPageProfile>(
+    response,
+    'Failed to search delivery locations',
+  )
 }
 
 export async function deleteUserProductSearchPreference(

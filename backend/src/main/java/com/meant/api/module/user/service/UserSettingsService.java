@@ -1,5 +1,6 @@
 package com.meant.api.module.user.service;
 
+import com.meant.api.common.util.CountryCodeNormalizer;
 import com.meant.api.module.user.constant.ShoppingFilterDefaults;
 import com.meant.api.module.user.constant.UserClothingFit;
 import com.meant.api.module.user.entity.ShoppingFilter;
@@ -11,8 +12,8 @@ import com.meant.api.module.user.repository.UserSettingsLocationRepository;
 import com.meant.api.module.user.repository.UserSettingsRepository;
 import com.meant.api.module.user.repository.UserShoppingFilterRepository;
 import com.meant.api.module.user.service.command.AddUserSettingsFilterCommand;
-import com.meant.api.module.user.service.command.UpdateUserSettingsCommand;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
+import com.meant.api.module.user.service.command.UpdateUserSettingsCommand;
 import com.meant.api.module.user.service.command.UserLocationCommand;
 import com.meant.api.module.user.service.dto.ShoppingFilterResult;
 import com.meant.api.module.user.service.dto.UserLocationResult;
@@ -168,8 +169,12 @@ public class UserSettingsService {
         List<UserLocationCommand> desiredLocations = normalizedLocations(locations);
         List<UserLocationResult> desiredResults = desiredLocations.stream()
                 .map(location -> new UserLocationResult(
+                        location.id(),
                         location.country(),
                         location.code(),
+                        location.region(),
+                        location.postalCode(),
+                        location.regionName(),
                         location.city()
                 ))
                 .toList();
@@ -208,14 +213,20 @@ public class UserSettingsService {
     private List<UserLocationCommand> normalizedLocations(List<UserLocationCommand> locations) {
         Map<String, UserLocationCommand> locationsByKey = new LinkedHashMap<>();
         locations.forEach(location -> {
+            String countryCode = CountryCodeNormalizer.normalizeAlpha2(location.code());
+            if (countryCode == null) {
+                throw new UserException("Location country code must be ISO 3166-1 alpha-2");
+            }
             UserLocationCommand normalized = new UserLocationCommand(
+                    location.id().trim(),
                     location.country().trim(),
-                    location.code().trim(),
+                    countryCode,
+                    clean(location.region(), true),
+                    clean(location.postalCode(), false),
+                    clean(location.regionName(), false),
                     location.city().trim());
             locationsByKey.putIfAbsent(
-                    normalized.code().toUpperCase(Locale.ROOT)
-                            + "\n"
-                            + normalized.city().toLowerCase(Locale.ROOT),
+                    normalized.id().toLowerCase(Locale.ROOT),
                     normalized);
         });
         return List.copyOf(locationsByKey.values());
@@ -231,13 +242,25 @@ public class UserSettingsService {
         for (int index = 0; index < currentLocations.size(); index++) {
             UserLocationResult currentLocation = currentLocations.get(index);
             UserLocationCommand desiredLocation = desiredLocations.get(index);
-            if (!currentLocation.country().equals(desiredLocation.country())
+            if (!currentLocation.id().equals(desiredLocation.id())
+                    || !currentLocation.country().equals(desiredLocation.country())
                     || !currentLocation.code().equals(desiredLocation.code())
+                    || !java.util.Objects.equals(currentLocation.region(), desiredLocation.region())
+                    || !java.util.Objects.equals(currentLocation.postalCode(), desiredLocation.postalCode())
+                    || !java.util.Objects.equals(currentLocation.regionName(), desiredLocation.regionName())
                     || !currentLocation.city().equals(desiredLocation.city())) {
                 return false;
             }
         }
         return true;
+    }
+
+    private String clean(String value, boolean uppercase) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String cleaned = value.trim();
+        return uppercase ? cleaned.toUpperCase(Locale.ROOT) : cleaned;
     }
 
     private List<String> activeFilterIds(UUID userId) {

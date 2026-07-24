@@ -93,6 +93,8 @@ MERCHANT_IDENTITY_LINKING_TOKEN_ENCRYPTION_SECRET=<new-strong-random-secret>
 Add the provider secrets required by enabled features:
 
 ```dotenv
+GEONAMES_USERNAME=<registered-geonames-username>
+
 OPENROUTER_API_KEY=<secret>
 VOYAGE_API_KEY=<secret>
 
@@ -105,6 +107,11 @@ MERCHANT_IDENTITY_LINKING_CLIENT_ID=<secret>
 MERCHANT_IDENTITY_LINKING_CLIENT_SECRET=<secret>
 ORDER_SHOPIFY_WEBHOOK_SECRET=<secret>
 ```
+
+`GEONAMES_USERNAME` enables the global city autocomplete used for validated UCP `ships_to`
+locations. Create a free GeoNames account and enable web services for that account. The browser
+never calls GeoNames directly; the backend resolves the selected GeoNames ID and persists the
+canonical ISO country code plus any available ISO region and postal code.
 
 If Shopify credentials are not available yet, set `SHOPIFY_AGENT_AUTH_ENABLED=false`; the default
 application configuration enables it and validates that credentials are present.

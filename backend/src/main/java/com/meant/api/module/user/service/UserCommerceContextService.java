@@ -31,6 +31,6 @@ public class UserCommerceContextService {
     private String country(UserSettingsLocation location) {
         return location == null || location.getId() == null
                 ? null
-                : CountryCodeNormalizer.normalizeAlpha2(location.getId().getLocationCode());
+                : CountryCodeNormalizer.normalizeAlpha2(location.getLocationCode());
     }
 }

@@ -28,6 +28,12 @@ rest-client:
   connect-timeout-milliseconds: 5000
   read-timeout-milliseconds: 30000
 
+geonames:
+  username: ""
+  base-url: https://secure.geonames.org
+  cache-ttl: 24h
+  maximum-cache-entries: 10000
+
 app:
   cors:
     allowed-origins:
@@ -59,6 +65,8 @@ app:
           path: /api/v1/users/me/products/{canonicalProductKey}
         - method: GET
           path: /api/users/me/product-search-suggestions
+        - method: GET
+          path: /api/locations/suggestions
         - method: POST
           path: /api/merchants/semantic-search
         - method: POST

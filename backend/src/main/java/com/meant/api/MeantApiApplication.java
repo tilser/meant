@@ -13,6 +13,7 @@ import com.meant.api.plugin.catalog.extension.shopify.ShopifyGlobalCatalogExtens
 import com.meant.api.plugin.signing.SigningKeyProperties;
 import com.meant.api.plugin.transport.client.UcpMcpDiagnosticsProperties;
 import com.meant.api.plugin.transport.profile.AgentIdentity;
+import com.meant.api.provider.geonames.GeoNamesProperties;
 import com.meant.api.provider.shopify.auth.ShopifyAgentAuthProperties;
 import com.meant.api.provider.shopify.capability.ShopifyCapabilityReadinessProperties;
 import com.meant.api.provider.shopify.cart.ShopifyCartProperties;
@@ -37,6 +38,7 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
         SigningKeyProperties.class,
         UcpMcpDiagnosticsProperties.class,
         AgentIdentity.class,
+        GeoNamesProperties.class,
         ShopifyAgentAuthProperties.class,
         ShopifyCapabilityReadinessProperties.class,
         ShopifyCartProperties.class,

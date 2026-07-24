@@ -44,7 +44,14 @@ import {
   selectedCartDeliveryOption,
   writeStorage,
 } from './utils'
-import type { CartDeliveryGroup, CartDeliveryOption, CartItem, CartLine, Product } from './types'
+import type {
+  CartDeliveryGroup,
+  CartDeliveryOption,
+  CartItem,
+  CartLine,
+  Product,
+  UserLocation,
+} from './types'
 
 const product: Product = {
   id: 'product-1',
@@ -77,6 +84,19 @@ function option(handle: string, amount: string, selected: boolean): CartDelivery
       currency: 'USD',
     },
     selected,
+  }
+}
+
+function location(country: string, code: string, city: string): UserLocation {
+  const canonicalCode = code === 'UK' ? 'GB' : code
+  return {
+    id: `test:${canonicalCode}:${city}`,
+    country,
+    code: canonicalCode,
+    region: null,
+    postalCode: null,
+    regionName: null,
+    city,
   }
 }
 
@@ -200,20 +220,14 @@ describe('formatting and lookup utilities', () => {
 
 describe('shopping decision utilities', () => {
   test('checks merchant shipping coverage by country and city', () => {
-    expect(
-      canMerchantShip('Unknown Merchant', [{ country: 'France', code: 'FR', city: 'Paris' }]),
-    ).toBe(true)
+    expect(canMerchantShip('Unknown Merchant', [location('France', 'FR', 'Paris')])).toBe(true)
     expect(canMerchantShip('Whole Foods', [])).toBe(true)
-    expect(
-      canMerchantShip('Whole Foods', [{ country: 'United States', code: 'US', city: 'Seattle' }]),
-    ).toBe(true)
-    expect(
-      canMerchantShip('Whole Foods', [{ country: 'United States', code: 'US', city: 'Miami' }]),
-    ).toBe(false)
+    expect(canMerchantShip('Whole Foods', [location('United States', 'US', 'Seattle')])).toBe(true)
+    expect(canMerchantShip('Whole Foods', [location('United States', 'US', 'Miami')])).toBe(false)
   })
 
   test('filters offers and products for delivery location', () => {
-    const uk = [{ country: 'United Kingdom', code: 'UK', city: 'London' }]
+    const uk = [location('United Kingdom', 'GB', 'London')]
     const cereal = productById('cereal')
     const usOnly = productWith({
       id: 'us-only',
@@ -254,7 +268,7 @@ describe('shopping decision utilities', () => {
 
   test('uses shippable offers for price, merchant count, and best offer', () => {
     const cereal = productById('cereal')
-    const uk = [{ country: 'United Kingdom', code: 'UK', city: 'London' }]
+    const uk = [location('United Kingdom', 'GB', 'London')]
 
     expect(productPriceFrom(cereal, uk)).toBe(8.2)
     expect(productMerchantCount(cereal, uk)).toBe(1)

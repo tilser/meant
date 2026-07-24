@@ -36,6 +36,14 @@ public class UserSettings {
 
     private String locationCity;
 
+    private String locationId;
+
+    private String locationRegion;
+
+    private String locationPostalCode;
+
+    private String locationRegionName;
+
     @Column(nullable = false)
     private Instant createdAt;
 
@@ -96,24 +104,40 @@ public class UserSettings {
     private boolean updateLocation(UserLocationCommand location) {
         if (Objects.equals(this.locationCountry, location.country())
                 && Objects.equals(this.locationCode, location.code())
-                && Objects.equals(this.locationCity, location.city())) {
+                && Objects.equals(this.locationCity, location.city())
+                && Objects.equals(this.locationId, location.id())
+                && Objects.equals(this.locationRegion, location.region())
+                && Objects.equals(this.locationPostalCode, location.postalCode())
+                && Objects.equals(this.locationRegionName, location.regionName())) {
             return false;
         }
         this.locationCountry = location.country();
         this.locationCode = location.code();
         this.locationCity = location.city();
+        this.locationId = location.id();
+        this.locationRegion = location.region();
+        this.locationPostalCode = location.postalCode();
+        this.locationRegionName = location.regionName();
         return true;
     }
 
     private boolean clearLocation() {
         if (this.locationCountry == null
                 && this.locationCode == null
-                && this.locationCity == null) {
+                && this.locationCity == null
+                && this.locationId == null
+                && this.locationRegion == null
+                && this.locationPostalCode == null
+                && this.locationRegionName == null) {
             return false;
         }
         this.locationCountry = null;
         this.locationCode = null;
         this.locationCity = null;
+        this.locationId = null;
+        this.locationRegion = null;
+        this.locationPostalCode = null;
+        this.locationRegionName = null;
         return true;
     }
 }

@@ -42,6 +42,8 @@ class UserCommerceContextServiceTest {
         return UserSettingsLocation.builder()
                 .id(new UserSettingsLocationId(UUID.randomUUID(), code, "city"))
                 .country(code)
+                .locationCode(code)
+                .locationCity("city")
                 .displayOrder(0)
                 .build();
     }

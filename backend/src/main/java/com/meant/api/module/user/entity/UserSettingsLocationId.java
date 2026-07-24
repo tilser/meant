@@ -21,8 +21,10 @@ public class UserSettingsLocationId implements Serializable {
     private UUID userId;
 
     @Column(nullable = false)
-    private String locationCode;
+    private String locationId;
 
-    @Column(nullable = false)
-    private String locationCity;
+    public UserSettingsLocationId(UUID userId, String locationCode, String locationCity) {
+        this(userId, com.meant.api.module.user.service.command.UserLocationCommand.legacyId(
+                locationCode, locationCity));
+    }
 }

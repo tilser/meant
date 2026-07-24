@@ -29,6 +29,7 @@ const {
   getCartCheckout,
   getSavedProduct,
   rehydrateCanonicalProducts,
+  searchLocationSuggestions,
   searchSimilarGroupedProducts,
   qualifyProductSearch,
   saveDiscoverConversation,
@@ -68,6 +69,13 @@ beforeEach(() => {
     }
     if (request.url.endsWith('/api/v1/users/me/product-searches')) {
       return Response.json({ products: [] })
+    }
+    if (request.url.includes('/api/locations/suggestions')) {
+      return Response.json({
+        suggestions: [],
+        attribution: 'GeoNames',
+        attributionUrl: 'https://www.geonames.org/',
+      })
     }
     return Response.json({ cartId: 'cart-1', lines: [] })
   }) as unknown as typeof fetch
@@ -544,6 +552,38 @@ describe('product search preferences API', () => {
     expect(requests[0]?.url).toEndWith(
       '/api/users/me/settings/product-search-preferences/trail%20footwear',
     )
+  })
+})
+
+describe('validated delivery location API', () => {
+  test('searches worldwide cities through the authenticated backend proxy', async () => {
+    await searchLocationSuggestions('Pra', { language: 'en', limit: 8 })
+
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.method).toBe('GET')
+    expect(requests[0]?.url).toBe(
+      'http://localhost:8080/api/locations/suggestions?query=Pra&language=en&limit=8',
+    )
+  })
+
+  test('sends only provider-validated IDs when saving locations', async () => {
+    await updateUserSettings({
+      locations: [
+        {
+          id: 'geonames:3067696',
+          country: 'Czechia',
+          code: 'CZ',
+          region: '10',
+          postalCode: null,
+          regionName: 'Prague',
+          city: 'Prague',
+        },
+      ],
+    })
+
+    expect(await requests[0]?.json()).toEqual({
+      locations: [{ id: 'geonames:3067696' }],
+    })
   })
 })
 

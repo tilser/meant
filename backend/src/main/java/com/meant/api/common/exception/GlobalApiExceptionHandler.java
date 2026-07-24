@@ -12,6 +12,8 @@ import com.meant.api.module.merchant.exception.MerchantEnrichmentException;
 import com.meant.api.module.merchant.exception.MerchantIdentityLinkException;
 import com.meant.api.module.merchant.exception.MerchantMcpToolException;
 import com.meant.api.module.merchant.exception.MerchantProductDetailsException;
+import com.meant.api.module.location.exception.InvalidLocationException;
+import com.meant.api.module.location.exception.LocationSearchException;
 import com.meant.api.module.order.exception.OrderException;
 import com.meant.api.module.review.exception.ReviewException;
 import com.meant.api.module.user.exception.SelectedOfferResolutionException;
@@ -137,6 +139,7 @@ public class GlobalApiExceptionHandler {
             MerchantEnrichmentException.class,
             MerchantMcpToolException.class,
             MerchantProductDetailsException.class,
+            LocationSearchException.class,
             ReviewException.class,
             UserProductSearchException.class
     })
@@ -160,6 +163,7 @@ public class GlobalApiExceptionHandler {
             EmbeddedCheckoutException.class,
             DiscountCodeException.class,
             MerchantIdentityLinkException.class,
+            InvalidLocationException.class,
             OrderException.class,
             SelectedOfferResolutionException.class,
             UnsupportedProductSearchCurrencyException.class,

@@ -63,6 +63,12 @@ rest-client:
   connect-timeout-milliseconds: ${REST_CLIENT_CONNECT_TIMEOUT_MILLISECONDS:5000}
   read-timeout-milliseconds: ${REST_CLIENT_READ_TIMEOUT_MILLISECONDS:30000}
 
+geonames:
+  username: ${GEONAMES_USERNAME:}
+  base-url: ${GEONAMES_BASE_URL:https://secure.geonames.org}
+  cache-ttl: ${GEONAMES_CACHE_TTL:24h}
+  maximum-cache-entries: ${GEONAMES_MAXIMUM_CACHE_ENTRIES:10000}
+
 app:
   cors:
     # Defaults support local frontend development only. Production deployments must set
@@ -101,6 +107,8 @@ app:
           path: /api/v1/users/me/product-variant-selections
         - method: GET
           path: /api/users/me/product-search-suggestions
+        - method: GET
+          path: /api/locations/suggestions
         - method: POST
           path: /api/merchants/semantic-search
         - method: POST

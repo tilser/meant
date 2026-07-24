@@ -627,6 +627,23 @@ export interface paths {
         patch: operations["updateTasteSignal"];
         trace?: never;
     };
+    "/api/locations/suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Suggest worldwide delivery cities */
+        get: operations["suggestions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/users/me/settings": {
         parameters: {
             query?: never;
@@ -2023,9 +2040,29 @@ export interface components {
             displayOrder: number;
         };
         UserLocationResponse: {
+            id: string;
             country: string;
             code: string;
+            region?: string;
+            postalCode?: string;
+            regionName?: string;
             city: string;
+        };
+        /** @description A provider-validated city and its UCP shipping-location values */
+        LocationSuggestionResponse: {
+            id: string;
+            city: string;
+            regionName?: string;
+            countryName: string;
+            country: string;
+            region?: string;
+            postalCode?: string;
+        };
+        /** @description Worldwide city autocomplete results and required data attribution */
+        LocationSuggestionPageResponse: {
+            suggestions: components["schemas"]["LocationSuggestionResponse"][];
+            attribution: string;
+            attributionUrl: string;
         };
         UserProductSearchPreferenceResponse: {
             scope: string;
@@ -3330,9 +3367,7 @@ export interface components {
             values: string[];
         };
         UserLocationRequest: {
-            country: string;
-            code: string;
-            city: string;
+            id: string;
         };
         UpdateUserProfilePictureRequest: {
             profilePicturePath: string;
@@ -5306,6 +5341,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentProfile"];
+                };
+            };
+        };
+    };
+    suggestions: {
+        parameters: {
+            query: {
+                query: string;
+                limit?: number;
+                language?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Matching location suggestions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["LocationSuggestionPageResponse"];
                 };
             };
         };

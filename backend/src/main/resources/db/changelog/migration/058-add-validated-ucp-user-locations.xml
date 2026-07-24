@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="001-normalize-legacy-united-kingdom-codes" author="meant">
+        <update tableName="user_settings_locations">
+            <column name="location_code" value="GB"/>
+            <where>upper(location_code) = 'UK'</where>
+        </update>
+        <update tableName="user_settings">
+            <column name="location_code" value="GB"/>
+            <where>upper(location_code) = 'UK'</where>
+        </update>
+    </changeSet>
+
+    <changeSet id="002-add-ucp-location-fields" author="meant">
+        <addColumn tableName="user_settings_locations">
+            <column name="location_id" type="text"/>
+            <column name="location_region" type="text"/>
+            <column name="location_postal_code" type="text"/>
+            <column name="location_region_name" type="text"/>
+        </addColumn>
+        <update tableName="user_settings_locations">
+            <column
+                    name="location_id"
+                    valueComputed="concat('legacy:', upper(location_code), ':', lower(location_city))"/>
+        </update>
+        <addNotNullConstraint
+                tableName="user_settings_locations"
+                columnName="location_id"
+                columnDataType="text"/>
+        <dropPrimaryKey
+                tableName="user_settings_locations"
+                constraintName="pk_user_settings_locations"/>
+        <addPrimaryKey
+                tableName="user_settings_locations"
+                columnNames="user_id, location_id"
+                constraintName="pk_user_settings_locations"/>
+
+        <addColumn tableName="user_settings">
+            <column name="location_id" type="text"/>
+            <column name="location_region" type="text"/>
+            <column name="location_postal_code" type="text"/>
+            <column name="location_region_name" type="text"/>
+        </addColumn>
+        <update tableName="user_settings">
+            <column
+                    name="location_id"
+                    valueComputed="concat('legacy:', upper(location_code), ':', lower(location_city))"/>
+            <where>location_code IS NOT NULL AND location_city IS NOT NULL</where>
+        </update>
+    </changeSet>
+</databaseChangeLog>

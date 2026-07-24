@@ -11,6 +11,7 @@ import com.meant.api.module.user.constant.UserProductSearchQuestionTarget;
 import com.meant.api.module.user.service.dto.UserProductSearchPreferenceResult;
 import com.meant.api.module.user.service.dto.UserProductSearchQualificationPlan;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
+import com.meant.api.module.user.service.dto.UserLocationResult;
 import com.meant.api.module.user.service.query.GenerateUserProductSearchQualificationQuery;
 import java.time.Instant;
 import java.util.List;
@@ -216,6 +217,65 @@ class UserProductSearchQualificationPlanResolverTest {
         assertThat(resolution.violations())
                 .contains("SHIPS_TO region or postal code lacks provenance evidence");
         assertThat(resolution.plan().shipsTo().state()).isEqualTo(UserProductSearchFilterState.MISSING);
+    }
+
+    @Test
+    void enrichesProfileShipsToWithSavedUcpRegionAndPostalCode() {
+        UserProductSearchQualificationPlan candidate = withShipsTo(
+                plan(
+                        "running shoes",
+                        List.of(),
+                        notApplicableCondition(),
+                        notApplicableShipsFrom(),
+                        notApplicablePrice(),
+                        notApplicableAttributes(),
+                        notApplicableRating(),
+                        notApplicablePriceTier()
+                ),
+                new UserProductSearchQualificationPlan.LocationFilter(
+                        UserProductSearchFilterState.VALUE,
+                        new UserProductSearchQualificationPlan.Location("US", null, null),
+                        new UserProductSearchQualificationPlan.Provenance(
+                                UserProductSearchDecisionSource.PROFILE,
+                                "United States US"
+                        )
+                )
+        );
+        UserLocationResult saved = new UserLocationResult(
+                "geonames:5128581",
+                "United States",
+                "US",
+                "NY",
+                "10001",
+                "New York",
+                "New York"
+        );
+        UserSettingsResult base = settings();
+        UserSettingsResult settings = new UserSettingsResult(
+                base.budget(),
+                base.clothingFit(),
+                saved,
+                List.of(saved),
+                base.filters(),
+                base.availableFilters(),
+                base.parsedFilterIds(),
+                base.unmappedPreferences(),
+                base.createdAt(),
+                base.updatedAt()
+        );
+        GenerateUserProductSearchQualificationQuery query = new GenerateUserProductSearchQualificationQuery(
+                "running shoes",
+                "running shoes",
+                null,
+                settings,
+                List.of()
+        );
+
+        var resolution = resolver.resolve(candidate, query);
+
+        assertThat(resolution.valid()).isTrue();
+        assertThat(resolution.plan().shipsTo().value())
+                .isEqualTo(new UserProductSearchQualificationPlan.Location("US", "NY", "10001"));
     }
 
     @Test

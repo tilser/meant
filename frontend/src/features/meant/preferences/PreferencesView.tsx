@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import type { UserProductSearchPreferenceProfile, UserTasteProfile } from '../../../lib/apiClient'
-import { LOCATIONS } from '../data'
+import {
+  searchLocationSuggestions,
+  type LocationSuggestionProfile,
+  type UserProductSearchPreferenceProfile,
+  type UserTasteProfile,
+} from '../../../lib/apiClient'
 import { deliveryLocationSummary } from '../shared/locations'
 import { PlusIcon, SearchIcon } from '../shared/icons'
 import { CloseIcon, ViewHead } from '../shared/ui'
@@ -694,22 +698,97 @@ function LocationSection({
   onSet: (locations: UserLocation[]) => void
 }>) {
   const [adding, setAdding] = useState(false)
-  const [code, setCode] = useState('')
-  const [city, setCity] = useState('')
-  const country = LOCATIONS.find((option) => option.code === code)
-  const locationKeys = new Set(locations.map((location) => `${location.code}:${location.city}`))
+  const [query, setQuery] = useState('')
+  const [suggestions, setSuggestions] = useState<LocationSuggestionProfile[]>([])
+  const [searching, setSearching] = useState(false)
+  const [searchError, setSearchError] = useState<string | null>(null)
+  const [attribution, setAttribution] = useState<{ label: string; url: string } | null>(null)
+  const locationIds = new Set(locations.map((location) => location.id))
+  const hasGeoNamesLocation = locations.some((location) => location.id.startsWith('geonames:'))
 
-  const save = () => {
-    if (!country || !city) {
+  useEffect(() => {
+    const normalizedQuery = query.trim()
+    if (!adding || normalizedQuery.length < 2) {
+      setSuggestions([])
+      setSearching(false)
+      setSearchError(null)
       return
     }
-    const nextLocation = { code: country.code, country: country.country, city }
-    const nextKey = `${nextLocation.code}:${nextLocation.city}`
-    onSet(locationKeys.has(nextKey) ? [...locations] : [...locations, nextLocation])
-    setCode('')
-    setCity('')
+
+    const controller = new AbortController()
+    setSearching(true)
+    setSearchError(null)
+    const timeout = window.setTimeout(() => {
+      const language =
+        typeof navigator === 'undefined' ? 'en' : navigator.language.split('-')[0] || 'en'
+      searchLocationSuggestions(normalizedQuery, {
+        language,
+        limit: 8,
+        signal: controller.signal,
+      })
+        .then((page) => {
+          if (controller.signal.aborted) return
+          setSuggestions(page.suggestions)
+          setAttribution({ label: page.attribution, url: page.attributionUrl })
+        })
+        .catch(() => {
+          if (controller.signal.aborted) return
+          setSuggestions([])
+          setSearchError('Location search is temporarily unavailable.')
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setSearching(false)
+        })
+    }, 300)
+
+    return () => {
+      window.clearTimeout(timeout)
+      controller.abort()
+    }
+  }, [adding, query])
+
+  const closeSearch = () => {
     setAdding(false)
+    setQuery('')
+    setSuggestions([])
+    setSearching(false)
+    setSearchError(null)
   }
+
+  const select = (suggestion: LocationSuggestionProfile) => {
+    const nextLocation: UserLocation = {
+      id: suggestion.id,
+      country: suggestion.countryName,
+      code: suggestion.country,
+      region: suggestion.region,
+      postalCode: suggestion.postalCode,
+      regionName: suggestion.regionName,
+      city: suggestion.city,
+    }
+    onSet(locationIds.has(nextLocation.id) ? [...locations] : [...locations, nextLocation])
+    closeSearch()
+  }
+
+  const distinctLocationParts = (
+    cityName: string,
+    regionName: string | null,
+    countryName: string,
+  ) =>
+    [regionName, countryName]
+      .filter((part, index, values) => part && part !== cityName && values.indexOf(part) === index)
+      .join(', ')
+
+  const normalizedQuery = query.trim()
+  const status =
+    normalizedQuery.length < 2
+      ? 'Type at least 2 characters.'
+      : searching
+        ? 'Searching worldwide cities…'
+        : searchError
+          ? searchError
+          : suggestions.length === 0
+            ? 'No matching city found.'
+            : null
 
   return (
     <div className="mt-loc-stack">
@@ -743,19 +822,13 @@ function LocationSection({
           {locations.map((location) => (
             <button
               className="mt-active-chip"
-              key={`${location.code}:${location.city}`}
+              key={location.id}
               type="button"
-              onClick={() =>
-                onSet(
-                  locations.filter(
-                    (candidate) =>
-                      candidate.code !== location.code || candidate.city !== location.city,
-                  ),
-                )
-              }
+              onClick={() => onSet(locations.filter((candidate) => candidate.id !== location.id))}
             >
               <span>
-                {location.city}, {location.country}
+                {location.city},{' '}
+                {distinctLocationParts(location.city, location.regionName, location.country)}
               </span>
               <CloseIcon size={12} />
             </button>
@@ -763,62 +836,82 @@ function LocationSection({
         </div>
       ) : null}
 
+      {!adding && hasGeoNamesLocation ? (
+        <span className="mt-loc-attribution">
+          Location data by{' '}
+          <a href="https://www.geonames.org/" target="_blank" rel="noreferrer">
+            GeoNames
+          </a>
+        </span>
+      ) : null}
+
       {adding ? (
         <div className="mt-loc-form">
-          <div className="mt-loc-fields">
-            <label className="mt-field">
-              <span className="mt-field-label mt-mono">Country</span>
-              <select
-                className="mt-select"
-                value={code}
-                onChange={(event) => {
-                  setCode(event.target.value)
-                  setCity('')
-                }}
-              >
-                <option value="">Select country</option>
-                {LOCATIONS.map((option) => (
-                  <option key={option.code} value={option.code}>
-                    {option.country}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="mt-field">
-              <span className="mt-field-label mt-mono">City</span>
-              <select
-                className="mt-select"
-                value={city}
-                disabled={!code}
-                onChange={(event) => setCity(event.target.value)}
-              >
-                <option value="">{code ? 'Select city' : 'Pick a country first'}</option>
-                {(country?.cities ?? []).map((candidate) => (
-                  <option key={candidate} value={candidate}>
-                    {candidate}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <div className="mt-describe-actions">
-            <button
-              className="mt-act mt-act-primary"
-              type="button"
-              onClick={save}
-              disabled={!code || !city}
+          <label className="mt-field">
+            <span className="mt-field-label mt-mono">City</span>
+            <div className="mt-loc-search">
+              <SearchIcon size={16} />
+              <input
+                className="mt-input"
+                type="search"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-controls="delivery-location-suggestions"
+                aria-expanded={suggestions.length > 0}
+                placeholder="Start typing any city in the world"
+                value={query}
+                autoComplete="off"
+                autoFocus
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </div>
+          </label>
+
+          {suggestions.length > 0 ? (
+            <div
+              className="mt-loc-suggestions"
+              id="delivery-location-suggestions"
+              role="listbox"
+              aria-label="City suggestions"
             >
-              Add location
-            </button>
-            <button
-              className="mt-act mt-act-ghost"
-              type="button"
-              onClick={() => {
-                setAdding(false)
-                setCode('')
-                setCity('')
-              }}
-            >
+              {suggestions.map((suggestion) => (
+                <button
+                  className="mt-loc-suggestion"
+                  key={suggestion.id}
+                  type="button"
+                  role="option"
+                  aria-selected={locationIds.has(suggestion.id)}
+                  onClick={() => select(suggestion)}
+                >
+                  <span className="mt-loc-suggestion-city">{suggestion.city}</span>
+                  <span className="mt-loc-suggestion-detail">
+                    {distinctLocationParts(
+                      suggestion.city,
+                      suggestion.regionName,
+                      suggestion.countryName,
+                    )}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : status ? (
+            <div className={`mt-loc-search-status ${searchError ? 'error' : ''}`} role="status">
+              {status}
+            </div>
+          ) : null}
+
+          <div className="mt-loc-form-footer">
+            {attribution ? (
+              <span className="mt-loc-attribution">
+                Location data by{' '}
+                <a href={attribution.url} target="_blank" rel="noreferrer">
+                  {attribution.label}
+                </a>
+              </span>
+            ) : (
+              <span />
+            )}
+            <button className="mt-act mt-act-ghost" type="button" onClick={closeSearch}>
               Cancel
             </button>
           </div>

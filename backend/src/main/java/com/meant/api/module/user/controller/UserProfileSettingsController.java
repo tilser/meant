@@ -1,7 +1,12 @@
 package com.meant.api.module.user.controller;
 
+import com.meant.api.module.location.exception.InvalidLocationException;
+import com.meant.api.module.location.service.LocationService;
+import com.meant.api.module.location.service.dto.LocationSuggestion;
+import com.meant.api.module.location.service.query.ResolveLocationQuery;
 import com.meant.api.module.user.constant.UserProductSearchAttributeName;
 import com.meant.api.module.user.controller.mapper.UserCommandMapper;
+import com.meant.api.module.user.controller.request.UserLocationRequest;
 import com.meant.api.module.user.controller.request.UpdateUserNewsletterRequest;
 import com.meant.api.module.user.controller.request.UpdateUserProfilePictureRequest;
 import com.meant.api.module.user.controller.request.UpdateUserProfileRequest;
@@ -14,8 +19,10 @@ import com.meant.api.module.user.service.UserService;
 import com.meant.api.module.user.service.UserSettingsService;
 import com.meant.api.module.user.service.command.DeleteUserProductSearchPreferenceCommand;
 import com.meant.api.module.user.service.command.ParseUserPreferenceFiltersCommand;
+import com.meant.api.module.user.service.command.UserLocationCommand;
 import com.meant.api.module.user.service.dto.AuthenticatedUser;
 import com.meant.api.module.user.service.dto.ParsedUserPreferenceFilters;
+import com.meant.api.module.user.service.dto.UserLocationResult;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -24,6 +31,10 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -46,6 +57,7 @@ public class UserProfileSettingsController {
     private final UserSettingsService userSettingsService;
     private final UserPreferenceFilterParsingService userPreferenceFilterParsingService;
     private final UserProductSearchPreferenceService userProductSearchPreferenceService;
+    private final LocationService locationService;
 
     @GetMapping("/me")
     @Operation(
@@ -176,9 +188,11 @@ public class UserProfileSettingsController {
     ) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
         ParsedUserPreferenceFilters parsedFilters = parseFilters(authenticatedUser, request);
+        List<UserLocationCommand> resolvedLocations = resolveLocations(authenticatedUser, request);
         var settings = userSettingsService.update(
                 UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
-                UserCommandMapper.toUpdateSettingsCommand(authenticatedUser.id(), request, parsedFilters));
+                UserCommandMapper.toUpdateSettingsCommand(
+                        authenticatedUser.id(), request, parsedFilters, resolvedLocations));
         if (request.productSearchPreferences() != null) {
             userProductSearchPreferenceService.upsert(
                     UserCommandMapper.toSaveProductSearchPreferencesCommand(authenticatedUser.id(), request));
@@ -229,5 +243,61 @@ public class UserProfileSettingsController {
         return userPreferenceFilterParsingService.parse(new ParseUserPreferenceFiltersCommand(
                 authenticatedUser.id(),
                 request.preferenceDescription().trim()));
+    }
+
+    private List<UserLocationCommand> resolveLocations(
+            AuthenticatedUser authenticatedUser,
+            UpdateUserSettingsRequest request
+    ) {
+        List<UserLocationRequest> requestedLocations = request.locations();
+        if (requestedLocations == null && request.location() != null) {
+            requestedLocations = List.of(request.location());
+        }
+        if (requestedLocations == null) {
+            return null;
+        }
+        Map<String, UserLocationResult> existingLocations = userSettingsService
+                .get(UserCommandMapper.toEnsureProfileCommand(authenticatedUser))
+                .locations()
+                .stream()
+                .collect(Collectors.toMap(
+                        UserLocationResult::id,
+                        Function.identity(),
+                        (first, ignored) -> first
+                ));
+        return requestedLocations.stream()
+                .map(location -> resolveLocation(location, existingLocations))
+                .toList();
+    }
+
+    private UserLocationCommand resolveLocation(
+            UserLocationRequest request,
+            Map<String, UserLocationResult> existingLocations
+    ) {
+        UserLocationResult existing = existingLocations.get(request.id());
+        if (existing != null) {
+            return new UserLocationCommand(
+                    existing.id(),
+                    existing.country(),
+                    existing.code(),
+                    existing.region(),
+                    existing.postalCode(),
+                    existing.regionName(),
+                    existing.city()
+            );
+        }
+        if (request.id().startsWith("legacy:")) {
+            throw new InvalidLocationException("Legacy location does not belong to this user");
+        }
+        LocationSuggestion location = locationService.resolve(new ResolveLocationQuery(request.id(), "en"));
+        return new UserLocationCommand(
+                location.id(),
+                location.countryName(),
+                location.country(),
+                location.region(),
+                location.postalCode(),
+                location.regionName(),
+                location.city()
+        );
     }
 }

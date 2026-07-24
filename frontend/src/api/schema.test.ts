@@ -156,6 +156,27 @@ test('settings expose editable scoped product size preferences', () => {
   expect(preferencePaths).toHaveLength(1)
 })
 
+test('delivery locations expose validated UCP shipping fields', () => {
+  type Suggestion = components['schemas']['LocationSuggestionResponse']
+  type SavedLocation = components['schemas']['UserLocationResponse']
+  type LocationRequest = components['schemas']['UserLocationRequest']
+  const suggestionFields: Array<keyof Suggestion> = [
+    'id',
+    'city',
+    'country',
+    'region',
+    'postalCode',
+  ]
+  const savedFields: Array<keyof SavedLocation> = ['id', 'code', 'region', 'postalCode']
+  const requestFields: Array<keyof LocationRequest> = ['id']
+  const locationPaths: Array<keyof paths> = ['/api/locations/suggestions']
+
+  expect(suggestionFields).toContain('country')
+  expect(savedFields).toContain('region')
+  expect(requestFields).toEqual(['id'])
+  expect(locationPaths).toHaveLength(1)
+})
+
 test('Discover conversation persistence uses optimistic revisions', () => {
   type Request = components['schemas']['UserDiscoverConversationRequest']
   type Response = components['schemas']['UserDiscoverConversationResponse']

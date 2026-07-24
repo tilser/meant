@@ -20,6 +20,9 @@ ai:
   openrouter:
     api-key: ""
 
+geonames:
+  username: ""
+
 commerce:
   agent:
     api-key: ""

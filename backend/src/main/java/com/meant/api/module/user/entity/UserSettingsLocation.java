@@ -28,6 +28,18 @@ public class UserSettingsLocation {
     private String country;
 
     @Column(nullable = false)
+    private String locationCode;
+
+    @Column(nullable = false)
+    private String locationCity;
+
+    private String locationRegion;
+
+    private String locationPostalCode;
+
+    private String locationRegionName;
+
+    @Column(nullable = false)
     private Integer displayOrder;
 
     @Column(nullable = false)
@@ -40,8 +52,13 @@ public class UserSettingsLocation {
             Instant now
     ) {
         return UserSettingsLocation.builder()
-                .id(new UserSettingsLocationId(userId, location.code(), location.city()))
+                .id(new UserSettingsLocationId(userId, location.id()))
                 .country(location.country())
+                .locationCode(location.code())
+                .locationCity(location.city())
+                .locationRegion(location.region())
+                .locationPostalCode(location.postalCode())
+                .locationRegionName(location.regionName())
                 .displayOrder(displayOrder)
                 .createdAt(now)
                 .build();

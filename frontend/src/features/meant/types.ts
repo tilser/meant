@@ -150,8 +150,12 @@ export interface LocationOption {
 }
 
 export interface UserLocation {
+  id: string
   country: string
   code: string
+  region: string | null
+  postalCode: string | null
+  regionName: string | null
   city: string
 }
 

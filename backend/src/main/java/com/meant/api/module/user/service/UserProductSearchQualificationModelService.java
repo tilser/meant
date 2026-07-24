@@ -64,6 +64,9 @@ public class UserProductSearchQualificationModelService {
             CURRENT_USER_TURN. A generic yes is valid only when the prior question targeted exactly one filter.
             PROFILE may resolve only SHIPS_TO from saved locations and TARGET_GENDER from clothing fit. A stored
             DURABLE_PREFERENCE may resolve only SIZE and only when its scope clearly matches the current product noun.
+            When PROFILE resolves SHIPS_TO, copy country, region, and postalCode exactly from one supplied saved
+            location. The city and regionName fields are display evidence only; never put a city name into region
+            and never invent a postal code.
 
             The server always searches sale-ready products, so AVAILABLE is fixed to true and is not your decision.
             SHOPS and CATEGORIES require trusted IDs and have no resolver in this version. Never ask the user for
@@ -217,7 +220,13 @@ public class UserProductSearchQualificationModelService {
         return new SettingsPrompt(
                 blankToNull(settings.clothingFit()),
                 safe(settings.locations()).stream()
-                        .map(location -> new LocationPrompt(location.country(), location.code(), location.city()))
+                        .map(location -> new LocationPrompt(
+                                location.country(),
+                                location.code(),
+                                location.region(),
+                                location.postalCode(),
+                                location.regionName(),
+                                location.city()))
                         .toList(),
                 safe(settings.filters()).stream()
                         .map(filter -> new FilterPrompt(filter.id(), filter.label(), filter.description()))
@@ -792,7 +801,14 @@ public class UserProductSearchQualificationModelService {
     ) {
     }
 
-    private record LocationPrompt(String country, String code, String city) {
+    private record LocationPrompt(
+            String country,
+            String code,
+            String region,
+            String postalCode,
+            String regionName,
+            String city
+    ) {
     }
 
     private record FilterPrompt(String id, String label, String description) {

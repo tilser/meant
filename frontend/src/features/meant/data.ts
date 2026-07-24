@@ -1273,7 +1273,7 @@ export const LOCATIONS: readonly LocationOption[] = [
   },
   {
     country: 'United Kingdom',
-    code: 'UK',
+    code: 'GB',
     cities: ['London', 'Manchester', 'Edinburgh', 'Bristol'],
   },
   {
@@ -1302,15 +1302,15 @@ export const MERCHANTS: Readonly<Record<string, MerchantCoverage>> = {
     ships: ['US'],
     cities: ['New York', 'Los Angeles', 'San Francisco', 'Chicago', 'Austin', 'Seattle'],
   },
-  'Field & Loom': { ships: ['US', 'CA', 'UK'] },
-  Everlane: { ships: ['US', 'CA', 'UK', 'DE'] },
-  Kuro: { ships: ['US', 'CA', 'UK', 'DE', 'AU'] },
+  'Field & Loom': { ships: ['US', 'CA', 'GB'] },
+  Everlane: { ships: ['US', 'CA', 'GB', 'DE'] },
+  Kuro: { ships: ['US', 'CA', 'GB', 'DE', 'AU'] },
   'Williams Sonoma': { ships: ['US', 'CA'] },
-  'Casa Verde': { ships: ['US', 'UK', 'DE'] },
-  Northbound: { ships: ['US', 'CA', 'UK', 'AU'] },
+  'Casa Verde': { ships: ['US', 'GB', 'DE'] },
+  Northbound: { ships: ['US', 'CA', 'GB', 'AU'] },
   'Wool&': { ships: ['US'] },
-  'Lumen Store': { ships: ['US', 'CA', 'UK', 'DE', 'AU'] },
-  'Crisp Store': { ships: ['US', 'UK', 'DE'] },
+  'Lumen Store': { ships: ['US', 'CA', 'GB', 'DE', 'AU'] },
+  'Crisp Store': { ships: ['US', 'GB', 'DE'] },
   'Hold Store': { ships: ['US', 'CA'] },
 }
 

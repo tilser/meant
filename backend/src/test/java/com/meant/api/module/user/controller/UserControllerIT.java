@@ -15,6 +15,10 @@ import com.meant.api.module.cart.controller.response.CartResponse;
 import com.meant.api.module.cart.service.MerchantCartPluginDispatchService;
 import com.meant.api.module.cart.service.SelectedOfferCartRoutingService;
 import com.meant.api.module.cart.service.dto.CartRoutingTarget;
+import com.meant.api.module.catalog.service.CatalogDataUsePolicyResolver;
+import com.meant.api.module.location.controller.response.LocationSuggestionPageResponse;
+import com.meant.api.module.location.service.dto.LocationSuggestion;
+import com.meant.api.module.location.service.port.LocationSearchProvider;
 import com.meant.api.module.merchant.exception.MerchantCatalogSearchException;
 import com.meant.api.module.merchant.constant.MerchantCatalogSourceIdentity;
 import com.meant.api.module.merchant.constant.MerchantIntegrationAuthStrategy;
@@ -74,11 +78,12 @@ import com.meant.api.module.user.service.UserSelectedOfferResolutionService;
 import com.meant.api.module.user.service.UserSettingsService;
 import com.meant.api.module.user.service.UserTasteProfileService;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
+import com.meant.api.module.user.service.command.UpdateUserSettingsCommand;
+import com.meant.api.module.user.service.command.UserLocationCommand;
 import com.meant.api.module.user.service.dto.ResolvedSelectedOffer;
 import com.meant.api.module.user.service.dto.UserProductSearchQueryIntentResult;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
 import com.meant.api.module.user.service.query.ResolveUserSelectedOfferQuery;
-import com.meant.api.module.catalog.service.CatalogDataUsePolicyResolver;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -209,6 +214,35 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
                     builder.claim("user_metadata", Map.of("full_name", parts[2]));
                 }
                 return builder.build();
+            };
+        }
+
+        @Bean
+        @Primary
+        LocationSearchProvider testLocationSearchProvider() {
+            return new LocationSearchProvider() {
+                @Override
+                public List<LocationSuggestion> search(String query, int limit, String language) {
+                    return query.toLowerCase(java.util.Locale.ROOT).startsWith("pra")
+                            ? List.of(location("geonames:3067696"))
+                            : List.of();
+                }
+
+                @Override
+                public LocationSuggestion resolve(String id, String language) {
+                    return switch (id) {
+                        case "geonames:3067696" -> location(id);
+                        case "geonames:5128581" -> new LocationSuggestion(
+                                id, "New York", "New York", "United States", "US", "NY", null);
+                        case "geonames:6167865" -> new LocationSuggestion(
+                                id, "Toronto", "Ontario", "Canada", "CA", "ON", null);
+                        default -> null;
+                    };
+                }
+
+                private LocationSuggestion location(String id) {
+                    return new LocationSuggestion(id, "Prague", "Prague", "Czechia", "CZ", "10", null);
+                }
             };
         }
 
@@ -914,14 +948,10 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
                           "clothingFit": "men",
                           "locations": [
                             {
-                              "country": "United States",
-                              "code": "US",
-                              "city": "New York"
+                              "id": "geonames:5128581"
                             },
                             {
-                              "country": "Canada",
-                              "code": "CA",
-                              "city": "Toronto"
+                              "id": "geonames:6167865"
                             }
                           ],
                           "filterIds": ["organic", "gluten-free", "fast-shipping"]
@@ -938,9 +968,94 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
         assertThat(body.clothingFit()).isEqualTo("men");
         assertThat(body.location()).isNotNull();
         assertThat(body.location().code()).isEqualTo("US");
+        assertThat(body.location().region()).isEqualTo("NY");
         assertThat(body.locations()).extracting("code").containsExactly("US", "CA");
         assertThat(body.filters()).extracting("id")
                 .containsExactly("organic", "gluten-free", "fast-shipping");
+    }
+
+    @Test
+    void locationSuggestionsReturnProviderValidatedUcpCodes() {
+        UUID id = UUID.randomUUID();
+
+        LocationSuggestionPageResponse body = client.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/api/locations/suggestions")
+                        .queryParam("query", "Pra")
+                        .queryParam("language", "en")
+                        .queryParam("limit", 8)
+                        .build())
+                .headers(headers -> headers.setBearerAuth(token(id, id + "@example.com", null)))
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(LocationSuggestionPageResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(body).isNotNull();
+        assertThat(body.attribution()).isEqualTo("GeoNames");
+        assertThat(body.suggestions()).singleElement().satisfies(location -> {
+            assertThat(location.id()).isEqualTo("geonames:3067696");
+            assertThat(location.country()).isEqualTo("CZ");
+            assertThat(location.region()).isEqualTo("10");
+            assertThat(location.postalCode()).isNull();
+        });
+    }
+
+    @Test
+    void patchSettingsCanKeepAnExistingLegacyLocationButCannotCreateOne() {
+        UUID id = UUID.randomUUID();
+        String email = id + "@example.com";
+        String bearer = token(id, email, null);
+        EnsureUserProfileCommand profile = new EnsureUserProfileCommand(id, email, null, null);
+        userSettingsService.update(
+                profile,
+                new UpdateUserSettingsCommand(
+                        id,
+                        null,
+                        false,
+                        null,
+                        null,
+                        List.of(new UserLocationCommand("Czechia", "CZ", "Prague")),
+                        null,
+                        Set.of(),
+                        List.of()
+                )
+        );
+
+        UserSettingsResponse body = client.patch().uri("/api/users/me/settings")
+                .headers(headers -> {
+                    headers.setBearerAuth(bearer);
+                    headers.setContentType(MediaType.APPLICATION_JSON);
+                })
+                .body("""
+                        {
+                          "locations": [
+                            {"id": "legacy:CZ:prague"},
+                            {"id": "geonames:5128581"}
+                          ]
+                        }
+                        """)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(UserSettingsResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(body).isNotNull();
+        assertThat(body.locations()).extracting("id")
+                .containsExactly("legacy:CZ:prague", "geonames:5128581");
+
+        client.patch().uri("/api/users/me/settings")
+                .headers(headers -> {
+                    headers.setBearerAuth(bearer);
+                    headers.setContentType(MediaType.APPLICATION_JSON);
+                })
+                .body("""
+                        {"locations": [{"id": "legacy:US:not-saved"}]}
+                        """)
+                .exchange()
+                .expectStatus().isBadRequest();
     }
 
     @Test
@@ -1084,9 +1199,7 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
                           "clothingFit": "women",
                           "locations": [
                             {
-                              "country": "United States",
-                              "code": "US",
-                              "city": "New York"
+                              "id": "geonames:5128581"
                             }
                           ]
                         }
