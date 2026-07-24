@@ -225,6 +225,19 @@ final class AgentMutationTargetTextSupport {
                 && turn.toLowerCase(Locale.ROOT).contains(reference.toLowerCase(Locale.ROOT));
     }
 
+    /**
+     * Matches the product-title prefix added by the product-detail composer. The text after the colon is the
+     * user's question and may describe a variant that is not present in the current product title.
+     */
+    static boolean productDetailAnchorMatches(String userText, String productTitle) {
+        if (userText == null || userText.isBlank() || productTitle == null || productTitle.isBlank()) {
+            return false;
+        }
+        String normalizedTurn = normalizedComparisonText(userText);
+        String normalizedTitle = normalizedComparisonText(productTitle);
+        return normalizedTurn.startsWith("about " + normalizedTitle + ":");
+    }
+
     static boolean hasContextualReference(String value) {
         return value != null && CONTEXTUAL_REFERENCE.matcher(value).find();
     }
@@ -319,6 +332,10 @@ final class AgentMutationTargetTextSupport {
             return token.substring(0, token.length() - 1);
         }
         return token;
+    }
+
+    private static String normalizedComparisonText(String value) {
+        return value.trim().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
     }
 
     private static Pattern pendingAction(String alternatives) {

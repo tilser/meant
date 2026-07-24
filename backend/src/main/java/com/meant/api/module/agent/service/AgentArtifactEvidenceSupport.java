@@ -2,6 +2,7 @@ package com.meant.api.module.agent.service;
 
 import static com.meant.api.module.agent.service.AgentMutationTargetTextSupport.descriptiveTokens;
 import static com.meant.api.module.agent.service.AgentMutationTargetTextSupport.literalReference;
+import static com.meant.api.module.agent.service.AgentMutationTargetTextSupport.productDetailAnchorMatches;
 import static com.meant.api.module.agent.service.AgentTargetJsonSupport.arrayValues;
 import static com.meant.api.module.agent.service.AgentTargetJsonSupport.text;
 
@@ -181,6 +182,14 @@ final class AgentArtifactEvidenceSupport {
         if (!stableMatches.isEmpty()) {
             return stableMatches.size() == 1
                     && stableMatches.getFirst().canonicalProductKey().equals(proposedProductKey);
+        }
+
+        List<AgentVisibleProductReference> anchoredMatches = candidates.stream()
+                .filter(product -> productDetailAnchorMatches(userText, product.title()))
+                .toList();
+        if (!anchoredMatches.isEmpty()) {
+            return anchoredMatches.size() == 1
+                    && anchoredMatches.getFirst().canonicalProductKey().equals(proposedProductKey);
         }
 
         Set<String> description = descriptiveTokens(userText);

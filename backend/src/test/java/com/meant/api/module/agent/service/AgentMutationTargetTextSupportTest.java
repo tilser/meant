@@ -32,6 +32,20 @@ class AgentMutationTargetTextSupportTest {
     }
 
     @Test
+    void recognizesTheExactProductDetailComposerAnchorWithoutAbsorbingTheQuestion() {
+        String turn = "About LETHAL SPEED RS MENS FOOTBALL: is there also black variant?";
+
+        assertThat(AgentMutationTargetTextSupport.productDetailAnchorMatches(
+                turn,
+                "LETHAL SPEED RS MENS FOOTBALL"
+        )).isTrue();
+        assertThat(AgentMutationTargetTextSupport.productDetailAnchorMatches(
+                turn,
+                "Mens Puma FUTURE 7 ULTIMATE FG/AG"
+        )).isFalse();
+    }
+
+    @Test
     void recognizesOnlyContextualOrExplicitReaddLanguage() {
         assertThat(AgentMutationTargetTextSupport.isReaddReference("Re-add it.")).isTrue();
         assertThat(AgentMutationTargetTextSupport.isReaddReference("Put that back, please.")).isTrue();

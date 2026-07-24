@@ -379,6 +379,46 @@ class AgentMutationTargetPolicyTest {
     }
 
     @Test
+    void productDetailQuestionUsesItsExactAnchorAndKeepsOrdinaryAmbiguityChecks() {
+        UUID messageId = UUID.randomUUID();
+        AgentVisibleProductContext visible = new AgentVisibleProductContext(messageId, List.of(
+                new AgentVisibleProductReference(
+                        1, 1, "product-phantom", "offer-phantom", "Nike Phantom 6 Elite LE High FG"),
+                new AgentVisibleProductReference(
+                        2, 2, "product-lethal", "offer-lethal", "LETHAL SPEED RS MENS FOOTBALL"),
+                new AgentVisibleProductReference(
+                        3, 3, "product-mercurial", "offer-mercurial",
+                        "Nike Air Zoom Mercurial Superfly X Academy FG"),
+                new AgentVisibleProductReference(
+                        4, 4, "product-future", "offer-future",
+                        "[107916-01] Mens Puma FUTURE 7 ULTIMATE FG/AG")
+        ));
+        when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any()))
+                .thenReturn(List.of());
+
+        AgentToolExecutionContext anchored = context(
+                "About LETHAL SPEED RS MENS FOOTBALL: is there also black variant?",
+                visible
+        );
+
+        assertThat(policy.requiresProductClarification(anchored, "get_product")).isFalse();
+        assertThat(policy.matchesExplicitOrdinal(
+                anchored,
+                "get_product",
+                "{\"canonicalProductKey\":\"product-lethal\"}"
+        )).isTrue();
+        assertThat(policy.matchesExplicitOrdinal(
+                anchored,
+                "get_product",
+                "{\"canonicalProductKey\":\"product-future\"}"
+        )).isFalse();
+        assertThat(policy.requiresProductClarification(
+                context("Is there also a black variant?", visible),
+                "get_product"
+        )).isTrue();
+    }
+
+    @Test
     void evaluatesMultipleClarificationPoliciesFromOneRecentArtifactSnapshot() {
         UUID messageId = UUID.randomUUID();
         AgentVisibleProductContext visible = new AgentVisibleProductContext(messageId, List.of(

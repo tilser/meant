@@ -22,6 +22,7 @@ import static com.meant.api.module.agent.service.AgentMutationTargetTextSupport.
 import static com.meant.api.module.agent.service.AgentMutationTargetTextSupport.overlap;
 import static com.meant.api.module.agent.service.AgentMutationTargetTextSupport.pendingProductClarificationAttempt;
 import static com.meant.api.module.agent.service.AgentMutationTargetTextSupport.pendingProductSelectionAttempt;
+import static com.meant.api.module.agent.service.AgentMutationTargetTextSupport.productDetailAnchorMatches;
 import static com.meant.api.module.agent.service.AgentTargetJsonSupport.arrayField;
 import static com.meant.api.module.agent.service.AgentTargetJsonSupport.text;
 
@@ -265,6 +266,13 @@ public class AgentMutationTargetPolicy {
                 .count();
         if (stableMatches > 0) {
             return new AgentProductClarificationEvaluation(stableMatches != 1, candidates);
+        }
+
+        long anchoredMatches = candidates.stream()
+                .filter(product -> productDetailAnchorMatches(userText, product.title()))
+                .count();
+        if (anchoredMatches > 0) {
+            return new AgentProductClarificationEvaluation(anchoredMatches != 1, candidates);
         }
 
         Set<String> description = descriptiveTokens(userText);
@@ -715,11 +723,21 @@ public class AgentMutationTargetPolicy {
             AgentToolExecutionContext context,
             List<AgentArtifactReference> evidence
     ) {
+        String userText = context.triggeringUserText();
         Set<String> turnTokens = descriptiveTokens(context.triggeringUserText());
-        if (turnTokens.isEmpty()) {
+        if (turnTokens.isEmpty() && (userText == null || userText.isBlank())) {
             return Optional.empty();
         }
         for (List<AgentArtifactReference> productSet : productSets(evidence)) {
+            List<AgentArtifactReference> anchored = productSet.stream()
+                    .filter(reference -> productDetailAnchorMatches(userText, reference.getLabel()))
+                    .toList();
+            if (!anchored.isEmpty()) {
+                return anchored.size() == 1 ? Optional.of(anchored.getFirst()) : Optional.empty();
+            }
+            if (turnTokens.isEmpty()) {
+                continue;
+            }
             List<AgentArtifactReference> matches = productSet.stream()
                     .filter(reference -> descriptiveTokens(reference.getLabel()).containsAll(turnTokens))
                     .toList();
