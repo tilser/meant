@@ -102,6 +102,7 @@ class UserProductDiscoveryServiceTest {
                 "prompt-v1",
                 Duration.ofHours(24),
                 Duration.ofMinutes(30),
+                Duration.ofMinutes(30),
                 100,
                 Duration.ofSeconds(45),
                 128,

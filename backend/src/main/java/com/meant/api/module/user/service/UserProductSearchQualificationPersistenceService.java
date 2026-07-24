@@ -5,12 +5,12 @@ import com.meant.api.module.user.entity.UserProductSearchQualification;
 import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.repository.UserProductSearchQualificationRepository;
 import com.meant.api.module.user.service.command.PersistUserProductSearchQualificationCommand;
+import com.meant.api.module.user.service.command.CancelUserProductSearchQualificationCommand;
 import com.meant.api.module.user.service.command.SaveUserProductSearchPreferencesCommand;
 import com.meant.api.module.user.service.command.UserProductSearchPreferenceCommand;
 import com.meant.api.module.user.service.dto.UserProductSearchQualificationPlan;
 import com.meant.api.module.user.service.dto.UserProductSearchQualificationSnapshot;
 import com.meant.api.module.user.service.query.GetUserProductSearchQualificationQuery;
-import com.meant.api.module.user.service.query.FindPendingUserProductSearchQualificationQuery;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
@@ -39,27 +39,6 @@ public class UserProductSearchQualificationPersistenceService {
     }
 
     @Transactional(readOnly = true)
-    public Optional<UserProductSearchQualificationSnapshot> findLatestPending(
-            @NotNull @Valid FindPendingUserProductSearchQualificationQuery query
-    ) {
-        Optional<UserProductSearchQualification> qualification = query.merchantId() == null
-                ? qualificationRepository
-                        .findFirstByUserIdAndConversationIdAndMerchantIdIsNullAndStatusOrderByUpdatedAtDesc(
-                                query.userId(),
-                                query.conversationId(),
-                                UserProductSearchQualificationStatus.NEEDS_INPUT
-                        )
-                : qualificationRepository
-                        .findFirstByUserIdAndConversationIdAndMerchantIdAndStatusOrderByUpdatedAtDesc(
-                                query.userId(),
-                                query.conversationId(),
-                                query.merchantId(),
-                                UserProductSearchQualificationStatus.NEEDS_INPUT
-                        );
-        return qualification.map(this::snapshot);
-    }
-
-    @Transactional(readOnly = true)
     public UserProductSearchQualificationSnapshot getReady(
             @NotNull @Valid GetUserProductSearchQualificationQuery query
     ) {
@@ -83,6 +62,24 @@ public class UserProductSearchQualificationPersistenceService {
             throw new UserException("Product-search qualification still needs input");
         }
         qualification.refreshReady(Instant.now());
+        return snapshot(qualificationRepository.save(qualification));
+    }
+
+    @Transactional
+    public UserProductSearchQualificationSnapshot cancel(
+            @NotNull @Valid CancelUserProductSearchQualificationCommand command
+    ) {
+        UserProductSearchQualification qualification = qualificationRepository
+                .findByIdForUpdate(command.qualificationId())
+                .filter(existing -> existing.getUserId().equals(command.userId()))
+                .filter(existing -> existing.getConversationId().equals(command.conversationId()))
+                .filter(existing -> java.util.Objects.equals(existing.getMerchantId(), command.merchantId()))
+                .orElseThrow(() -> UserException.notFound("Product-search qualification not found"));
+        if (qualification.getStatus() == UserProductSearchQualificationStatus.NEEDS_INPUT
+                && !qualification.getUpdatedAt().equals(command.expectedUpdatedAt())) {
+            throw UserException.conflict("Product-search qualification changed before it could be cancelled");
+        }
+        qualification.cancel(Instant.now());
         return snapshot(qualificationRepository.save(qualification));
     }
 

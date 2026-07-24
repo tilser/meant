@@ -8,7 +8,7 @@ import java.util.UUID;
 /** Server-validated qualification outcome for one agent catalog-search attempt. */
 public record UserProductSearchAgentQualificationResult(
         UUID qualificationId,
-        String effectiveQuery,
+        String authoritativeQuery,
         String assistantMessage,
         List<UserProductSearchQuestionTarget> questionTargets,
         CatalogDiscoveryFilters filters

@@ -1,7 +1,6 @@
 package com.meant.api.module.user.repository;
 
 import com.meant.api.module.user.entity.UserProductSearchQualification;
-import com.meant.api.module.user.constant.UserProductSearchQualificationStatus;
 import jakarta.persistence.LockModeType;
 import java.util.Optional;
 import java.util.UUID;
@@ -14,21 +13,6 @@ public interface UserProductSearchQualificationRepository
         extends JpaRepository<UserProductSearchQualification, UUID> {
 
     Optional<UserProductSearchQualification> findByIdAndUserId(UUID id, UUID userId);
-
-    Optional<UserProductSearchQualification>
-    findFirstByUserIdAndConversationIdAndMerchantIdIsNullAndStatusOrderByUpdatedAtDesc(
-            UUID userId,
-            UUID conversationId,
-            UserProductSearchQualificationStatus status
-    );
-
-    Optional<UserProductSearchQualification>
-    findFirstByUserIdAndConversationIdAndMerchantIdAndStatusOrderByUpdatedAtDesc(
-            UUID userId,
-            UUID conversationId,
-            UUID merchantId,
-            UserProductSearchQualificationStatus status
-    );
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select qualification from UserProductSearchQualification qualification where qualification.id = :id")

@@ -51,7 +51,9 @@ public class UserProductSearchCategoryPolicy {
             "kitchen", "vacuum", "appliance", "home", "pillow", "rug", "curtain");
     private static final Pattern UNVERIFIED_HARD_CONSTRAINT = Pattern.compile(
             "(?i)(?:\\$|\\b(?:usd|under|below|over|above|between|size|rated?|stars?|reviews?|"
-                    + "new|used|secondhand|preowned|price tier|ships?\\s+(?:to|from)|deliver(?:y|ed)?\\s+to)\\b)"
+                    + "new|used|secondhand|preowned|price tier|ships?\\s+(?:to|from)|deliver(?:y|ed)?\\s+to|"
+                    + "color|colour|black|white|red|blue|green|brown|grey|gray|pink|purple|orange|yellow|"
+                    + "beige|navy|teal|gold|silver|men'?s?|women'?s?|male|female|unisex|boys?|girls?)\\b)"
     );
 
     public UserProductSearchQualificationPlan enforce(

@@ -2,7 +2,9 @@ package com.meant.api.module.agent.service.dto;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.meant.api.module.user.constant.UserProductSearchQuestionTarget;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 
@@ -32,5 +34,27 @@ class AgentProductListResultTest {
 
         assertThat(result.products()).isEmpty();
         assertThat(result.similarityAnchor()).isNull();
+    }
+
+    @Test
+    void qualificationQuestionCarriesTheServerContinuationIdentifier() throws Exception {
+        UUID qualificationId = UUID.randomUUID();
+        AgentProductListResult result = new AgentProductListResult(
+                List.of(),
+                null,
+                false,
+                false,
+                List.of(),
+                null,
+                List.of(),
+                qualificationId,
+                "What boot size do you need?",
+                List.of(UserProductSearchQuestionTarget.SIZE)
+        );
+
+        var json = objectMapper.readTree(objectMapper.writeValueAsString(result));
+
+        assertThat(json.get("qualificationId").asText()).isEqualTo(qualificationId.toString());
+        assertThat(json.get("qualificationTargets").get(0).asText()).isEqualTo("SIZE");
     }
 }

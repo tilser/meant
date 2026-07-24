@@ -680,6 +680,70 @@ class UserProductSearchQualificationPlanResolverTest {
         assertThat(resolution.plan().questionTargets()).isEmpty();
     }
 
+    @Test
+    void rejectsOriginAndDestinationValuesSwappedAcrossTargetRelations() {
+        String request = "football boots shipped from US to CA";
+        UserProductSearchQualificationPlan candidate = withShipsTo(
+                plan(
+                        request,
+                        List.of(UserProductSearchQuestionTarget.SHIPS_TO,
+                                UserProductSearchQuestionTarget.SHIPS_FROM),
+                        notApplicableCondition(),
+                        new UserProductSearchQualificationPlan.LocationsFilter(
+                                UserProductSearchFilterState.VALUE,
+                                List.of(new UserProductSearchQualificationPlan.Location("CA", null, null)),
+                                originalQuery(request)
+                        ),
+                        notApplicablePrice(),
+                        notApplicableAttributes(),
+                        notApplicableRating(),
+                        notApplicablePriceTier()
+                ),
+                new UserProductSearchQualificationPlan.LocationFilter(
+                        UserProductSearchFilterState.VALUE,
+                        new UserProductSearchQualificationPlan.Location("US", null, null),
+                        originalQuery(request)
+                )
+        );
+
+        var resolution = resolver.resolve(candidate, query(request, request, null));
+
+        assertThat(resolution.valid()).isFalse();
+        assertThat(resolution.plan().shipsTo().state()).isEqualTo(UserProductSearchFilterState.MISSING);
+        assertThat(resolution.plan().shipsFrom().state()).isEqualTo(UserProductSearchFilterState.MISSING);
+    }
+
+    @Test
+    void rejectsPriceAndRatingNumbersTakenFromDifferentRelations() {
+        String request = "desk lamp under $100 rated 4.5 with 200 reviews";
+        UserProductSearchQualificationPlan candidate = plan(
+                request,
+                List.of(UserProductSearchQuestionTarget.PRICE, UserProductSearchQuestionTarget.RATING),
+                notApplicableCondition(),
+                notApplicableShipsFrom(),
+                new UserProductSearchQualificationPlan.PriceFilter(
+                        UserProductSearchFilterState.VALUE,
+                        null,
+                        20_000L,
+                        originalQuery(request)
+                ),
+                notApplicableAttributes(),
+                new UserProductSearchQualificationPlan.RatingFilter(
+                        UserProductSearchFilterState.VALUE,
+                        new java.math.BigDecimal("4.5"),
+                        100L,
+                        originalQuery(request)
+                ),
+                notApplicablePriceTier()
+        );
+
+        var resolution = resolver.resolve(candidate, query(request, request, null));
+
+        assertThat(resolution.valid()).isFalse();
+        assertThat(resolution.plan().price().state()).isEqualTo(UserProductSearchFilterState.MISSING);
+        assertThat(resolution.plan().rating().state()).isEqualTo(UserProductSearchFilterState.MISSING);
+    }
+
     private UserProductSearchQualificationPlan plan(
             String effectiveQuery,
             List<UserProductSearchQuestionTarget> questionTargets,

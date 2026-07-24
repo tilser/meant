@@ -94,8 +94,8 @@ public class UserProductSearchQualification extends AssignedIdEntity<UUID> {
             String nextPromptVersion,
             Instant now
     ) {
-        if (status == UserProductSearchQualificationStatus.READY) {
-            throw new IllegalStateException("A ready product-search qualification is immutable");
+        if (status != UserProductSearchQualificationStatus.NEEDS_INPUT) {
+            throw new IllegalStateException("Only a pending product-search qualification can be updated");
         }
         status = Objects.requireNonNull(nextStatus, "Qualification status is required");
         planJson = Objects.requireNonNull(nextPlanJson, "Qualification plan is required");
@@ -110,6 +110,14 @@ public class UserProductSearchQualification extends AssignedIdEntity<UUID> {
             throw new IllegalStateException("Only a ready product-search qualification can be refreshed");
         }
         updatedAt = Objects.requireNonNull(now, "Qualification refresh time is required");
+    }
+
+    public void cancel(Instant now) {
+        if (status != UserProductSearchQualificationStatus.NEEDS_INPUT) {
+            return;
+        }
+        status = UserProductSearchQualificationStatus.CANCELLED;
+        updatedAt = Objects.requireNonNull(now, "Qualification cancellation time is required");
     }
 
 }

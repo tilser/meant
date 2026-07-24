@@ -44,12 +44,15 @@ public class SearchCatalogAgentTool implements AgentTool {
     private static final AgentToolDescriptor DESCRIPTOR = new AgentToolDescriptor(
             "search_catalog",
             "Search and rank the grouped commerce catalog with optional documented UCP and Shopify Global Catalog filters. "
-                    + "Pass only hard constraints grounded in the request or known profile; keep soft preferences in query.",
+                    + "Pass only hard constraints grounded in the request or known profile; keep soft preferences in query. "
+                    + "When answering a qualification question, pass back its exact qualificationId. "
+                    + "Omit qualificationId for a new shopping request.",
             """
             {
               "type":"object",
               "properties":{
                 "query":{"type":"string","minLength":1,"maxLength":500},
+                "qualificationId":{"type":"string","format":"uuid"},
                 "shipsTo":{"type":"object","properties":{"country":{"type":"string","pattern":"^[A-Za-z]{2}$"},"region":{"type":"string","minLength":1,"maxLength":100},"postalCode":{"type":"string","minLength":1,"maxLength":32}},"required":["country"],"additionalProperties":false},
                 "shipsFrom":{"type":"array","maxItems":20,"items":{"type":"object","properties":{"country":{"type":"string","pattern":"^[A-Za-z]{2}$"}},"required":["country"],"additionalProperties":false}},
                 "price":{"type":"object","properties":{"minUsd":{"type":"number","minimum":0,"maximum":1000000},"maxUsd":{"type":"number","minimum":0,"maximum":1000000}},"additionalProperties":false},
@@ -101,10 +104,12 @@ public class SearchCatalogAgentTool implements AgentTool {
                 profile,
                 context.conversationId(),
                 context.merchantId(),
+                input.qualificationId(),
                 authoritativeUserText
         );
         if (!qualification.ready()) {
             return qualificationRequired(
+                    qualification.qualificationId(),
                     qualification.assistantMessage(),
                     qualification.questionTargets()
             );
@@ -118,7 +123,7 @@ public class SearchCatalogAgentTool implements AgentTool {
         }
         SearchUserProductsCommand command = new SearchUserProductsCommand(
                 context.userId(),
-                qualification.effectiveQuery(),
+                qualification.authoritativeQuery(),
                 context.merchantId(),
                 null,
                 null,
@@ -212,6 +217,7 @@ public class SearchCatalogAgentTool implements AgentTool {
     }
 
     private AgentToolExecutionResult qualificationRequired(
+            java.util.UUID qualificationId,
             String question,
             List<UserProductSearchQuestionTarget> targets
     ) {
@@ -223,6 +229,7 @@ public class SearchCatalogAgentTool implements AgentTool {
                 List.of(),
                 null,
                 List.of(),
+                qualificationId,
                 question,
                 targets
         );

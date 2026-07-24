@@ -38,7 +38,7 @@ public class UserQualifiedProductSearchResolver {
                 snapshot.qualificationId(),
                 snapshot.conversationId(),
                 snapshot.merchantId(),
-                snapshot.plan().effectiveQuery(),
+                snapshot.originalQuery(),
                 planMapper.map(snapshot.plan())
         );
     }

@@ -3,6 +3,7 @@ package com.meant.api.module.agent.service.dto;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.meant.api.module.user.constant.UserProductSearchQuestionTarget;
 import java.util.List;
+import java.util.UUID;
 
 public record AgentProductListResult(
         List<AgentProductReferenceResult> products,
@@ -13,6 +14,8 @@ public record AgentProductListResult(
         @JsonInclude(JsonInclude.Include.NON_NULL)
         AgentSimilarityAnchorResult similarityAnchor,
         List<String> searchAdjustments,
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        UUID qualificationId,
         @JsonInclude(JsonInclude.Include.NON_NULL)
         String qualificationQuestion,
         List<UserProductSearchQuestionTarget> qualificationTargets
@@ -43,6 +46,7 @@ public record AgentProductListResult(
                 similarityAnchor,
                 searchAdjustments,
                 null,
+                null,
                 List.of()
         );
     }
@@ -63,6 +67,7 @@ public record AgentProductListResult(
                 unavailableCanonicalProductKeys,
                 similarityAnchor,
                 List.of(),
+                null,
                 null,
                 List.of()
         );

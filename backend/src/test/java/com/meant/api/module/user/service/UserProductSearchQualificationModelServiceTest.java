@@ -16,6 +16,7 @@ import com.meant.api.module.user.properties.UserProductSearchProperties;
 import com.meant.api.module.user.service.dto.ShoppingFilterResult;
 import com.meant.api.module.user.service.dto.UserLocationResult;
 import com.meant.api.module.user.service.dto.UserProductSearchQualificationPlan;
+import com.meant.api.module.user.service.dto.UserProductSearchPreferenceResult;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
 import com.meant.api.module.user.service.query.GenerateUserProductSearchQualificationQuery;
 import java.time.Duration;
@@ -185,6 +186,45 @@ class UserProductSearchQualificationModelServiceTest {
     }
 
     @Test
+    void modelFailureNeverDropsExplicitColorOrTargetGenderConstraints() {
+        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient("not-json", "still-not-json");
+
+        assertThatThrownBy(() -> service(client).generate(query(
+                "black mens football boots",
+                "black mens football boots",
+                null
+        )))
+                .isInstanceOf(OpenRouterException.class)
+                .hasMessageContaining("no conservative category fallback");
+        assertThat(client.calls).isEqualTo(2);
+    }
+
+    @Test
+    void modelFailureCanUseProfileDestinationAndScopedDurableBootSize() {
+        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient("not-json", "still-not-json");
+        GenerateUserProductSearchQualificationQuery request =
+                new GenerateUserProductSearchQualificationQuery(
+                        "football boots",
+                        "football boots",
+                        null,
+                        settings(),
+                        List.of(new UserProductSearchPreferenceResult(
+                                "football-boots",
+                                UserProductSearchAttributeName.SIZE,
+                                List.of("10")
+                        ))
+                );
+
+        var plan = service(client).generate(request).plan();
+
+        assertThat(plan.missingTargets()).isEmpty();
+        assertThat(attribute(plan, UserProductSearchAttributeName.SIZE).values()).containsExactly("10");
+        assertThat(attribute(plan, UserProductSearchAttributeName.SIZE).provenance().source())
+                .isEqualTo(UserProductSearchDecisionSource.DURABLE_PREFERENCE);
+        assertThat(plan.shipsTo().value().country()).isEqualTo("US");
+    }
+
+    @Test
     void repairsAnAttributeDecisionWhenTheRequiredRelevanceFlagIsMissing() {
         String missingSizeRelevance = combinedQuestionResponse().replace(
                 "\"name\": \"SIZE\", \"relevant\": true, \"explicitAny\": false",
@@ -261,6 +301,7 @@ class UserProductSearchQualificationModelServiceTest {
                 "qualification-v1",
                 "explanation-v1",
                 Duration.ofMinutes(1),
+                Duration.ofMinutes(30),
                 Duration.ofMinutes(1),
                 100,
                 Duration.ofSeconds(30),

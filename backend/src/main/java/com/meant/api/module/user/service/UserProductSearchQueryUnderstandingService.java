@@ -54,6 +54,10 @@ public class UserProductSearchQueryUnderstandingService {
             Pattern.compile("^similar\\b(?:\\s+products?)?(?:\\s+to)?\\s*")
     );
     private static final Pattern CATALOG_TOKEN_PATTERN = Pattern.compile("[a-z0-9]{3,}");
+    private static final java.util.Set<String> UNPROTECTED_CONNECTORS = java.util.Set.of(
+            "a", "an", "the", "and", "or", "for", "to", "of", "in", "on", "at", "with", "my",
+            "birthday", "summer", "travel", "teacher", "gift", "present", "mom", "mum", "dad", "aunt",
+            "uncle", "friend", "someone", "something");
     private static final List<String> RESPONSE_KEYS = List.of(
             "searchQuery",
             "displayQuery",
@@ -103,7 +107,8 @@ public class UserProductSearchQueryUnderstandingService {
                         model,
                         promptVersion
                 )
-                .map(intent -> intent.toResult(originalQuery))
+                .map(intent -> authoritativeOrDeterministic(
+                        intent.toResult(originalQuery), originalQuery, normalizedOriginalQuery))
                 .orElseGet(() -> saveGeneratedIntent(originalQuery, normalizedOriginalQuery, model, promptVersion));
     }
 
@@ -249,6 +254,10 @@ public class UserProductSearchQueryUnderstandingService {
         if (normalizedSearchQuery.isBlank()) {
             normalizedSearchQuery = normalizedOriginalQuery;
         }
+        String authoritativeBase = stripDeterministicWrappers(normalizedOriginalQuery);
+        if (!preservesAuthoritativeTerms(normalizedSearchQuery, authoritativeBase)) {
+            throw new OpenRouterException("Generated search query dropped authoritative shopping terms");
+        }
         String displayQuery = sanitizeDisplayQuery(parsed.displayQuery(), normalizedSearchQuery);
         String normalizedDisplayQuery = userProductSearchHashService.normalizeQuery(displayQuery);
         List<String> constraints = sanitizeList(parsed.constraints());
@@ -267,6 +276,30 @@ public class UserProductSearchQueryUnderstandingService {
                 confidence,
                 "llm"
         );
+    }
+
+    private UserProductSearchQueryIntentResult authoritativeOrDeterministic(
+            UserProductSearchQueryIntentResult candidate,
+            String originalQuery,
+            String normalizedOriginalQuery
+    ) {
+        String authoritativeBase = stripDeterministicWrappers(normalizedOriginalQuery);
+        if (preservesAuthoritativeTerms(candidate.searchQuery(), authoritativeBase)) {
+            return candidate;
+        }
+        log.warn("Cached product search query intent dropped authoritative terms; using deterministic fallback");
+        return deterministicIntent(originalQuery, normalizedOriginalQuery, "cache-validation-fallback");
+    }
+
+    private boolean preservesAuthoritativeTerms(String candidate, String authoritativeBase) {
+        java.util.Set<String> candidateTokens = Arrays.stream(
+                        userProductSearchHashService.normalizeQuery(candidate).split("\\s+"))
+                .filter(token -> !token.isBlank())
+                .collect(java.util.stream.Collectors.toSet());
+        return Arrays.stream(authoritativeBase.split("\\s+"))
+                .filter(token -> !token.isBlank())
+                .filter(token -> !UNPROTECTED_CONNECTORS.contains(token))
+                .allMatch(candidateTokens::contains);
     }
 
     private QueryIntentResponse parseResponse(String response) {

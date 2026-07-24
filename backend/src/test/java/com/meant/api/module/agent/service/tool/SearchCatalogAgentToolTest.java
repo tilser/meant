@@ -52,8 +52,8 @@ class SearchCatalogAgentToolTest {
                 .thenReturn(new SearchCatalogAgentToolInput("trail shoes", 0, 10));
         when(profiles.profile(userId)).thenReturn(profile);
         when(qualifications.qualify(
-                eq(profile), any(UUID.class), nullable(UUID.class), eq("find shoes")))
-                .thenReturn(ready("trail shoes", availableOnly()));
+                eq(profile), any(UUID.class), nullable(UUID.class), nullable(UUID.class), eq("find shoes")))
+                .thenReturn(ready("find shoes", availableOnly()));
         when(result.products()).thenReturn(List.of());
         when(searches.search(eq(profile), any(), any(CatalogDiscoveryFilters.class))).thenReturn(result);
         when(json.write(any())).thenReturn("{}");
@@ -66,6 +66,7 @@ class SearchCatalogAgentToolTest {
                 ArgumentCaptor.forClass(SearchUserProductsCommand.class);
         verify(searches).search(eq(profile), command.capture(), any(CatalogDiscoveryFilters.class));
         assertThat(command.getValue().merchantId()).isEqualTo(merchantId);
+        assertThat(command.getValue().query()).isEqualTo("find shoes");
         assertThat(tool.descriptor().inputSchemaJson()).doesNotContain("merchantId");
     }
 
@@ -144,7 +145,7 @@ class SearchCatalogAgentToolTest {
                 List.of()
         );
         when(qualifications.qualify(
-                eq(profile), any(UUID.class), nullable(UUID.class), eq("find shoes")))
+                eq(profile), any(UUID.class), nullable(UUID.class), nullable(UUID.class), eq("find shoes")))
                 .thenReturn(ready("black football boots", authorized));
         when(result.products()).thenReturn(List.of());
         when(searches.search(eq(profile), any(), any(CatalogDiscoveryFilters.class))).thenReturn(result);
@@ -223,7 +224,7 @@ class SearchCatalogAgentToolTest {
                 List.of(CatalogDiscoveryPriceTier.LOW)
         );
         when(qualifications.qualify(
-                eq(profile), any(UUID.class), nullable(UUID.class), eq("find shoes")))
+                eq(profile), any(UUID.class), nullable(UUID.class), nullable(UUID.class), eq("find shoes")))
                 .thenReturn(ready("football boots", authorized));
         when(empty.products()).thenReturn(List.of());
         when(searches.search(eq(profile), any(), any(CatalogDiscoveryFilters.class)))
@@ -253,11 +254,12 @@ class SearchCatalogAgentToolTest {
         UserGroupedProductSearchService searches = mock(UserGroupedProductSearchService.class);
         EnsureUserProfileCommand profile = new EnsureUserProfileCommand(
                 userId, "shopper@example.test", "Shopper", null);
+        UUID qualificationId = UUID.randomUUID();
         when(json.readArguments("{}", SearchCatalogAgentToolInput.class))
-                .thenReturn(new SearchCatalogAgentToolInput("football boots", 0, 10));
+                .thenReturn(new SearchCatalogAgentToolInput("football boots", qualificationId, 0, 10));
         when(profiles.profile(userId)).thenReturn(profile);
         when(qualifications.qualify(
-                eq(profile), any(UUID.class), nullable(UUID.class), eq("find shoes"))).thenReturn(
+                eq(profile), any(UUID.class), nullable(UUID.class), eq(qualificationId), eq("find shoes"))).thenReturn(
                 new UserProductSearchAgentQualificationResult(
                         UUID.randomUUID(),
                         "football boots",
@@ -273,6 +275,7 @@ class SearchCatalogAgentToolTest {
         var execution = tool.execute(context(userId), "{}");
 
         assertThat(execution.safeSummary()).contains("What boot size", "ship to");
+        assertThat(tool.descriptor().inputSchemaJson()).contains("\"qualificationId\"");
         verifyNoInteractions(searches, results);
     }
 
@@ -315,7 +318,7 @@ class SearchCatalogAgentToolTest {
         when(json.readArguments("{}", SearchCatalogAgentToolInput.class)).thenReturn(input);
         when(profiles.profile(userId)).thenReturn(profile);
         when(qualifications.qualify(
-                eq(profile), any(UUID.class), nullable(UUID.class), eq("find shoes")))
+                eq(profile), any(UUID.class), nullable(UUID.class), nullable(UUID.class), eq("find shoes")))
                 .thenReturn(ready("football boots", authorized));
         SearchCatalogAgentTool tool = new SearchCatalogAgentTool(
                 json, profiles, results, qualifications, searches);

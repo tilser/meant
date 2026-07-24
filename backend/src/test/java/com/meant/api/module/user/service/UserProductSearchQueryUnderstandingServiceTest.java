@@ -130,6 +130,30 @@ class UserProductSearchQueryUnderstandingServiceTest {
     }
 
     @Test
+    void rejectsARewriteThatDropsProductBrandCategoryMaterialAndDietaryTerms() {
+        FakeOpenRouterChatClient openRouterChatClient = new FakeOpenRouterChatClient();
+        openRouterChatClient.response = """
+                {
+                  "searchQuery": "gaming laptop",
+                  "displayQuery": "Gaming laptop",
+                  "constraints": [],
+                  "preferenceHints": [],
+                  "confidence": "high"
+                }
+                """;
+        UserProductSearchQueryUnderstandingService service =
+                service(openRouterChatClient, queryIntentRepository());
+
+        UserProductSearchQueryIntentResult result = service.understand(
+                "Please find Nike vegan leather football boots for men under 150 USD");
+
+        assertThat(result.searchQuery())
+                .contains("nike", "vegan", "leather", "football", "boots", "men", "150", "usd")
+                .doesNotContain("laptop");
+        assertThat(result.source()).isEqualTo("llm-fallback");
+    }
+
+    @Test
     void understandFallsBackWhenOpenRouterResponseIsNotUsable() {
         FakeOpenRouterChatClient openRouterChatClient = new FakeOpenRouterChatClient();
         openRouterChatClient.response = """
@@ -219,6 +243,7 @@ class UserProductSearchQueryUnderstandingServiceTest {
                 "v1",
                 "v1",
                 Duration.ofHours(24),
+                Duration.ofMinutes(30),
                 Duration.ofMinutes(30),
                 100,
                 Duration.ofSeconds(45),

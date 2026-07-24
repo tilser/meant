@@ -2,10 +2,12 @@ package com.meant.api.module.agent.service.dto;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.UUID;
 
 /** Model-facing, bounded subset of the existing provider-neutral catalog discovery filters. */
 public record SearchCatalogAgentToolInput(
         String query,
+        UUID qualificationId,
         Location shipsTo,
         List<Origin> shipsFrom,
         Price price,
@@ -25,7 +27,26 @@ public record SearchCatalogAgentToolInput(
     }
 
     public SearchCatalogAgentToolInput(String query, Integer offset, Integer limit) {
-        this(query, null, List.of(), null, List.of(), List.of(), null, List.of(), offset, limit);
+        this(query, null, null, List.of(), null, List.of(), List.of(), null, List.of(), offset, limit);
+    }
+
+    public SearchCatalogAgentToolInput(String query, UUID qualificationId, Integer offset, Integer limit) {
+        this(query, qualificationId, null, List.of(), null, List.of(), List.of(), null, List.of(), offset, limit);
+    }
+
+    public SearchCatalogAgentToolInput(
+            String query,
+            Location shipsTo,
+            List<Origin> shipsFrom,
+            Price price,
+            List<String> conditions,
+            List<Attribute> attributes,
+            Rating rating,
+            List<String> priceTiers,
+            Integer offset,
+            Integer limit
+    ) {
+        this(query, null, shipsTo, shipsFrom, price, conditions, attributes, rating, priceTiers, offset, limit);
     }
 
     public record Location(String country, String region, String postalCode) {

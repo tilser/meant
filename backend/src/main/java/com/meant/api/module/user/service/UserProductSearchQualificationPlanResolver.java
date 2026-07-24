@@ -378,6 +378,13 @@ public class UserProductSearchQualificationPlanResolver {
             GenerateUserProductSearchQualificationQuery query,
             List<String> violations
     ) {
+        if (filter.state() == UserProductSearchFilterState.VALUE
+                && !ratingValuesMatchEvidence(filter, query)) {
+            violations.add("RATING provenance evidence does not support its typed value");
+            return new UserProductSearchQualificationPlan.RatingFilter(
+                    UserProductSearchFilterState.MISSING, null, null,
+                    UserProductSearchQualificationPlan.Provenance.none());
+        }
         List<String> values = new ArrayList<>();
         if (filter.min() != null) {
             values.add(filter.min().toPlainString());
@@ -735,10 +742,11 @@ public class UserProductSearchQualificationPlanResolver {
         String rawSource = rawSource(provenance.source(), target, query);
         return values.stream().allMatch(value -> switch (target) {
             case CONDITION -> conditionMentioned(normalizedEvidence, value);
-            case SHIPS_TO, SHIPS_FROM -> countryMentioned(
-                    evidence, normalizedEvidence, rawSource, value, provenance.source());
-            case PRICE, RATING -> numberMentioned(evidence, value);
-            case COLOR, SIZE -> containsPhrase(normalizedEvidence, normalize(value));
+            case SHIPS_TO, SHIPS_FROM -> targetBoundLocationMentioned(target, value, provenance, query);
+            case PRICE -> priceNumberMentioned(evidence, value, provenance, query);
+            case RATING -> true;
+            case COLOR -> colorMentioned(normalizedEvidence, value, provenance, query);
+            case SIZE -> sizeMentioned(normalizedEvidence, value, provenance, query);
             case TARGET_GENDER -> targetGenderMentioned(normalizedEvidence, value);
             case PRICE_TIER -> priceTierMentioned(normalizedEvidence, value);
         });
@@ -785,6 +793,64 @@ public class UserProductSearchQualificationPlanResolver {
         };
     }
 
+    private boolean targetBoundLocationMentioned(
+            UserProductSearchQuestionTarget target,
+            String value,
+            UserProductSearchQualificationPlan.Provenance provenance,
+            GenerateUserProductSearchQualificationQuery query
+    ) {
+        String evidence = provenance.evidence();
+        String sourceText = rawSource(provenance.source(), target, query);
+        if (!countryMentioned(
+                evidence, normalize(evidence), sourceText, value, provenance.source())) {
+            return false;
+        }
+        if (provenance.source() == UserProductSearchDecisionSource.PROFILE) {
+            return target == UserProductSearchQuestionTarget.SHIPS_TO;
+        }
+        if (provenance.source() == UserProductSearchDecisionSource.CURRENT_USER_TURN
+                && query.previousPlan() != null
+                && query.previousPlan().questionTargets().size() == 1
+                && query.previousPlan().questionTargets().getFirst() == target) {
+            return true;
+        }
+        return locationRelationMentioned(sourceText, target, value);
+    }
+
+    private boolean locationRelationMentioned(
+            String source,
+            UserProductSearchQuestionTarget target,
+            String country
+    ) {
+        if (source == null) {
+            return false;
+        }
+        java.util.regex.Pattern marker = target == UserProductSearchQuestionTarget.SHIPS_FROM
+                ? java.util.regex.Pattern.compile(
+                        "(?i)\\b(?:ships?|shipped|shipping)\\s+from\\b|\\bmade\\s+in\\b"
+                                + "|\\borigin(?:ating)?\\s+from\\b|\\bfrom\\b")
+                : java.util.regex.Pattern.compile(
+                        "(?i)\\b(?:ships?|shipped|shipping|deliver|delivered|delivery|send|sent)"
+                                + "\\s+(?:it\\s+)?to\\b|\\bto\\b");
+        java.util.regex.Matcher matcher = marker.matcher(source);
+        while (matcher.find()) {
+            int end = Math.min(source.length(), matcher.end() + 80);
+            String segment = source.substring(matcher.end(), end);
+            java.util.regex.Matcher opposite = (target == UserProductSearchQuestionTarget.SHIPS_FROM
+                            ? java.util.regex.Pattern.compile("(?i)\\bto\\b")
+                            : java.util.regex.Pattern.compile("(?i)\\bfrom\\b"))
+                    .matcher(segment);
+            if (opposite.find()) {
+                segment = segment.substring(0, opposite.start());
+            }
+            if (countryMentioned(segment, normalize(segment), segment, country,
+                    UserProductSearchDecisionSource.ORIGINAL_QUERY)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private String rawSource(
             UserProductSearchDecisionSource source,
             UserProductSearchQuestionTarget target,
@@ -818,6 +884,49 @@ public class UserProductSearchQualificationPlanResolver {
         };
     }
 
+    private boolean colorMentioned(
+            String evidence,
+            String value,
+            UserProductSearchQualificationPlan.Provenance provenance,
+            GenerateUserProductSearchQualificationQuery query
+    ) {
+        boolean valuePresent = containsPhrase(evidence, normalize(value));
+        if (!valuePresent) {
+            return false;
+        }
+        return containsPhrase(evidence, "color")
+                || containsPhrase(evidence, "colour")
+                || provenance.source() == UserProductSearchDecisionSource.CURRENT_USER_TURN
+                && query.previousPlan() != null
+                && query.previousPlan().questionTargets().size() == 1
+                && query.previousPlan().questionTargets().getFirst() == UserProductSearchQuestionTarget.COLOR
+                || knownColor(value);
+    }
+
+    private boolean knownColor(String value) {
+        return Set.of(
+                        "black", "white", "red", "blue", "green", "brown", "grey", "gray", "pink",
+                        "purple", "orange", "yellow", "beige", "navy", "teal", "gold", "silver")
+                .contains(normalize(value));
+    }
+
+    private boolean sizeMentioned(
+            String evidence,
+            String value,
+            UserProductSearchQualificationPlan.Provenance provenance,
+            GenerateUserProductSearchQualificationQuery query
+    ) {
+        if (!containsPhrase(evidence, normalize(value))) {
+            return false;
+        }
+        return containsPhrase(evidence, "size")
+                || provenance.source() == UserProductSearchDecisionSource.DURABLE_PREFERENCE
+                || provenance.source() == UserProductSearchDecisionSource.CURRENT_USER_TURN
+                && query.previousPlan() != null
+                && query.previousPlan().questionTargets().size() == 1
+                && query.previousPlan().questionTargets().getFirst() == UserProductSearchQuestionTarget.SIZE;
+    }
+
     private boolean priceTierMentioned(String evidence, String value) {
         return switch (value) {
             case "LOW" -> List.of("low", "cheap", "budget", "affordable", "inexpensive")
@@ -847,6 +956,89 @@ public class UserProductSearchQualificationPlanResolver {
             BigDecimal mentioned = parseNumber(matcher.group());
             if (mentioned != null && mentioned.compareTo(expectedNumber) == 0) {
                 return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean priceNumberMentioned(
+            String evidence,
+            String expected,
+            UserProductSearchQualificationPlan.Provenance provenance,
+            GenerateUserProductSearchQualificationQuery query
+    ) {
+        boolean relationBound = relationNumberMentioned(
+                evidence,
+                expected,
+                List.of(
+                        "(?i)[$€£]\\s*([0-9]+(?:[.,][0-9]+)*)",
+                        "(?i)\\b(?:usd|eur|gbp)\\s*([0-9]+(?:[.,][0-9]+)*)",
+                        "(?i)([0-9]+(?:[.,][0-9]+)*)\\s*(?:usd|eur|gbp)\\b",
+                        "(?i)\\b(?:price|budget|cost|under|below|over|above|between)\\b"
+                                + "(?:\\s+(?:is|of|from|around|up\\s+to))?\\s*[$€£]?"
+                                + "\\s*([0-9]+(?:[.,][0-9]+)*)",
+                        "(?i)\\bbetween\\b[^0-9]{0,12}[0-9]+(?:[.,][0-9]+)*"
+                                + "\\s+(?:and|to)\\s*[$€£]?\\s*([0-9]+(?:[.,][0-9]+)*)"
+                )
+        ) || "0".equals(expected) && containsPhrase(normalize(evidence), "free");
+        return relationBound
+                || provenance.source() == UserProductSearchDecisionSource.CURRENT_USER_TURN
+                && query.previousPlan() != null
+                && query.previousPlan().questionTargets().size() == 1
+                && query.previousPlan().questionTargets().getFirst() == UserProductSearchQuestionTarget.PRICE
+                && numberMentioned(evidence, expected);
+    }
+
+    private boolean ratingValuesMatchEvidence(
+            UserProductSearchQualificationPlan.RatingFilter filter,
+            GenerateUserProductSearchQualificationQuery query
+    ) {
+        String evidence = filter.provenance().evidence();
+        String source = rawSource(
+                filter.provenance().source(), UserProductSearchQuestionTarget.RATING, query);
+        boolean directAnswer = filter.provenance().source() == UserProductSearchDecisionSource.CURRENT_USER_TURN
+                && query.previousPlan() != null
+                && query.previousPlan().questionTargets().size() == 1
+                && query.previousPlan().questionTargets().getFirst() == UserProductSearchQuestionTarget.RATING;
+        if (filter.min() != null
+                && (!numberMentioned(evidence, filter.min().toPlainString())
+                || !directAnswer && !relationNumberMentioned(
+                        source,
+                        filter.min().toPlainString(),
+                        List.of(
+                                "(?i)\\b(?:rated?|rating)\\b(?:\\s+(?:at|of|is|minimum))?"
+                                        + "\\s*([0-9]+(?:[.,][0-9]+)*)",
+                                "(?i)([0-9]+(?:[.,][0-9]+)*)\\s*stars?\\b"
+                        )))) {
+            return false;
+        }
+        return filter.minCount() == null
+                || numberMentioned(evidence, filter.minCount().toString())
+                && (directAnswer || relationNumberMentioned(
+                        source,
+                        filter.minCount().toString(),
+                        List.of(
+                                "(?i)([0-9]+(?:[.,][0-9]+)*)\\s*reviews?\\b",
+                                "(?i)\\breviews?\\b(?:\\s+(?:at\\s+least|minimum|count|of))?"
+                                        + "\\s*([0-9]+(?:[.,][0-9]+)*)"
+                        )));
+    }
+
+    private boolean relationNumberMentioned(String source, String expected, List<String> patterns) {
+        BigDecimal expectedNumber;
+        try {
+            expectedNumber = new BigDecimal(expected).stripTrailingZeros();
+        } catch (NumberFormatException exception) {
+            return false;
+        }
+        for (String pattern : patterns) {
+            java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(pattern)
+                    .matcher(source == null ? "" : source);
+            while (matcher.find()) {
+                BigDecimal mentioned = parseNumber(matcher.group(1));
+                if (mentioned != null && mentioned.compareTo(expectedNumber) == 0) {
+                    return true;
+                }
             }
         }
         return false;

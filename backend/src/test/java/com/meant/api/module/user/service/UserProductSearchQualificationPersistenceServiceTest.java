@@ -10,6 +10,7 @@ import com.meant.api.module.user.entity.UserProductSearchQualification;
 import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.repository.UserProductSearchQualificationRepository;
 import com.meant.api.module.user.service.command.PersistUserProductSearchQualificationCommand;
+import com.meant.api.module.user.service.command.CancelUserProductSearchQualificationCommand;
 import com.meant.api.module.user.service.command.SaveUserProductSearchPreferencesCommand;
 import com.meant.api.module.user.service.dto.UserProductSearchQualificationPlan;
 import java.lang.reflect.InvocationHandler;
@@ -95,6 +96,39 @@ class UserProductSearchQualificationPersistenceServiceTest {
                         assertThat(exception.getStatus()).isEqualTo(HttpStatus.CONFLICT));
         assertThat(existing.getUpdatedAt()).isEqualTo(currentRevision);
         assertThat(preferenceService.calls).isZero();
+        assertThat(repository.saved).isNull();
+    }
+
+    @Test
+    void rejectsAConcurrentCancellationAtAStaleRevision() {
+        UUID qualificationId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        Instant currentRevision = Instant.parse("2026-07-17T10:00:00Z");
+        UserProductSearchQualification existing = UserProductSearchQualification.create(
+                qualificationId,
+                userId,
+                conversationId,
+                null,
+                "football boots",
+                UserProductSearchQualificationStatus.NEEDS_INPUT,
+                planCodec.encode(plan(false)),
+                "model",
+                "v1",
+                currentRevision
+        );
+        repository.found = Optional.of(existing);
+
+        assertThatThrownBy(() -> service.cancel(new CancelUserProductSearchQualificationCommand(
+                qualificationId,
+                userId,
+                conversationId,
+                null,
+                currentRevision.minusSeconds(1)
+        )))
+                .isInstanceOfSatisfying(UserException.class, exception ->
+                        assertThat(exception.getStatus()).isEqualTo(HttpStatus.CONFLICT));
+        assertThat(existing.getStatus()).isEqualTo(UserProductSearchQualificationStatus.NEEDS_INPUT);
         assertThat(repository.saved).isNull();
     }
 

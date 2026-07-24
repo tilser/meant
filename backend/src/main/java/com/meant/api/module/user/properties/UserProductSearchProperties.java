@@ -24,6 +24,9 @@ public record UserProductSearchProperties(
         Duration cacheTtl,
 
         @NotNull
+        Duration qualificationPendingTtl,
+
+        @NotNull
         Duration productDetailSessionTtl,
 
         @Positive

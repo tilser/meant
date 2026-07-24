@@ -106,6 +106,9 @@ public class UserProductSearchQualificationService {
                 || !Objects.equals(snapshot.merchantId(), command.merchantId())) {
             throw UserException.notFound("Product-search qualification not found");
         }
+        if (snapshot.status() == UserProductSearchQualificationStatus.CANCELLED) {
+            throw UserException.notFound("Product-search qualification was cancelled");
+        }
         return snapshot;
     }
 

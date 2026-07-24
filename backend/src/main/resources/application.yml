@@ -313,6 +313,7 @@ user:
     query-parser-prompt-version: v3
     explanation-prompt-version: v3
     cache-ttl: 24h
+    qualification-pending-ttl: ${USER_PRODUCT_SEARCH_QUALIFICATION_PENDING_TTL:30m}
     product-detail-session-ttl: ${USER_PRODUCT_DETAIL_SESSION_TTL:30m}
     product-detail-session-maximum-size: ${USER_PRODUCT_DETAIL_SESSION_MAXIMUM_SIZE:10000}
     stream-timeout: ${USER_PRODUCT_SEARCH_STREAM_TIMEOUT:45s}

@@ -136,6 +136,7 @@ class UserQualifiedProductSearchResolverTest {
                 "explanation-v1",
                 Duration.ofHours(1),
                 Duration.ofMinutes(30),
+                Duration.ofMinutes(30),
                 100,
                 Duration.ofSeconds(30),
                 10,
