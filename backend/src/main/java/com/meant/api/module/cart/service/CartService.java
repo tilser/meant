@@ -44,6 +44,7 @@ import com.meant.api.module.cart.service.query.GetCheckoutQuery;
 import com.meant.api.module.cart.service.query.ListActiveCartsQuery;
 import com.meant.api.module.cart.service.query.PartitionSelectedOffersQuery;
 import com.meant.api.module.merchant.constant.CommerceOperation;
+import com.meant.api.module.merchant.service.MerchantBuyerTextSanitizer;
 import com.meant.api.module.merchant.service.MerchantCartProviderLookupService;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.module.user.service.UserSelectedOfferResolutionService;
@@ -177,7 +178,11 @@ public class CartService {
             persistedCart = cartPersistenceService.findCreatedSnapshot(command.userId(), target, result)
                     .orElseThrow(() -> exception);
         }
-        return cartResultMapper.from(persistedCart, result.response());
+        return cartResultMapper.from(
+                persistedCart,
+                result.response(),
+                target.merchantProvider()
+        );
     }
 
     public CartResult get(@NotNull @Valid GetCartQuery query) {
@@ -190,16 +195,26 @@ public class CartService {
     private CartResult getInternal(GetCartQuery query) {
         Cart cart = findCart(query.cartId(), query.userId());
         if (!query.refresh()) {
-            return cartResultMapper.from(cart);
+            return storedCartResult(cart);
         }
         UcpSession session = session(cart);
         GetCartRequest request = new GetCartRequest(cart.getRemoteCartId());
         CartRoutingTarget target = routingTarget(cart);
         UcpCartToolResult result = merchantCartPluginDispatchService.getCart(
                 target, request, session, CartToolCallContext.forBuyer(query.buyerIp()));
-        return cartResultMapper.from(cartPersistenceService.saveSnapshot(
-                cart, query.userId(), target, result, null, List.of(), CartSnapshotPurpose.READ_REFRESH),
-                result.response());
+        return cartResultMapper.from(
+                cartPersistenceService.saveSnapshot(
+                        cart,
+                        query.userId(),
+                        target,
+                        result,
+                        null,
+                        List.of(),
+                        CartSnapshotPurpose.READ_REFRESH
+                ),
+                result.response(),
+                target.merchantProvider()
+        );
     }
 
     public List<CartResult> listActive(@NotNull @Valid ListActiveCartsQuery query) {
@@ -215,7 +230,7 @@ public class CartService {
         }
         return currentByRoute.values().stream()
                 .limit(query.limit())
-                .map(cartResultMapper::from)
+                .map(this::storedCartResult)
                 .toList();
     }
 
@@ -223,7 +238,7 @@ public class CartService {
             @NotNull @Valid FindActiveCartByRoutingScopeQuery query
     ) {
         return cartPersistenceService.findActiveCartByRoutingScope(query.userId(), query.routingScopeKey())
-                .map(cartResultMapper::from);
+                .map(this::storedCartResult);
     }
 
     /**
@@ -258,7 +273,7 @@ public class CartService {
                         partition.target().merchantIntegrationId(),
                         partition.target().externalMerchantId(),
                         partition.target().merchantProvider().merchantId(),
-                        partition.target().merchantProvider().domain(),
+                        partition.target().merchantProvider().merchantDomain(),
                         partition.items()
                 ))
                 .toList();
@@ -327,15 +342,19 @@ public class CartService {
             }
             result = reconciled;
         }
-        return cartResultMapper.from(cartPersistenceService.saveSnapshot(
-                cart,
-                command.userId(),
-                target,
-                result,
-                request.giftCardCodes(),
-                resolved.offers(),
-                CartSnapshotPurpose.CART_MUTATION
-        ), result.response());
+        return cartResultMapper.from(
+                cartPersistenceService.saveSnapshot(
+                        cart,
+                        command.userId(),
+                        target,
+                        result,
+                        request.giftCardCodes(),
+                        resolved.offers(),
+                        CartSnapshotPurpose.CART_MUTATION
+                ),
+                result.response(),
+                target.merchantProvider()
+        );
     }
 
     private boolean cartUpdateApplied(UpdateCartRequest request, UcpCartResponse response) {
@@ -377,7 +396,7 @@ public class CartService {
         MerchantCartProvider provider = target.merchantProvider();
         if (!query.refresh() && hasText(cart.getCheckoutId())) {
             return withSavedCheckoutDetails(
-                    checkoutResultMapper.from(cart, provider.executionPolicy()),
+                    checkoutResultMapper.from(cart, provider),
                     query.userId()
             );
         }
@@ -413,7 +432,7 @@ public class CartService {
         Cart refreshedCart = cartPersistenceService.saveCheckoutHandoff(
                 checkoutCart.getId(), query.userId(), checkoutCart.getCheckoutGeneration(), result);
         return withSavedCheckoutDetails(
-                checkoutResultMapper.from(refreshedCart, result.response(), provider.executionPolicy()),
+                checkoutResultMapper.from(refreshedCart, result.response(), provider),
                 query.userId()
         );
     }
@@ -434,7 +453,7 @@ public class CartService {
         MerchantCartProvider provider = target.merchantProvider();
         if (!query.refresh()) {
             return withSavedCheckoutDetails(
-                    checkoutResultMapper.from(cart, provider.executionPolicy()),
+                    checkoutResultMapper.from(cart, provider),
                     query.userId()
             );
         }
@@ -447,7 +466,7 @@ public class CartService {
         Cart refreshedCart = cartPersistenceService.saveCheckoutHandoff(
                 cart.getId(), query.userId(), cart.getCheckoutGeneration(), result);
         return withSavedCheckoutDetails(
-                checkoutResultMapper.from(refreshedCart, result.response(), provider.executionPolicy()),
+                checkoutResultMapper.from(refreshedCart, result.response(), provider),
                 query.userId()
         );
     }
@@ -576,7 +595,7 @@ public class CartService {
         UserCheckoutDetailsResult savedCheckoutDetails = hasCheckoutDetailsValidationProblems(result.response())
                 ? savedCheckoutDetails(command.userId()).orElse(null)
                 : userCheckoutDetailsService.save(saveCheckoutDetailsCommand(command));
-        return checkoutResultMapper.from(refreshedCart, result.response(), provider.executionPolicy())
+        return checkoutResultMapper.from(refreshedCart, result.response(), provider)
                 .withSavedCheckoutDetails(savedCheckoutDetails);
     }
 
@@ -636,11 +655,12 @@ public class CartService {
 
     private CheckoutCompletionResult completeCheckoutInMutationLane(CompleteCheckoutCommand command) {
         Cart cart = findCart(command.cartId(), command.userId());
-        MerchantCartProvider provider = findProvider(cart.getMerchantId(), cart.getMerchantDomain());
+        CartRoutingTarget target = checkoutRoutingTarget(cart);
+        MerchantCartProvider provider = target.merchantProvider();
         Cart checkoutCart = ensureHandoffWhenDirectCompletionUnavailable(
                 cart,
                 command.userId(),
-                provider,
+                target,
                 command.ap2SecurityLock(),
                 command.buyerIp()
         );
@@ -671,7 +691,7 @@ public class CartService {
                 );
             }
         }
-        return completionResult(checkoutCart, result);
+        return completionResult(checkoutCart, provider, result);
     }
 
     public CheckoutConsentResult recordCheckoutConsent(@NotNull @Valid CreateCheckoutConsentCommand command) {
@@ -722,10 +742,19 @@ public class CartService {
                 cart.getId(), command.userId(), cart.getCheckoutGeneration(), result);
         return new CheckoutCompletionResult(
                 refreshed.getId(), refreshed.getRemoteCartId(), NativeCheckoutStatus.CANCELED,
-                refreshed.getCheckoutId(), null, refreshed.getContinueUrl(), checkoutMessages(result.response()), false);
+                refreshed.getCheckoutId(),
+                null,
+                refreshed.getContinueUrl(),
+                checkoutMessages(refreshed, target.merchantProvider(), result.response()),
+                false
+        );
     }
 
-    private List<String> checkoutMessages(UcpCheckoutResponse response) {
+    private List<String> checkoutMessages(
+            Cart cart,
+            MerchantCartProvider provider,
+            UcpCheckoutResponse response
+    ) {
         if (response == null) {
             return List.of();
         }
@@ -734,9 +763,12 @@ public class CartService {
                                 : response.resolvedCheckout().messages().stream())
                 .map(UcpCheckoutResponse.CheckoutMessage::message)
                 .filter(CheckoutFulfillmentSupport::hasText)
+                .map(message -> sanitizeBuyerText(cart, provider, message))
                 .toList());
         response.errors().stream().map(UcpCheckoutResponse.CheckoutError::message)
-                .filter(CheckoutFulfillmentSupport::hasText).forEach(values::add);
+                .filter(CheckoutFulfillmentSupport::hasText)
+                .map(message -> sanitizeBuyerText(cart, provider, message))
+                .forEach(values::add);
         return List.copyOf(values);
     }
 
@@ -804,17 +836,18 @@ public class CartService {
     private Cart ensureHandoffWhenDirectCompletionUnavailable(
             Cart cart,
             UUID userId,
-            MerchantCartProvider provider,
+            CartRoutingTarget target,
             boolean ap2SecurityLock,
             String buyerIp
     ) {
+        MerchantCartProvider provider = target.merchantProvider();
         if (provider.executionPolicy().isAvailable(CommerceOperation.DIRECT_CHECKOUT_COMPLETION)
                 || ap2SecurityLock
                 || hasText(handoffUrl(cart))) {
             return cart;
         }
         UcpCheckoutToolResult result = merchantCheckoutPluginDispatchService.createCheckout(
-                checkoutRoutingTarget(cart),
+                target,
                 createCheckoutRequest(cart),
                 session(cart),
                 CheckoutToolCallContext.forBuyer(buyerIp)
@@ -823,7 +856,11 @@ public class CartService {
                 cart.getId(), userId, cart.getCheckoutGeneration(), result);
     }
 
-    private CheckoutCompletionResult completionResult(Cart cart, NativeCheckoutResult result) {
+    private CheckoutCompletionResult completionResult(
+            Cart cart,
+            MerchantCartProvider provider,
+            NativeCheckoutResult result
+    ) {
         return new CheckoutCompletionResult(
                 cart.getId(),
                 cart.getRemoteCartId(),
@@ -831,8 +868,24 @@ public class CartService {
                 result.checkoutId(),
                 result.orderRef(),
                 result.continueUrl(),
-                result.messages(),
+                result.messages().stream()
+                        .map(message -> sanitizeBuyerText(cart, provider, message))
+                        .toList(),
                 result.nativeAttempted()
+        );
+    }
+
+    private String sanitizeBuyerText(
+            Cart cart,
+            MerchantCartProvider provider,
+            String value
+    ) {
+        String providerSafe = MerchantBuyerTextSanitizer.sanitize(value, provider);
+        return MerchantBuyerTextSanitizer.sanitize(
+                providerSafe,
+                cart.getMerchantDomain(),
+                cart.getRoutingDomain(),
+                cart.getEndpoint()
         );
     }
 
@@ -957,11 +1010,50 @@ public class CartService {
         CartRoutingTarget persistedTarget = new CartRoutingTarget(
                 cart.getRoutingScopeKey(), provider, cart.getMerchantIntegrationId(),
                 cart.getExternalMerchantId(), new MerchantCartProvider(
-                        null, cart.getMerchantDomain(), cart.getEndpoint(), null,
-                        List.of(), MerchantExecutionPolicy.unavailable()));
+                        null, cart.getMerchantDomain(), routingDomain(cart), cart.getEndpoint(), null,
+                        List.of(), MerchantExecutionPolicy.unavailable(), null, Set.of()));
         return checkoutPolicyRequired
                 ? selectedOfferCartRoutingService.resolvePersistedExternalForCheckout(persistedTarget)
                 : selectedOfferCartRoutingService.resolvePersistedExternal(persistedTarget);
+    }
+
+    private String routingDomain(Cart cart) {
+        return hasText(cart.getRoutingDomain()) ? cart.getRoutingDomain() : cart.getMerchantDomain();
+    }
+
+    private CartResult storedCartResult(Cart cart) {
+        return cartResultMapper.storedBuyerTextMayContainTransport(cart)
+                ? cartResultMapper.from(cart, storedPresentationProvider(cart))
+                : cartResultMapper.from(cart);
+    }
+
+    private MerchantCartProvider storedPresentationProvider(Cart cart) {
+        Optional<MerchantCartProvider> provider = cart.getMerchantId() == null
+                ? Optional.empty()
+                : merchantCartProviderLookupService.findById(cart.getMerchantId());
+        if (provider.isEmpty()
+                && MerchantIntegrationProvider.SHOPIFY.name().equals(cart.getProvider())
+                && hasText(cart.getExternalMerchantId())) {
+            provider = merchantCartProviderLookupService.findActiveByShopifyShopId(
+                    cart.getExternalMerchantId()
+            );
+        }
+        if (provider.isEmpty() && hasText(cart.getMerchantDomain())) {
+            provider = merchantCartProviderLookupService.findActiveByCanonicalDomain(
+                    cart.getMerchantDomain()
+            );
+        }
+        return provider.orElseGet(() -> new MerchantCartProvider(
+                cart.getMerchantId(),
+                cart.getMerchantDomain(),
+                routingDomain(cart),
+                cart.getEndpoint(),
+                null,
+                List.of(),
+                MerchantExecutionPolicy.unavailable(),
+                null,
+                Set.of()
+        ));
     }
 
     private record ResolvedItems(

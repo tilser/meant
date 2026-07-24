@@ -1,5 +1,7 @@
 package com.meant.api.module.discount.controller.response;
 
+import com.meant.api.module.discount.service.DiscountCodeBuyerProjection;
+import com.meant.api.module.discount.service.dto.BuyerDiscountCodeResult;
 import com.meant.api.module.discount.service.dto.DiscountCodeResult;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
@@ -12,7 +14,7 @@ public record DiscountCodeResponse(
         String title,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED, description = "Code description from discovery source.", example = "Save 10% on your order.")
         String description,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED, description = "Source URL where the code was discovered.", example = "https://merchant.example/codes")
+        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED, description = "Buyer-safe source URL where the code was discovered.", example = "https://merchant.example/codes")
         String sourceUrl,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED, description = "Discovery confidence from 0 to 1.", example = "0.9")
         Double confidence,
@@ -26,7 +28,14 @@ public record DiscountCodeResponse(
         String validationMessage
 ) {
 
-    public static DiscountCodeResponse from(DiscountCodeResult result) {
+    public static DiscountCodeResponse from(DiscountCodeResult result, String merchantOrigin) {
+        return from(DiscountCodeBuyerProjection.from(result, merchantOrigin));
+    }
+
+    public static DiscountCodeResponse from(BuyerDiscountCodeResult result) {
+        if (result == null) {
+            return null;
+        }
         return new DiscountCodeResponse(
                 result.code(),
                 result.title(),

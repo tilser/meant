@@ -5,6 +5,7 @@ import static com.meant.api.module.agent.service.AgentTargetJsonSupport.text;
 
 import com.meant.api.module.agent.constant.AgentArtifactType;
 import com.meant.api.module.agent.entity.AgentArtifactReference;
+import com.meant.api.module.cart.service.BuyerSafeRoutingScopeKey;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -94,12 +95,12 @@ final class AgentCartSnapshotSupport {
     }
 
     private String routingScopeKey(AgentArtifactReference artifact, JsonNode payload) {
-        String routingScopeKey = text(payload, "routingScopeKey");
+        String routingScopeKey = BuyerSafeRoutingScopeKey.project(text(payload, "routingScopeKey"));
         return present(routingScopeKey) ? routingScopeKey : "cart:" + artifact.getCartId();
     }
 
     private String cartPartitionKey(AgentArtifactReference artifact, JsonNode payload) {
-        String routing = text(payload, "routingScopeKey");
+        String routing = BuyerSafeRoutingScopeKey.project(text(payload, "routingScopeKey"));
         if (present(routing)) {
             return "routing:" + routing.toLowerCase(Locale.ROOT);
         }
@@ -116,7 +117,7 @@ final class AgentCartSnapshotSupport {
         if (present(external)) {
             return "external:" + provider + ":" + external.toLowerCase(Locale.ROOT);
         }
-        String domain = text(payload, "merchantDomain");
+        String domain = text(payload, "merchantOrigin");
         if (present(domain)) {
             return "domain:" + provider + ":" + domain.toLowerCase(Locale.ROOT);
         }

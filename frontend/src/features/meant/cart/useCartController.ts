@@ -303,6 +303,7 @@ export function useCartController(products: readonly Product[], ownerId: string 
             ? {
                 ...item,
                 merchant: offer.merchant,
+                merchantOrigin: item.merchantOrigin ?? existingGroup?.merchantOrigin,
                 merchantId: offer.merchantId ?? item.merchantId,
                 merchantDomain: offer.merchantDomain ?? item.merchantDomain,
                 productVariantId,
@@ -324,6 +325,7 @@ export function useCartController(products: readonly Product[], ownerId: string 
         {
           id: product.id,
           merchant: offer.merchant,
+          merchantOrigin: existingGroup?.merchantOrigin,
           merchantId: offer.merchantId,
           merchantDomain: offer.merchantDomain,
           productVariantId,
@@ -410,6 +412,7 @@ export function useCartController(products: readonly Product[], ownerId: string 
       Number.isInteger(priorExactQuantity) && priorExactQuantity > 0 ? priorExactQuantity + 1 : 1
 
     const merchant =
+      selectedOffer?.merchantOrigin?.trim() ||
       selectedOffer?.merchantName?.trim() ||
       selectedDisplayOffer?.merchant.trim() ||
       'Selected merchant'
@@ -423,9 +426,7 @@ export function useCartController(products: readonly Product[], ownerId: string 
       selectedOffer?.identity.merchantScope.externalMerchantIdentity?.value ??
       selectedOffer?.provenance.find((item) => item.externalMerchantReference)
         ?.externalMerchantReference?.value
-    const merchantDomain =
-      selectedOffer?.provenance.find((item) => item.externalMerchantDomain)
-        ?.externalMerchantDomain ?? selectedDisplayOffer?.merchantDomain
+    const merchantDomain = selectedDisplayOffer?.merchantDomain ?? selectedOffer?.merchantOrigin
     const provider = selectedDisplayOffer?.provider ?? selectedOffer?.identity.provider
     const merchantScopeKey =
       selectedDisplayOffer?.merchantScopeKey ??
@@ -481,6 +482,7 @@ export function useCartController(products: readonly Product[], ownerId: string 
         {
           id: product.id,
           merchant,
+          merchantOrigin: existingCartItem?.merchantOrigin,
           merchantId: selectedDisplayOffer?.merchantId ?? existingCartItem?.merchantId,
           merchantDomain: merchantDomain ?? existingCartItem?.merchantDomain,
           provider: provider ?? existingCartItem?.provider,
@@ -535,7 +537,6 @@ export function useCartController(products: readonly Product[], ownerId: string 
             ...snapshot,
             lines: snapshot.lines?.filter((line) => line.offerKey?.trim() !== exactOfferKey) ?? [],
           }
-      const serverMerchant = snapshot.merchantDomain?.trim() || merchant
       updateStoredCart((current) => {
         const merged = rebuilt
           ? mergeCartSnapshot(current, merchantKey, reconciliationSnapshot)
@@ -547,30 +548,29 @@ export function useCartController(products: readonly Product[], ownerId: string 
                 exactOfferKey,
                 reconciliationSnapshot,
               )
-        const named = merged.map((item) =>
+        const scoped = merged.map((item) =>
           item.id === product.id && item.offerKey === exactOfferKey
             ? {
                 ...item,
-                merchant: serverMerchant,
                 merchantScopeKey: item.merchantScopeKey ?? resolvedMerchantScopeKey ?? undefined,
               }
             : item,
         )
-        if (exactLineConfirmed) return named
+        if (exactLineConfirmed) return scoped
         return settleUnconfirmedSelectedOfferAddition(
-          named,
+          scoped,
           product.id,
           exactOfferKey,
           Boolean(returnedExactLine),
         )
       })
       const serverMerchantKey = cartMerchantKey({
-        merchant: serverMerchant,
+        merchant,
         merchantId: snapshot.merchantId,
         merchantDomain: snapshot.merchantDomain,
         merchantScopeKey: resolvedMerchantScopeKey,
       })
-      storeCartSnapshot(serverMerchantKey, serverMerchant, snapshot)
+      storeCartSnapshot(serverMerchantKey, merchant, snapshot)
       return exactLineConfirmed
     } catch (error) {
       updateStoredCart((current) =>

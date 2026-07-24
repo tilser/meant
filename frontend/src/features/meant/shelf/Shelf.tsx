@@ -8,6 +8,7 @@ import {
 } from 'react'
 
 import { BookmarkIcon, ChevronIcon, CollapseIcon, OpenIcon, SearchIcon } from '../shared/icons'
+import { merchantAdjacentDisplayLabel } from '../cart/merchantOrigin'
 import { CloseIcon } from '../shared/ui'
 import { useStoredState } from '../shared/storage'
 import { productImageUrl } from '../product/productSnapshots'
@@ -160,7 +161,7 @@ function ShelfCard({
                 </span>
                 <span className="mt-shelf-prod-info">
                   <span className="mt-mono mt-shelf-prod-brand">
-                    {product?.brand ?? snapshot.brand}
+                    {merchantAdjacentDisplayLabel(product?.brand ?? snapshot.brand)}
                   </span>
                   <span className="mt-shelf-prod-name">{title}</span>
                   <span className="mt-shelf-prod-price">

@@ -41,6 +41,7 @@ import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import com.meant.api.plugin.transport.registry.CapabilityRegistry;
 import java.net.InetAddress;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
@@ -194,6 +195,57 @@ class MerchantCartPluginDispatchServiceTest {
                 });
         assertThat(session.cartId()).isNull();
         server.verify();
+    }
+
+    @Test
+    void sanitizesTechnicalEndpointInRejectedCartError() throws Exception {
+        String endpoint = "https://weareallbirds.myshopify.com/api/ucp/mcp";
+        String merchantMessage = "Cart rejected by " + endpoint;
+        MerchantMcpToolClient client = mock(MerchantMcpToolClient.class);
+        when(client.callTool(any(MerchantCartProvider.class), eq("create_cart"), any(), any()))
+                .thenReturn(new MerchantMcpToolCallResult(
+                        endpoint,
+                        outOfStockCartResponse("gid://shopify/Cart/rejected", merchantMessage),
+                        null,
+                        NegotiatedCapabilities.none()
+                ));
+        MerchantCartPluginDispatchService service = new MerchantCartPluginDispatchService(
+                client,
+                registry(),
+                objectMapper,
+                List.of(),
+                new CartBindingMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry())
+        );
+        MerchantCartProvider provider = new MerchantCartProvider(
+                UUID.randomUUID(),
+                "allbirds.com",
+                "weareallbirds.myshopify.com",
+                endpoint,
+                null,
+                List.of(),
+                com.meant.api.module.merchant.service.dto.MerchantExecutionPolicy.unavailable(),
+                null,
+                Set.of("dev.ucp.shopping.cart")
+        );
+
+        assertThatThrownBy(() -> service.createCart(
+                provider,
+                new CreateCartRequest(
+                        List.of(new CartAddItem("gid://shopify/ProductVariant/sold-out", 1)),
+                        null,
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        List.of(),
+                        null
+                ),
+                UcpSession.start()
+        ))
+                .isInstanceOf(CartException.class)
+                .hasMessage("Cart rejected by allbirds.com")
+                .satisfies(exception -> assertThat(((CartException) exception).getSafeMessage())
+                        .doesNotContain("myshopify.com", "/api/ucp/mcp"));
     }
 
     @Test

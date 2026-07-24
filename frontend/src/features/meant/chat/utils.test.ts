@@ -107,6 +107,61 @@ describe('discover chat history storage', () => {
     expect(copied).not.toContain('Similar products:')
   })
 
+  test('copies cart lines with only the trusted merchant origin', () => {
+    const message: DiscoverChatMessage = {
+      id: 'cart-result',
+      role: 'ai',
+      blocks: [
+        {
+          type: 'cart',
+          lines: [
+            {
+              id: 'product-1',
+              merchant: 'sollys-online-grocery.myshopify.com',
+              merchantOrigin: 'nycfactory.com',
+              qty: 1,
+              productTitle: 'Trail shoe',
+            },
+          ],
+        },
+      ],
+    }
+
+    const copied = discoverChatMessageCopyText(message)
+
+    expect(copied).toContain('nycfactory.com')
+    expect(copied).not.toContain('sollys-online-grocery.myshopify.com')
+  })
+
+  test('fails closed for technical merchant labels in product, watch, and added copy', () => {
+    const technicalSeller = 'sollys-online-grocery.myshopify.com'
+    const product = historyProduct({
+      brand: technicalSeller,
+      offers: [{ merchant: technicalSeller, price: 129, delivery: 'Ships in two days' }],
+    })
+    const message: DiscoverChatMessage = {
+      id: 'poisoned-merchant-copy',
+      role: 'ai',
+      blocks: [
+        { type: 'products', products: [product] },
+        { type: 'watch', product, merchant: technicalSeller, price: 119 },
+        {
+          type: 'added',
+          product,
+          merchant: technicalSeller,
+          synced: true,
+          price: 119,
+          count: 1,
+        },
+      ],
+    }
+
+    const copied = discoverChatMessageCopyText(message)
+
+    expect(copied).toContain('Merchant')
+    expect(copied).not.toContain(technicalSeller)
+  })
+
   test('restores locally saved discover chat threads', () => {
     const thread = {
       ...createDiscoverChatThread(

@@ -3,6 +3,7 @@ import type {
   AgentArtifactTypeProfile,
   AgentRunEventEnvelopeProfile,
 } from '../../../lib/apiClient'
+import { sanitizeBuyerVisibleJson, sanitizeBuyerVisibleText } from './buyerVisibleText'
 
 export const AGENT_EVENT_SCHEMA_VERSION = 1 as const
 
@@ -198,7 +199,7 @@ function mapArtifact(value: unknown): AgentEventArtifact | null {
     type: value.type as AgentArtifactTypeProfile,
     ordinal: value.ordinal as number,
     stableKey: value.stableKey,
-    label: label.value,
+    label: label.value === null ? null : sanitizeBuyerVisibleText(label.value),
     canonicalProductKey: canonicalProductKey.value,
     offerKey: offerKey.value,
     inventoryItemId: inventoryItemId.value,
@@ -250,7 +251,14 @@ export function decodeAgentEventEnvelope(value: unknown): AgentEventDecodeResult
       if (typeof payload.text !== 'string') {
         return malformed('assistant.delta payload requires text', envelope)
       }
-      return { kind: 'event', event: { ...base, type: 'assistant.delta', text: payload.text } }
+      return {
+        kind: 'event',
+        event: {
+          ...base,
+          type: 'assistant.delta',
+          text: sanitizeBuyerVisibleText(payload.text),
+        },
+      }
     }
     case 'assistant.completed': {
       const messageId = nullableString(payload.messageId)
@@ -263,7 +271,7 @@ export function decodeAgentEventEnvelope(value: unknown): AgentEventDecodeResult
         event: {
           ...base,
           type: 'assistant.completed',
-          text: payload.text,
+          text: sanitizeBuyerVisibleText(payload.text),
           messageId: messageId.value,
           sequenceNumber: sequenceNumber.value,
         },
@@ -294,10 +302,10 @@ export function decodeAgentEventEnvelope(value: unknown): AgentEventDecodeResult
           type: base.type,
           modelToolCallId: payload.modelToolCallId,
           toolName: payload.toolName,
-          summary: summary.value,
-          resultJson: resultJson.value,
+          summary: summary.value === null ? null : sanitizeBuyerVisibleText(summary.value),
+          resultJson: sanitizeBuyerVisibleJson(resultJson.value),
           failureCode: failureCode.value,
-          text: text.value,
+          text: text.value === null ? null : sanitizeBuyerVisibleText(text.value),
         },
       }
     }
@@ -339,8 +347,8 @@ export function decodeAgentEventEnvelope(value: unknown): AgentEventDecodeResult
           artifact,
           modelToolCallId: modelToolCallId.value,
           toolName: toolName.value,
-          summary: summary.value,
-          resultJson: resultJson.value,
+          summary: summary.value === null ? null : sanitizeBuyerVisibleText(summary.value),
+          resultJson: sanitizeBuyerVisibleJson(resultJson.value),
         },
       }
     }
@@ -359,7 +367,12 @@ export function decodeAgentEventEnvelope(value: unknown): AgentEventDecodeResult
         event: {
           ...base,
           type: base.type,
-          text: text.value ?? summary.value,
+          text:
+            text.value !== null
+              ? sanitizeBuyerVisibleText(text.value)
+              : summary.value !== null
+                ? sanitizeBuyerVisibleText(summary.value)
+                : null,
           failureCode: failureCode.value,
         },
       }

@@ -375,7 +375,7 @@ describe('cart recovery helpers', () => {
     const cart: CartItem[] = [
       {
         id: 'cereal',
-        merchant: 'Whole Foods',
+        merchant: 'sollys-online-grocery.myshopify.com',
         merchantId: 'merchant-1',
         qty: 2,
         productVariantId: 'variant-1',
@@ -400,7 +400,7 @@ describe('cart recovery helpers', () => {
       cartId: 'new-cart',
       remoteCartId: 'remote-new',
       merchantId: 'merchant-1',
-      merchantDomain: 'whole.example',
+      merchantDomain: 'nycfactory.com',
       checkoutUrl: 'https://new.example/checkout',
       continueUrl: 'https://new.example/continue',
       totalAmount: '25.00',
@@ -422,8 +422,10 @@ describe('cart recovery helpers', () => {
 
     expect(merged[1]).toBe(cart[1])
     expect(merged[0]).toMatchObject({
+      merchant: 'sollys-online-grocery.myshopify.com',
+      merchantOrigin: 'nycfactory.com',
       merchantId: 'merchant-1',
-      merchantDomain: 'whole.example',
+      merchantDomain: 'nycfactory.com',
       cartId: 'new-cart',
       remoteCartId: 'remote-new',
       checkoutUrl: 'https://new.example/checkout',

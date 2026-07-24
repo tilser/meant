@@ -151,7 +151,7 @@ public class UserDiscoverConversationService {
     private UserDiscoverConversationResult result(UserDiscoverConversation conversation) {
         return new UserDiscoverConversationResult(
                 conversation.getId(),
-                conversation.getTitle(),
+                snapshotSanitizer.sanitizeTitle(conversation.getTitle()),
                 conversation.getCreatedAt(),
                 conversation.getUpdatedAt(),
                 snapshotSanitizer.sanitize(conversation.getPayload()),

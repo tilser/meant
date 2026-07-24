@@ -86,7 +86,7 @@ public class ShopifyMerchantUcpTransport {
         MerchantCartProvider provider = target.merchantIntegrationId() == null
                 ? target.merchantProvider()
                 : target.merchantProvider().forIntegration(target.merchantIntegrationId());
-        String domain = provider.domain();
+        String domain = provider.routingDomain();
         if (domain == null || domain.isBlank()) {
             throw CartException.binding(CartException.BindingFailure.MISSING_ROUTING,
                     "Shopify merchant route has no verified domain");
@@ -95,7 +95,7 @@ public class ShopifyMerchantUcpTransport {
         String profile = provider.profileMcpEndpoint() == null
                 ? null : validated(domain, provider.profileMcpEndpoint());
         return new MerchantCartProvider(
-                provider.merchantId(), domain, endpoint, profile, provider.integrations(),
+                provider.merchantId(), provider.merchantDomain(), domain, endpoint, profile, provider.integrations(),
                 provider.executionPolicy(), provider.profileCapturedAt(), provider.advertisedCapabilities());
     }
 

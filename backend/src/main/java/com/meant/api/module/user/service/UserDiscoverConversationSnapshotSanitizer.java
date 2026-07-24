@@ -1,5 +1,6 @@
 package com.meant.api.module.user.service;
 
+import com.meant.api.module.merchant.service.MerchantBuyerTextSanitizer;
 import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.service.dto.SanitizedUserDiscoverConversationSnapshot;
 import java.util.LinkedHashSet;
@@ -58,9 +59,13 @@ public class UserDiscoverConversationSnapshotSanitizer {
     public SanitizedUserDiscoverConversationSnapshot sanitize(String title, String threadJson) {
         SanitizedSnapshot snapshot = sanitized(threadJson);
         return new SanitizedUserDiscoverConversationSnapshot(
-                snapshot.similarityGeneratedTitle() ? SIMILAR_THREAD_TITLE : title,
+                snapshot.similarityGeneratedTitle() ? SIMILAR_THREAD_TITLE : sanitizeTitle(title),
                 snapshot.threadJson()
         );
+    }
+
+    public String sanitizeTitle(String title) {
+        return MerchantBuyerTextSanitizer.sanitize(title);
     }
 
     private SanitizedSnapshot sanitized(String threadJson) {
@@ -71,7 +76,7 @@ public class UserDiscoverConversationSnapshotSanitizer {
             }
             ObjectNode snapshot = objectMapper.createObjectNode();
             copyText(parsed, snapshot, "id");
-            copyText(parsed, snapshot, "title");
+            copyBuyerText(parsed, snapshot, "title");
             copyUuid(parsed, snapshot, "merchantId");
             copyUuid(parsed, snapshot, "qualificationId");
             copyText(parsed, snapshot, "focusProductId");
@@ -133,12 +138,12 @@ public class UserDiscoverConversationSnapshotSanitizer {
         ObjectNode durable = objectMapper.createObjectNode();
         copyText(message, durable, "id");
         durable.put("role", role);
-        copyText(message, durable, "text");
+        copyBuyerText(message, durable, "text");
         copyBoolean(message, durable, "pending");
-        copyText(message, durable, "pendingText");
-        copyStringArray(message, durable, "suggestedReplies");
-        copyText(message, durable, "query");
-        copyObject(message, durable, "productContext");
+        copyBuyerText(message, durable, "pendingText");
+        copyBuyerStringArray(message, durable, "suggestedReplies");
+        copyBuyerText(message, durable, "query");
+        copyBuyerObject(message, durable, "productContext");
         ArrayNode blocks = durableBlocks(message.get("blocks"));
         if (!blocks.isEmpty()) {
             durable.set("blocks", blocks);
@@ -238,7 +243,7 @@ public class UserDiscoverConversationSnapshotSanitizer {
             durable.put("type", type);
             durable.set("products", objectMapper.createArrayNode());
             copyText(block, durable, "productResultSetId");
-            copyText(block, durable, "query");
+            copyBuyerText(block, durable, "query");
             copyUuid(block, durable, "qualificationId");
             return durable;
         }
@@ -246,7 +251,7 @@ public class UserDiscoverConversationSnapshotSanitizer {
             ObjectNode reference = similarReference(block, null);
             return reference == null ? unavailableAttachmentMarker() : reference;
         }
-        return (ObjectNode) block.deepCopy();
+        return (ObjectNode) sanitizeBuyerVisibleJson(block);
     }
 
     private boolean hasProductResultReference(JsonNode block) {
@@ -395,7 +400,9 @@ public class UserDiscoverConversationSnapshotSanitizer {
             return null;
         }
         query = query.trim();
-        return query.isEmpty() || query.length() > MAX_ORIGINATING_QUERY_LENGTH ? null : query;
+        return query.isEmpty() || query.length() > MAX_ORIGINATING_QUERY_LENGTH
+                ? null
+                : MerchantBuyerTextSanitizer.sanitize(query);
     }
 
     private String firstUuid(JsonNode... candidates) {
@@ -479,10 +486,36 @@ public class UserDiscoverConversationSnapshotSanitizer {
         return marker;
     }
 
+    private JsonNode sanitizeBuyerVisibleJson(JsonNode value) {
+        if (value.isTextual()) {
+            return objectMapper.getNodeFactory()
+                    .textNode(MerchantBuyerTextSanitizer.sanitize(value.asText()));
+        }
+        if (value.isObject()) {
+            ObjectNode sanitized = objectMapper.createObjectNode();
+            value.properties().forEach(entry ->
+                    sanitized.set(entry.getKey(), sanitizeBuyerVisibleJson(entry.getValue())));
+            return sanitized;
+        }
+        if (value.isArray()) {
+            ArrayNode sanitized = objectMapper.createArrayNode();
+            value.forEach(item -> sanitized.add(sanitizeBuyerVisibleJson(item)));
+            return sanitized;
+        }
+        return value.deepCopy();
+    }
+
     private void copyText(JsonNode source, ObjectNode target, String field) {
         JsonNode value = source.get(field);
         if (value != null && value.isTextual()) {
             target.put(field, value.asText());
+        }
+    }
+
+    private void copyBuyerText(JsonNode source, ObjectNode target, String field) {
+        JsonNode value = source.get(field);
+        if (value != null && value.isTextual()) {
+            target.put(field, MerchantBuyerTextSanitizer.sanitize(value.asText()));
         }
     }
 
@@ -507,6 +540,13 @@ public class UserDiscoverConversationSnapshotSanitizer {
         }
     }
 
+    private void copyBuyerObject(JsonNode source, ObjectNode target, String field) {
+        JsonNode value = source.get(field);
+        if (value != null && value.isObject()) {
+            target.set(field, sanitizeBuyerVisibleJson(value));
+        }
+    }
+
     private void copyNumber(JsonNode source, ObjectNode target, String field) {
         JsonNode value = source.get(field);
         if (value != null && value.isNumber()) {
@@ -523,6 +563,20 @@ public class UserDiscoverConversationSnapshotSanitizer {
         for (JsonNode value : values) {
             if (value.isTextual()) {
                 strings.add(value.asText());
+            }
+        }
+        target.set(field, strings);
+    }
+
+    private void copyBuyerStringArray(JsonNode source, ObjectNode target, String field) {
+        JsonNode values = source.get(field);
+        if (values == null || !values.isArray()) {
+            return;
+        }
+        ArrayNode strings = objectMapper.createArrayNode();
+        for (JsonNode value : values) {
+            if (value.isTextual()) {
+                strings.add(MerchantBuyerTextSanitizer.sanitize(value.asText()));
             }
         }
         target.set(field, strings);

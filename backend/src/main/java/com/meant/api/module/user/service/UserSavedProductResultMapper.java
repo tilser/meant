@@ -21,11 +21,13 @@ import com.meant.api.module.catalog.service.dto.RehydratedCommercialFacts;
 import com.meant.api.module.catalog.service.dto.RehydratedProductDetails;
 import com.meant.api.module.catalog.service.dto.ResultSourceType;
 import com.meant.api.module.catalog.service.dto.SellingPlanIdentity;
+import com.meant.api.module.merchant.service.MerchantPresentationOriginService;
 import java.math.BigDecimal;
 import java.util.Currency;
 import java.util.List;
 import java.util.Objects;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Autowired;
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
@@ -42,13 +44,24 @@ public class UserSavedProductResultMapper {
 
     private final ObjectMapper objectMapper;
     private final CatalogPurchaseReferencePolicyResolver purchaseReferencePolicyResolver;
+    private final MerchantPresentationOriginService merchantPresentationOriginService;
+
+    @Autowired
+    public UserSavedProductResultMapper(
+            ObjectMapper objectMapper,
+            CatalogPurchaseReferencePolicyResolver purchaseReferencePolicyResolver,
+            MerchantPresentationOriginService merchantPresentationOriginService
+    ) {
+        this.objectMapper = objectMapper;
+        this.purchaseReferencePolicyResolver = purchaseReferencePolicyResolver;
+        this.merchantPresentationOriginService = merchantPresentationOriginService;
+    }
 
     public UserSavedProductResultMapper(
             ObjectMapper objectMapper,
             CatalogPurchaseReferencePolicyResolver purchaseReferencePolicyResolver
     ) {
-        this.objectMapper = objectMapper;
-        this.purchaseReferencePolicyResolver = purchaseReferencePolicyResolver;
+        this(objectMapper, purchaseReferencePolicyResolver, null);
     }
 
     public CatalogProductReference reference(UserSavedProduct entity) {
@@ -126,6 +139,23 @@ public class UserSavedProductResultMapper {
         MoneyProjection price = facts == null ? null : money(facts.price());
         boolean authoritative = facts != null;
         CatalogProductReference resolved = facts == null ? null : rehydrated.resolvedReference();
+        CatalogProductReference presentationReference = resolved == null ? reference(entity) : resolved;
+        String merchantOrigin = merchantPresentationOriginService == null
+                ? null
+                : merchantPresentationOriginService.resolve(presentationReference);
+        List<String> technicalAliases = java.util.stream.Stream.of(
+                        entity.getExternalMerchantDomain(),
+                        resolved == null ? null : resolved.externalMerchantDomain()
+                )
+                .filter(value -> value != null && !value.isBlank())
+                .distinct()
+                .toList();
+        RehydratedProductDetails buyerDetails = details == null
+                ? null
+                : details.withMerchantPresentation(
+                        merchantOrigin,
+                        technicalAliases
+                );
         Boolean available = availability(facts);
         List<UserSavedProductResult.Offer> offers = facts == null ? List.of() : List.of(
                 new UserSavedProductResult.Offer(
@@ -138,7 +168,7 @@ public class UserSavedProductResultMapper {
                         price == null ? null : price.currency(),
                         null,
                         resolved.localMerchantId() == null ? null : resolved.localMerchantId().toString(),
-                        resolved.externalMerchantDomain(),
+                        merchantOrigin,
                         resolved.externalVariantReference() == null
                                 ? null
                                 : resolved.externalVariantReference().value(),
@@ -174,9 +204,11 @@ public class UserSavedProductResultMapper {
                 marketCountry,
                 marketCountry != null,
                 authoritative,
-                authoritative ? details : null,
+                authoritative ? buyerDetails : null,
                 entity.getCreatedAt(),
-                entity.getUpdatedAt()
+                entity.getUpdatedAt(),
+                merchantOrigin,
+                technicalAliases
         );
     }
 
@@ -264,8 +296,7 @@ public class UserSavedProductResultMapper {
         if (factMerchantName != null) {
             return factMerchantName;
         }
-        String merchantDomain = displayText(reference.externalMerchantDomain());
-        return merchantDomain == null ? "Merchant" : merchantDomain;
+        return "Merchant";
     }
 
     private String displayText(String value) {

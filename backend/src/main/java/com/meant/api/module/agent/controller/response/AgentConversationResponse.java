@@ -2,6 +2,7 @@ package com.meant.api.module.agent.controller.response;
 
 import com.meant.api.module.agent.constant.AgentConversationStatus;
 import com.meant.api.module.agent.service.dto.AgentConversationResult;
+import com.meant.api.module.merchant.service.MerchantBuyerTextSanitizer;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.util.List;
@@ -32,9 +33,9 @@ public record AgentConversationResponse(
     public static AgentConversationResponse from(AgentConversationResult result) {
         return new AgentConversationResponse(
                 result.conversationId(),
-                result.title(),
+                MerchantBuyerTextSanitizer.sanitize(result.title()),
                 result.status(),
-                result.rollingSummary(),
+                MerchantBuyerTextSanitizer.sanitize(result.rollingSummary()),
                 result.summaryVersion(),
                 result.merchantId(),
                 result.activeMissionId(),

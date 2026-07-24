@@ -21,6 +21,7 @@ import com.meant.api.module.catalog.service.dto.RehydratedProductDetails;
 import com.meant.api.module.catalog.service.dto.ResultProvenance;
 import com.meant.api.module.catalog.service.dto.ResultSourceReference;
 import com.meant.api.module.catalog.service.support.OfferIdentityStrategy;
+import com.meant.api.module.merchant.service.MerchantPresentationOriginService;
 import com.meant.api.module.user.exception.SelectedOfferResolutionException;
 import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
@@ -37,14 +38,13 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
 
 /** Resolves one current option selection against a user-owned live or durable offer anchor. */
 @Service
 @Validated
-@RequiredArgsConstructor
 public class UserProductVariantSelectionService {
     private final UserCanonicalProductSessionStore sessionStore;
     private final UserSavedProductOfferResolutionService savedProductOfferResolutionService;
@@ -52,6 +52,45 @@ public class UserProductVariantSelectionService {
     private final UserSettingsService userSettingsService;
     private final CatalogPurchaseReferencePolicyResolver purchaseReferencePolicyResolver;
     private final List<OfferIdentityStrategy> offerIdentityStrategies;
+    private final MerchantPresentationOriginService merchantPresentationOriginService;
+
+    @Autowired
+    public UserProductVariantSelectionService(
+            UserCanonicalProductSessionStore sessionStore,
+            UserSavedProductOfferResolutionService savedProductOfferResolutionService,
+            CatalogProductDetailService detailService,
+            UserSettingsService userSettingsService,
+            CatalogPurchaseReferencePolicyResolver purchaseReferencePolicyResolver,
+            List<OfferIdentityStrategy> offerIdentityStrategies,
+            MerchantPresentationOriginService merchantPresentationOriginService
+    ) {
+        this.sessionStore = sessionStore;
+        this.savedProductOfferResolutionService = savedProductOfferResolutionService;
+        this.detailService = detailService;
+        this.userSettingsService = userSettingsService;
+        this.purchaseReferencePolicyResolver = purchaseReferencePolicyResolver;
+        this.offerIdentityStrategies = offerIdentityStrategies;
+        this.merchantPresentationOriginService = merchantPresentationOriginService;
+    }
+
+    public UserProductVariantSelectionService(
+            UserCanonicalProductSessionStore sessionStore,
+            UserSavedProductOfferResolutionService savedProductOfferResolutionService,
+            CatalogProductDetailService detailService,
+            UserSettingsService userSettingsService,
+            CatalogPurchaseReferencePolicyResolver purchaseReferencePolicyResolver,
+            List<OfferIdentityStrategy> offerIdentityStrategies
+    ) {
+        this(
+                sessionStore,
+                savedProductOfferResolutionService,
+                detailService,
+                userSettingsService,
+                purchaseReferencePolicyResolver,
+                offerIdentityStrategies,
+                null
+        );
+    }
 
     public UserProductVariantSelectionResult select(
             @NotNull @Valid EnsureUserProfileCommand profileCommand,
@@ -78,14 +117,26 @@ public class UserProductVariantSelectionService {
         }
 
         CatalogProductReference resolvedReference = detail.rehydration().resolvedReference();
-        Offer exactOffer = exactOffer(anchor, detail);
+        String merchantOrigin = merchantPresentationOriginService == null
+                ? anchorMerchantOrigin(anchor, resolvedReference)
+                : merchantPresentationOriginService.resolve(resolvedReference);
+        if (merchantOrigin == null) {
+            merchantOrigin = anchorMerchantOrigin(anchor, resolvedReference);
+        }
+        RehydratedProductDetails buyerDetails = detail.details().withMerchantPresentation(
+                merchantOrigin,
+                resolvedReference == null || resolvedReference.externalMerchantDomain() == null
+                        ? List.of()
+                        : List.of(resolvedReference.externalMerchantDomain())
+        );
+        Offer exactOffer = exactOffer(anchor, detail, merchantOrigin);
         boolean purchaseEligible = exactOffer != null
                 && purchaseReferencePolicyResolver.allows(resolvedReference);
         if (purchaseEligible) {
             sessionStore.rememberOffer(command.userId(), anchor.canonicalProductKey(), exactOffer);
         }
         return new UserProductVariantSelectionResult(
-                detail.details(),
+                buyerDetails,
                 purchaseEligible ? exactOffer : null,
                 purchaseEligible && cartable(exactOffer)
         );
@@ -128,7 +179,11 @@ public class UserProductVariantSelectionService {
         );
     }
 
-    private Offer exactOffer(Anchor anchor, CatalogProductDetailResult detail) {
+    private Offer exactOffer(
+            Anchor anchor,
+            CatalogProductDetailResult detail,
+            String merchantOrigin
+    ) {
         if (detail.selection() == null || !detail.selection().uniqueCompleteExactMatch()) {
             return null;
         }
@@ -182,14 +237,15 @@ public class UserProductVariantSelectionService {
                 facts.fulfillment(),
                 null,
                 anchor.offer() == null ? OfferRankingEvidence.unknown() : anchor.offer().rankingEvidence(),
-                List.of(provenance(resolved, facts, anchor.offer()))
+                List.of(provenance(resolved, facts, anchor.offer(), merchantOrigin))
         );
     }
 
     private ResultProvenance provenance(
             CatalogProductReference reference,
             RehydratedCommercialFacts facts,
-            Offer anchorOffer
+            Offer anchorOffer,
+            String merchantOrigin
     ) {
         ResultSourceReference sourceReference = anchorOffer == null
                 ? null
@@ -214,8 +270,21 @@ public class UserProductVariantSelectionService {
                 reference.externalProductReference(),
                 reference.externalVariantReference(),
                 facts.freshness(),
-                sourceReference
+                sourceReference,
+                merchantOrigin
         );
+    }
+
+    private String anchorMerchantOrigin(Anchor anchor, CatalogProductReference reference) {
+        if (anchor.offer() == null || reference == null) {
+            return null;
+        }
+        return anchor.offer().provenance().stream()
+                .filter(value -> value.discoverySource().equals(reference.discoverySource()))
+                .map(ResultProvenance::merchantOrigin)
+                .filter(value -> value != null && !value.isBlank())
+                .findFirst()
+                .orElse(null);
     }
 
     private OfferMerchantScope merchantScope(CatalogProductReference reference) {

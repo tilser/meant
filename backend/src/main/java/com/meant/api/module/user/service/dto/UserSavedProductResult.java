@@ -1,5 +1,6 @@
 package com.meant.api.module.user.service.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.meant.api.module.catalog.service.dto.RehydratedProductDetails;
 import java.time.Instant;
 import java.util.List;
@@ -34,7 +35,9 @@ public record UserSavedProductResult(
         boolean commercialFactsAuthoritative,
         RehydratedProductDetails details,
         Instant createdAt,
-        Instant updatedAt
+        Instant updatedAt,
+        String merchantOrigin,
+        @JsonIgnore List<String> technicalEndpointAliases
 ) {
     public UserSavedProductResult {
         satisfies = satisfies == null ? List.of() : List.copyOf(satisfies);
@@ -43,6 +46,9 @@ public record UserSavedProductResult(
         cons = cons == null ? List.of() : List.copyOf(cons);
         offers = offers == null ? List.of() : List.copyOf(offers);
         provides = provides == null ? List.of() : List.copyOf(provides);
+        technicalEndpointAliases = technicalEndpointAliases == null
+                ? List.of()
+                : List.copyOf(technicalEndpointAliases);
     }
 
     public record Review(Double score, Integer count, String insight) {
@@ -56,7 +62,7 @@ public record UserSavedProductResult(
             String priceCurrency,
             String delivery,
             String merchantId,
-            String merchantDomain,
+            String merchantOrigin,
             String productVariantId,
             String variantTitle,
             Boolean available

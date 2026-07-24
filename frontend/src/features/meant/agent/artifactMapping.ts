@@ -16,6 +16,7 @@ import type {
 } from '../chat/types'
 import { productFromCanonical } from '../product/groupedProductMapping'
 import type { AppliedCartCode, MerchantCartStateReplacement } from '../cart/types'
+import { merchantAdjacentDisplayLabel, merchantDisplayOrigin } from '../cart/merchantOrigin'
 import { cartSnapshotFromProfile } from '../cart/utils'
 import type {
   CartDeliveryGroup,
@@ -25,6 +26,7 @@ import type {
   UserLocation,
 } from '../types'
 import { cartMerchantKey, minorUnitsToMajor } from '../utils'
+import { sanitizeBuyerVisibleText, sanitizeBuyerVisibleValue } from './buyerVisibleText'
 
 type JsonRecord = Record<string, unknown>
 
@@ -43,6 +45,17 @@ function parseRecord(payloadJson: string): JsonRecord | null {
 
 function stringValue(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value : null
+}
+
+function buyerVisibleTextValue(value: unknown): string | null {
+  const text = stringValue(value)
+  return text === null ? null : sanitizeBuyerVisibleText(text)
+}
+
+function buyerVisibleUrlValue(value: unknown): string | null {
+  const url = stringValue(value)
+  if (url === null) return null
+  return sanitizeBuyerVisibleText(url) === url ? url : null
 }
 
 function numberValue(value: unknown): number | null {
@@ -73,7 +86,7 @@ function parsedAppliedCodes(value: unknown, fallbackCurrency: string | null): Ap
     const type = stringValue(item.type) === 'GIFT_CARD' ? 'GIFT_CARD' : 'DISCOUNT'
     const displayCode = stringValue(item.code)?.trim() || null
     const code = type === 'GIFT_CARD' && looksLikeGiftCardSuffix(displayCode) ? null : displayCode
-    const label = stringValue(item.label)
+    const label = buyerVisibleTextValue(item.label)
     const amount = decimalValue(item.amount)
     if (!displayCode && !label && amount === null) return []
     return [
@@ -100,13 +113,13 @@ function parsedDeliveryOption(value: unknown): CartDeliveryOption | null {
     : null
   return {
     handle: stringValue(value.handle),
-    title: stringValue(value.title),
-    description: stringValue(value.description),
+    title: buyerVisibleTextValue(value.title),
+    description: buyerVisibleTextValue(value.description),
     code: stringValue(value.code),
     cost,
     deliveryMethodType: stringValue(value.deliveryMethodType),
-    deliveryEstimate: stringValue(value.deliveryEstimate),
-    estimatedDeliveryTime: stringValue(value.estimatedDeliveryTime),
+    deliveryEstimate: buyerVisibleTextValue(value.deliveryEstimate),
+    estimatedDeliveryTime: buyerVisibleTextValue(value.estimatedDeliveryTime),
     estimatedDeliveryAt: stringValue(value.estimatedDeliveryAt),
     selected: typeof value.selected === 'boolean' ? value.selected : null,
   }
@@ -144,7 +157,7 @@ function looksCanonical(value: JsonRecord): boolean {
 
 /** Keeps agent prose inside the established plain-text chat treatment, including old messages. */
 export function plainAgentText(value: string): string {
-  return value
+  return sanitizeBuyerVisibleText(value)
     .replace(/\[([^\]]+)]\([^)]+\)/g, '$1')
     .replace(/(^|\n)\s{0,3}#{1,6}\s+/g, '$1')
     .replace(/\*\*([^*\n]+)\*\*/g, '$1')
@@ -488,6 +501,7 @@ function normalizedLegacyCanonicalProduct(
         key,
         identity,
         merchantName: value.merchantName,
+        merchantOrigin: value.merchantOrigin,
         variantTitle: value.variantTitle,
         price: value.price,
         listPrice: value.listPrice,
@@ -545,6 +559,83 @@ function normalizedLegacyCanonicalProduct(
   }
 }
 
+function buyerSafeProduct(product: Product): Product {
+  return {
+    ...product,
+    name: sanitizeBuyerVisibleText(product.name),
+    brand: sanitizeBuyerVisibleText(product.brand),
+    category: sanitizeBuyerVisibleText(product.category),
+    imageUrl: buyerVisibleUrlValue(product.imageUrl),
+    productUrl: buyerVisibleUrlValue(product.productUrl),
+    note: sanitizeBuyerVisibleText(product.note),
+    pros: product.pros.map((value) => sanitizeBuyerVisibleText(value)),
+    cons: product.cons.map((value) => sanitizeBuyerVisibleText(value)),
+    review: {
+      ...product.review,
+      insight: sanitizeBuyerVisibleText(product.review.insight),
+    },
+    media: product.media?.flatMap((item) => {
+      const url = buyerVisibleUrlValue(item.url)
+      return url
+        ? [
+            {
+              ...item,
+              url,
+              altText:
+                item.altText === null || item.altText === undefined
+                  ? item.altText
+                  : sanitizeBuyerVisibleText(item.altText),
+            },
+          ]
+        : []
+    }),
+    catalogCategories: product.catalogCategories?.map((item) => ({
+      ...item,
+      value: sanitizeBuyerVisibleText(item.value),
+      taxonomy:
+        item.taxonomy === null || item.taxonomy === undefined
+          ? item.taxonomy
+          : sanitizeBuyerVisibleText(item.taxonomy),
+    })),
+    certifications: product.certifications?.map((value) => sanitizeBuyerVisibleText(value)),
+    materials: product.materials?.map((value) => sanitizeBuyerVisibleText(value)),
+    collections: product.collections?.map((value) => sanitizeBuyerVisibleText(value)),
+    catalogAttributes: product.catalogAttributes?.map((item) => ({
+      name: sanitizeBuyerVisibleText(item.name),
+      value: sanitizeBuyerVisibleText(item.value),
+    })),
+    detailError:
+      product.detailError === null || product.detailError === undefined
+        ? product.detailError
+        : sanitizeBuyerVisibleText(product.detailError),
+    detailDescription:
+      product.detailDescription === null || product.detailDescription === undefined
+        ? product.detailDescription
+        : sanitizeBuyerVisibleText(product.detailDescription),
+    detailOptions: product.detailOptions?.map((option) => ({
+      name: sanitizeBuyerVisibleText(option.name),
+      values: option.values.map((value) => sanitizeBuyerVisibleText(value)),
+    })),
+    selectedOptions: product.selectedOptions?.map((option) => ({
+      name: sanitizeBuyerVisibleText(option.name),
+      value: sanitizeBuyerVisibleText(option.value),
+    })),
+    inventoryItemName:
+      product.inventoryItemName === null || product.inventoryItemName === undefined
+        ? product.inventoryItemName
+        : sanitizeBuyerVisibleText(product.inventoryItemName),
+    offers: product.offers.map((offer) => ({
+      ...offer,
+      merchant: sanitizeBuyerVisibleText(offer.merchant),
+      delivery: sanitizeBuyerVisibleText(offer.delivery),
+      variantTitle:
+        offer.variantTitle === null || offer.variantTitle === undefined
+          ? offer.variantTitle
+          : sanitizeBuyerVisibleText(offer.variantTitle),
+    })),
+  }
+}
+
 /** Maps the durable PRODUCT artifact, tolerating detail tools that wrap it in `{ product }`. */
 export function productFromAgentArtifact(
   artifact: AgentArtifactProfile,
@@ -565,12 +656,12 @@ export function productFromAgentArtifact(
     return null
   }
   try {
-    return productFromCanonical(candidate as unknown as CanonicalProductProfile)
+    return buyerSafeProduct(productFromCanonical(candidate as unknown as CanonicalProductProfile))
   } catch {
     const legacy = normalizedLegacyCanonicalProduct(payload, artifact, siblingArtifacts)
     if (!legacy) return null
     try {
-      return productFromCanonical(legacy as unknown as CanonicalProductProfile)
+      return buyerSafeProduct(productFromCanonical(legacy as unknown as CanonicalProductProfile))
     } catch {
       return null
     }
@@ -586,7 +677,10 @@ function savedProductFromArtifact(artifact: AgentArtifactProfile): Product | nul
   }
   const offerValues = Array.isArray(value.offers) ? value.offers.filter(isRecord) : []
   const offers = offerValues.flatMap((offer) => {
-    const merchant = stringValue(offer.merchant)
+    const merchantOrigin = stringValue(offer.merchantOrigin)
+    const merchant = merchantOrigin
+      ? merchantDisplayOrigin(merchantOrigin)
+      : merchantAdjacentDisplayLabel(stringValue(offer.merchant))
     const price = numberValue(offer.price)
     if (!merchant || price === null) {
       return []
@@ -600,7 +694,7 @@ function savedProductFromArtifact(artifact: AgentArtifactProfile): Product | nul
         priceCurrency: stringValue(offer.priceCurrency),
         delivery: stringValue(offer.delivery) ?? 'Delivery calculated by merchant',
         merchantId: stringValue(offer.merchantId),
-        merchantDomain: stringValue(offer.merchantDomain),
+        merchantDomain: merchantOrigin,
         productVariantId: stringValue(offer.productVariantId),
         variantTitle: stringValue(offer.variantTitle),
         available: typeof offer.available === 'boolean' ? offer.available : null,
@@ -608,11 +702,11 @@ function savedProductFromArtifact(artifact: AgentArtifactProfile): Product | nul
     ]
   })
   const review = isRecord(value.review) ? value.review : null
-  return {
+  return buyerSafeProduct({
     id,
     productHash: stringValue(value.productHash),
     name,
-    brand: stringValue(value.brand) ?? 'Merchant',
+    brand: merchantAdjacentDisplayLabel(stringValue(value.brand)),
     category: stringValue(value.category) ?? 'Product',
     tone: stringValue(value.tone) ?? '#e7ebef',
     imageUrl: stringValue(value.imageUrl),
@@ -645,7 +739,7 @@ function savedProductFromArtifact(artifact: AgentArtifactProfile): Product | nul
       insight: stringValue(review?.insight) ?? 'Review data varies by merchant.',
     },
     offers,
-  }
+  })
 }
 
 export interface AgentProductSnapshot {
@@ -955,6 +1049,7 @@ interface ParsedCartArtifact {
   merchantKey: string
   merchantId: string | null
   merchantDomain: string | null
+  merchantOrigin: string | null
   provider: string | null
   merchantIntegrationId: string | null
   externalMerchantId: string | null
@@ -972,13 +1067,11 @@ interface ParsedCartArtifact {
 function parsedCartArtifact(artifact: AgentArtifactProfile): ParsedCartArtifact | null {
   if (artifact.type !== 'CART' || !artifact.cartId) return null
   const value = parseRecord(artifact.payloadJson)
-  const merchant =
-    stringValue(value?.merchantDomain) ??
-    stringValue(value?.provider) ??
-    artifact.label ??
-    'Merchant'
+  const merchantLabel = stringValue(value?.provider) ?? artifact.label
   const merchantId = stringValue(value?.merchantId)
-  const merchantDomain = stringValue(value?.merchantDomain)
+  const merchantOrigin = stringValue(value?.merchantOrigin)?.trim() || null
+  const merchantDomain = merchantOrigin
+  const merchant = merchantAdjacentDisplayLabel(merchantLabel, merchantOrigin)
   const routingScopeKey = stringValue(value?.routingScopeKey)
   const currency = stringValue(value?.currency)
   return {
@@ -992,6 +1085,7 @@ function parsedCartArtifact(artifact: AgentArtifactProfile): ParsedCartArtifact 
     }),
     merchantId,
     merchantDomain,
+    merchantOrigin,
     provider: stringValue(value?.provider),
     merchantIntegrationId: stringValue(value?.merchantIntegrationId),
     externalMerchantId: stringValue(value?.externalMerchantId),
@@ -1036,18 +1130,18 @@ function cartLineProductFromArtifact(
   const price = decimalValue(unitPriceAmount)
   const currency = stringValue(line.currency) ?? cart?.currency ?? null
   const provider = stringValue(line.provider) ?? cart?.provider ?? null
-  const merchant = cart?.merchant ?? provider ?? 'Merchant'
+  const merchantDisplay = merchantDisplayOrigin(cart?.merchantOrigin)
   const merchantIntegrationId =
     stringValue(line.merchantIntegrationId) ?? cart?.merchantIntegrationId ?? null
   const externalMerchantId =
     stringValue(line.externalMerchantId) ?? cart?.externalMerchantId ?? null
 
-  return {
+  return buyerSafeProduct({
     id: stringValue(line.productId) ?? artifact.canonicalProductKey ?? `agent-cart:${offerKey}`,
     merchantId: cart?.merchantId ?? null,
     merchantDomain: cart?.merchantDomain ?? null,
     name,
-    brand: merchant,
+    brand: merchantDisplay,
     category: 'Product',
     tone: '#e7ebef',
     imageUrl: stringValue(line.imageUrl),
@@ -1073,7 +1167,7 @@ function cartLineProductFromArtifact(
     offers: [
       {
         offerKey,
-        merchant,
+        merchant: merchantDisplay,
         price: price ?? 0,
         priceMinorUnits: null,
         priceCurrency: currency,
@@ -1089,7 +1183,7 @@ function cartLineProductFromArtifact(
         available: null,
       },
     ],
-  }
+  })
 }
 
 /** Reconstructs immutable cart lines from CART/CART_LINE artifacts for inline history rendering. */
@@ -1135,8 +1229,9 @@ export function cartItemsFromAgentArtifacts(
     return [
       {
         id: product.id,
-        merchant: cart?.merchant ?? 'Merchant',
+        merchant: sanitizeBuyerVisibleText(cart?.merchant ?? 'Merchant'),
         qty: Math.max(1, quantity),
+        merchantOrigin: cart?.merchantOrigin,
         merchantId: cart?.merchantId,
         merchantDomain: cart?.merchantDomain,
         provider: stringValue(line?.provider) ?? cart?.provider,
@@ -1157,8 +1252,8 @@ export function cartItemsFromAgentArtifacts(
         cartSubtotalAmount: cart?.subtotalAmount,
         cartCurrency: cart?.currency,
         deliveryGroups: cart?.deliveryGroups ?? [],
-        productTitle: stringValue(line?.productTitle) ?? product.name,
-        variantTitle: stringValue(line?.variantTitle),
+        productTitle: buyerVisibleTextValue(line?.productTitle) ?? product.name,
+        variantTitle: buyerVisibleTextValue(line?.variantTitle),
         unitPriceAmount:
           unitAmount(line?.subtotalAmount, Math.max(1, quantity)) ??
           unitAmount(line?.totalAmount, Math.max(1, quantity)),
@@ -1198,7 +1293,8 @@ export function cartStateReplacementsFromAgentArtifacts(
         routingScopeKey: cart.routingScopeKey,
         snapshot: {
           merchantKey: cart.merchantKey,
-          merchant: cart.merchant,
+          merchant: sanitizeBuyerVisibleText(cart.merchant),
+          merchantOrigin: cart.merchantOrigin,
           cartId: cart.cartId,
           remoteCartId: cart.remoteCartId,
           checkoutUrl: cart.checkoutUrl,
@@ -1248,11 +1344,9 @@ export function cartStateReplacementFromCartProfile(
   candidates: readonly CartItem[],
   fallback: MerchantCartStateReplacement,
 ): MerchantCartStateReplacement | null {
-  const merchant =
-    profile.merchantDomain?.trim() ||
-    profile.provider?.trim() ||
-    fallback.snapshot.merchant ||
-    'Merchant'
+  const merchant = fallback.snapshot.merchant || profile.provider?.trim() || 'Merchant'
+  const merchantOrigin =
+    profile.merchantDomain?.trim() || fallback.snapshot.merchantOrigin?.trim() || null
   const routingScopeKey = profile.routingScopeKey ?? fallback.routingScopeKey
   const merchantKey = cartMerchantKey({
     merchant,
@@ -1285,6 +1379,7 @@ export function cartStateReplacementFromCartProfile(
         id: productId,
         merchant,
         qty: quantity,
+        merchantOrigin: merchantOrigin ?? candidate?.merchantOrigin,
         merchantId: profile.merchantId ?? candidate?.merchantId,
         merchantDomain: profile.merchantDomain ?? candidate?.merchantDomain,
         provider: line.provider ?? profile.provider ?? candidate?.provider,
@@ -1344,14 +1439,14 @@ function discountCodes(artifact: AgentArtifactProfile): FoundDiscountCode[] {
     return [
       {
         code,
-        title: stringValue(item.title),
-        description: stringValue(item.description),
-        sourceUrl: stringValue(item.sourceUrl),
+        title: buyerVisibleTextValue(item.title),
+        description: buyerVisibleTextValue(item.description),
+        sourceUrl: buyerVisibleUrlValue(item.sourceUrl),
         confidence: numberValue(item.confidence),
-        restrictions: stringValue(item.restrictions),
+        restrictions: buyerVisibleTextValue(item.restrictions),
         validUntil: stringValue(item.validUntil),
         expiresAt: stringValue(item.expiresAt),
-        validationMessage: stringValue(item.validationMessage),
+        validationMessage: buyerVisibleTextValue(item.validationMessage),
       },
     ]
   })
@@ -1377,12 +1472,15 @@ function productReviewsSnapshot(artifact: AgentArtifactProfile): ProductReviewsP
   ) {
     return undefined
   }
-  return { ...value, merchantId: merchantId ?? '' } as unknown as ProductReviewsProfile
+  return sanitizeBuyerVisibleValue({
+    ...value,
+    merchantId: merchantId ?? '',
+  }) as ProductReviewsProfile
 }
 
 function missionBlock(artifact: AgentArtifactProfile): DiscoverChatBlock | null {
   const value = parseRecord(artifact.payloadJson)
-  const goal = stringValue(value?.goal) ?? artifact.label
+  const goal = buyerVisibleTextValue(value?.goal) ?? buyerVisibleTextValue(artifact.label)
   const status = stringValue(value?.status)
   if (!value || !goal || !status) return null
   const coverageByRequirement = new Map<string, JsonRecord>()
@@ -1395,7 +1493,7 @@ function missionBlock(artifact: AgentArtifactProfile): DiscoverChatBlock | null 
   const requirements = Array.isArray(value.requirements)
     ? value.requirements.filter(isRecord).flatMap((item) => {
         const id = stringValue(item.id)
-        const label = stringValue(item.label)
+        const label = buyerVisibleTextValue(item.label)
         if (!id || !label) return []
         const coverage = coverageByRequirement.get(id)
         const rawState = stringValue(coverage?.state)
@@ -1425,7 +1523,7 @@ function missionBlock(artifact: AgentArtifactProfile): DiscoverChatBlock | null 
     : []
   const assumptions = Array.isArray(value.assumptions)
     ? value.assumptions.filter(isRecord).flatMap((item) => {
-        const assumption = stringValue(item.value)
+        const assumption = buyerVisibleTextValue(item.value)
         return assumption ? [assumption] : []
       })
     : []
@@ -1567,7 +1665,9 @@ function productClarificationReplies(
       const product = jsonObject(candidate)
       const ordinal = product?.visibleOrdinal
       const title =
-        typeof product?.title === 'string' ? product.title.replace(/\s+/g, ' ').trim() : ''
+        typeof product?.title === 'string'
+          ? plainAgentText(product.title).replace(/\s+/g, ' ').trim()
+          : ''
       if (
         typeof ordinal !== 'number' ||
         !Number.isInteger(ordinal) ||
@@ -1608,7 +1708,7 @@ export function discoverMessagesFromAgentConversation(
   const userQueryByRun = new Map<string, string>()
   for (const message of conversation.messages) {
     if (message.role === 'USER' && message.runId && message.textContent) {
-      userQueryByRun.set(message.runId, message.textContent)
+      userQueryByRun.set(message.runId, sanitizeBuyerVisibleText(message.textContent))
     }
     if (message.role === 'ASSISTANT' && message.runId) {
       artifactHostMessageByRun.set(message.runId, message.messageId)
@@ -1656,7 +1756,7 @@ export function discoverMessagesFromAgentConversation(
       messages.push({
         id: message.messageId,
         role: 'you',
-        text,
+        text: sanitizeBuyerVisibleText(text),
       })
       const blocks = blocksForAgentMessage(
         message,

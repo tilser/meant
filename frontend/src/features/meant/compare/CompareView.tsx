@@ -1,6 +1,7 @@
 import { useState } from 'react'
 
 import { productCuratedFields } from '../product/productCuration'
+import { merchantAdjacentDisplayLabel } from '../cart/merchantOrigin'
 import { MatchRing } from '../shared/icons'
 import { CloseIcon, ProductArtwork, ViewHead } from '../shared/ui'
 import type { CorePreferenceId, Preference, Product, ProductId, UserLocation } from '../types'
@@ -195,7 +196,9 @@ export function CompareView({
                   <div key={product.id} className="mt-cmp-cell">
                     {offer ? (
                       <>
-                        <span className="mt-cmp-store">{offer.merchant}</span>
+                        <span className="mt-cmp-store">
+                          {merchantAdjacentDisplayLabel(offer.merchant, offer.merchantDomain)}
+                        </span>
                         <span className="mt-mono mt-cmp-sub">
                           {money(offer.price, offer.priceCurrency)} · {offer.delivery}
                         </span>
@@ -304,7 +307,7 @@ function CompareSlot({
           </button>
         ) : null}
       </div>
-      <div className="mt-mono mt-card-brand">{product.brand}</div>
+      <div className="mt-mono mt-card-brand">{merchantAdjacentDisplayLabel(product.brand)}</div>
       <div className="mt-cmp-name">{product.name}</div>
     </div>
   )

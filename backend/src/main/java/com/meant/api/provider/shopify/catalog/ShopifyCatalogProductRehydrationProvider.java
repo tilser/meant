@@ -26,6 +26,7 @@ import com.meant.api.module.catalog.service.dto.SellingPlanIdentity;
 import com.meant.api.module.catalog.service.dto.SellingPlanOption;
 import com.meant.api.module.catalog.service.port.CatalogProductDetailProvider;
 import com.meant.api.module.catalog.service.port.CatalogProductRehydrationProvider;
+import com.meant.api.module.merchant.service.MerchantProductMessageSanitizer;
 import com.meant.api.provider.shopify.catalog.dto.ShopifyCatalogContext;
 import com.meant.api.provider.shopify.catalog.dto.ShopifyCatalogFilters;
 import com.meant.api.provider.shopify.catalog.dto.ShopifyCatalogSelectedOption;
@@ -474,6 +475,18 @@ public class ShopifyCatalogProductRehydrationProvider
             return null;
         }
         ShopifyGlobalCatalogResponse.Variant selected = selectedMatches.getFirst();
+        String providerEndpoint = catalogProperties.endpoint() == null
+                ? null
+                : catalogProperties.endpoint().toString();
+        MerchantProductMessageSanitizer.TransportContext messageContext =
+                MerchantProductMessageSanitizer.context(
+                        null,
+                        providerEndpoint,
+                        providerEndpoint,
+                        reference.externalMerchantDomain(),
+                        selected.seller() == null ? null : selected.seller().domain(),
+                        selected.seller() == null ? null : selected.seller().url()
+                );
         List<RehydratedProductDetails.Variant> detailVariants = merchantVariants.stream()
                 .map(variant -> detailVariant(product, variant))
                 .toList();
@@ -533,12 +546,22 @@ public class ShopifyCatalogProductRehydrationProvider
                 productAttributes(product),
                 safe(messages).stream()
                         .filter(Objects::nonNull)
-                        .map(this::detailMessage)
+                        .map(message -> detailMessage(message, messageContext))
                         .toList(),
                 ratingScore(product.rating()),
                 ratingScaleMax(product.rating()),
                 reviewCount(product.rating()),
-                selected.seller() == null ? null : selected.seller().name()
+                selected.seller() == null ? null : selected.seller().name(),
+                null,
+                java.util.stream.Stream.of(
+                                providerEndpoint,
+                                reference.externalMerchantDomain(),
+                                selected.seller() == null ? null : selected.seller().domain(),
+                                selected.seller() == null ? null : selected.seller().url()
+                        )
+                        .filter(value -> value != null && !value.isBlank())
+                        .distinct()
+                        .toList()
         );
     }
 
@@ -854,17 +877,33 @@ public class ShopifyCatalogProductRehydrationProvider
         }
     }
 
-    private RehydratedProductDetails.Message detailMessage(ShopifyGlobalCatalogResponse.Message message) {
+    private RehydratedProductDetails.Message detailMessage(
+            ShopifyGlobalCatalogResponse.Message message,
+            MerchantProductMessageSanitizer.TransportContext context
+    ) {
+        MerchantProductMessageSanitizer.SanitizedMessage sanitized =
+                MerchantProductMessageSanitizer.sanitize(
+                        message.type(),
+                        message.code(),
+                        message.path(),
+                        message.contentType(),
+                        message.content(),
+                        message.severity(),
+                        message.presentation(),
+                        message.imageUrl(),
+                        message.url(),
+                        context
+                );
         return new RehydratedProductDetails.Message(
-                message.type(),
-                message.code(),
-                message.path(),
-                message.contentType(),
-                message.content(),
-                message.severity(),
-                message.presentation(),
-                message.imageUrl(),
-                message.url()
+                sanitized.type(),
+                sanitized.code(),
+                sanitized.path(),
+                sanitized.contentType(),
+                sanitized.content(),
+                sanitized.severity(),
+                sanitized.presentation(),
+                sanitized.imageUrl(),
+                sanitized.url()
         );
     }
 

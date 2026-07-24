@@ -451,7 +451,7 @@ describe('agent commerce artifacts reuse the established components', () => {
       routingScopeKey: 'running-scope',
       snapshot: {
         merchantKey: 'running-scope',
-        merchant: 'running.example',
+        merchant: 'sollys-online-grocery.myshopify.com',
         cartId: 'cart-1',
         remoteCartId: 'remote-cart-1',
         checkoutUrl: null,
@@ -463,15 +463,14 @@ describe('agent commerce artifacts reuse the established components', () => {
       },
       lines: cart,
     }
-    const profile: CartProfile = {
+    const profile = {
       cartId: 'cart-1',
       merchantId: 'merchant-1',
-      merchantDomain: 'running.example',
+      merchantDomain: 'nycfactory.com',
       provider: 'test',
       merchantIntegrationId: 'integration-1',
       externalMerchantId: 'external-1',
       routingScopeKey: 'running-scope',
-      endpoint: 'https://running.example/mcp',
       remoteCartId: 'remote-cart-1',
       totalQuantity: 3,
       totalAmount: '407',
@@ -514,7 +513,7 @@ describe('agent commerce artifacts reuse the established components', () => {
           updatedAt: '2026-07-23T10:01:00Z',
         },
       ],
-    }
+    } as unknown as CartProfile
 
     const replacement = cartStateReplacementFromCartProfile(
       profile,
@@ -529,6 +528,11 @@ describe('agent commerce artifacts reuse the established components', () => {
       ['product-2', 1, 'line-2'],
     ])
     expect(replacement?.snapshot.totalAmount).toBe(407)
+    expect(replacement?.snapshot.merchantOrigin).toBe('nycfactory.com')
+    expect(replacement?.lines.every((line) => line.merchantOrigin === 'nycfactory.com')).toBe(true)
+    expect(
+      replacement?.lines.every((line) => line.merchant === 'sollys-online-grocery.myshopify.com'),
+    ).toBe(true)
   })
 
   test('recognizes an inactive artifact cart superseded by the live cart in the same scope', () => {
@@ -895,27 +899,40 @@ describe('agent commerce artifacts reuse the established components', () => {
     expect(markup).not.toContain('class="mt-save " type="button" aria-label="Save" disabled=""')
   })
 
-  test('renders the merchant domain instead of the Shopify transport identity at checkout', () => {
+  test('renders only the trusted merchant origin in cart and checkout blocks', () => {
+    const poisonedCart = [
+      {
+        ...cart[0]!,
+        merchant: 'sollys-online-grocery.myshopify.com',
+        merchantDomain: 'nycfactory.com',
+        merchantOrigin: 'nycfactory.com',
+      },
+    ]
     const markup = renderToStaticMarkup(
-      <InlineCheckoutBlock
-        threadId="conversation-1"
-        cart={[
-          {
-            ...cart[0]!,
-            merchant: 'sollys-online-grocery.myshopify.com',
-            merchantDomain: 'nycfactory.com',
-          },
-        ]}
-        products={[first]}
-        onCheckout={() => undefined}
-        activeCheckout={null}
-        checkoutBusy={false}
-        checkoutError={null}
-        onCheckoutAssistant={async () => null}
-        onRefreshCheckout={() => undefined}
-        onOpenCart={() => undefined}
-        onOpenOrders={() => undefined}
-      />,
+      <>
+        <InlineCartBlock
+          cart={poisonedCart}
+          products={[first]}
+          onQty={() => undefined}
+          onRemove={() => undefined}
+          onAddCart={() => undefined}
+          onOpenCart={() => undefined}
+          onCheckoutHere={() => undefined}
+        />
+        <InlineCheckoutBlock
+          threadId="conversation-1"
+          cart={poisonedCart}
+          products={[first]}
+          onCheckout={() => undefined}
+          activeCheckout={null}
+          checkoutBusy={false}
+          checkoutError={null}
+          onCheckoutAssistant={async () => null}
+          onRefreshCheckout={() => undefined}
+          onOpenCart={() => undefined}
+          onOpenOrders={() => undefined}
+        />
+      </>,
     )
 
     expect(markup).toContain('nycfactory.com')
@@ -1046,7 +1063,8 @@ describe('agent commerce artifacts reuse the established components', () => {
     expect(cartMarkup).toContain('Quantity for Grounded trail shoe')
     expect(cartMarkup).toContain('Checkout here')
     expect(checkoutMarkup).toContain('Checkout in chat')
-    expect(checkoutMarkup).toContain('Running Shop')
+    expect(checkoutMarkup).toContain('>Merchant<')
+    expect(checkoutMarkup).not.toContain('Running Shop')
     expect(checkoutMarkup).toContain('Start checkout in chat')
     expect(busyCheckoutMarkup).toContain('Checkout is starting...')
     expect(busyCheckoutMarkup).toContain('disabled=""')

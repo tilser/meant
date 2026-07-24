@@ -9,8 +9,6 @@ const merchant: MerchantProfile = {
   domain: 'merchant.example',
   name: 'Example Merchant',
   description: 'Direct merchant catalog',
-  advertisedMcpEndpoint: 'https://merchant.example/mcp',
-  profileMcpEndpoint: null,
   supportsIdentityLinking: false,
 }
 
@@ -26,7 +24,8 @@ describe('merchant search scope', () => {
       />,
     )
 
-    expect(markup).toContain('Example Merchant')
+    expect(markup).toContain('merchant.example')
+    expect(markup).not.toContain('Example Merchant')
     expect(markup).toContain('aria-haspopup="listbox"')
     expect(markup).not.toContain('disabled')
     expect(markup).not.toContain('verified Shop IDs')

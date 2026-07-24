@@ -213,7 +213,8 @@ public class CartPersistenceService {
                 ? Cart.builder()
                         .userId(userId)
                         .merchantId(provider.merchantId())
-                        .merchantDomain(provider.domain())
+                        .merchantDomain(provider.merchantDomain())
+                        .routingDomain(provider.routingDomain())
                         .createdAt(now)
                         .build()
                 : currentCartForSnapshot(cart, userId);
@@ -222,11 +223,15 @@ public class CartPersistenceService {
         }
         boolean identityOnly = target != null && !target.scopeKey().startsWith("LEGACY:");
         if (!identityOnly) {
-            persistedCart.assignProvider(provider.merchantId(), provider.domain());
+            persistedCart.assignProvider(
+                    provider.merchantId(),
+                    provider.merchantDomain(),
+                    provider.routingDomain()
+            );
         } else {
             persistedCart.assignRoutingScope(
                     target.provider().name(), target.merchantIntegrationId(), target.externalMerchantId(),
-                    target.scopeKey(), provider.merchantId(), provider.domain());
+                    target.scopeKey(), provider.merchantId(), provider.merchantDomain(), provider.routingDomain());
         }
         String remoteCartId = required(remoteCart.id(), "Remote cart id is required");
         UcpCartResponse.Money totalAmount = remoteCart.cost() == null ? null : remoteCart.cost().totalAmount();
@@ -494,12 +499,21 @@ public class CartPersistenceService {
                 || !Objects.equals(cart.getMerchantIntegrationId(), target.merchantIntegrationId())
                 || !Objects.equals(cart.getExternalMerchantId(), target.externalMerchantId())
                 || !Objects.equals(cart.getMerchantId(), target.merchantProvider().merchantId())
-                || !Objects.equals(cart.getMerchantDomain(), target.merchantProvider().domain())) {
+                || !Objects.equals(cart.getRoutingDomain(), target.merchantProvider().routingDomain())) {
             throw CartException.binding(
                     CartException.BindingFailure.CROSS_SCOPE_REPLAY,
                     "Idempotent cart retry resolved to a different merchant/provider scope"
             );
         }
+        cart.assignRoutingScope(
+                target.provider().name(),
+                target.merchantIntegrationId(),
+                target.externalMerchantId(),
+                target.scopeKey(),
+                target.merchantProvider().merchantId(),
+                target.merchantProvider().merchantDomain(),
+                target.merchantProvider().routingDomain()
+        );
     }
 
     private void addAppliedCodeValues(

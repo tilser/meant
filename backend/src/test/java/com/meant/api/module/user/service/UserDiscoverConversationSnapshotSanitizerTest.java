@@ -450,6 +450,73 @@ class UserDiscoverConversationSnapshotSanitizerTest {
     }
 
     @Test
+    void neutralizesTechnicalMerchantCoordinatesInLegacyMessageAndDurableBlockText()
+            throws Exception {
+        String sanitized = sanitizer.sanitize("""
+                {
+                  "title":"History from seller.myshopify.com",
+                  "messages":[{
+                    "id":"answer-1",
+                    "role":"ai",
+                    "text":"I need details before continuing with seller.myshopify.com. Browse https://official.example/products/shoe.",
+                    "pendingText":"Waiting for mcp.shop.example.",
+                    "suggestedReplies":[
+                      "Retry https://transport.example/api/ucp/mcp/session/1",
+                      "Open https://official.example/products/shoe"
+                    ],
+                    "query":"Ask seller.myshopify.com for running shoes",
+                    "productContext":{
+                      "name":"Response from api.mcp.shop.example",
+                      "canonicalProductKey":"seller.myshopify.com/product-1"
+                    },
+                    "blocks":[{
+                      "type":"text",
+                      "id":"block-1",
+                      "text":"The merchant replied from https://transport.example/mcp.",
+                      "link":"https://official.example/products/shoe",
+                      "nested":{"label":"Sold by seller.myshopify.com"}
+                    }]
+                  }]
+                }
+                """);
+
+        JsonNode root = objectMapper.readTree(sanitized);
+        JsonNode message = root.path("messages").get(0);
+
+        assertThat(root.path("title").asText()).isEqualTo("History from the merchant");
+        assertThat(message.path("text").asText()).isEqualTo(
+                "I need details before continuing with the merchant. "
+                        + "Browse https://official.example/products/shoe.");
+        assertThat(message.path("pendingText").asText()).isEqualTo("Waiting for the merchant.");
+        assertThat(message.path("suggestedReplies").get(0).asText())
+                .isEqualTo("Retry the merchant");
+        assertThat(message.path("suggestedReplies").get(1).asText())
+                .isEqualTo("Open https://official.example/products/shoe");
+        assertThat(message.path("query").asText())
+                .isEqualTo("Ask the merchant for running shoes");
+        assertThat(message.path("productContext").path("name").asText())
+                .isEqualTo("Response from the merchant");
+        JsonNode block = message.path("blocks").get(0);
+        assertThat(block.path("type").asText()).isEqualTo("text");
+        assertThat(block.path("id").asText()).isEqualTo("block-1");
+        assertThat(block.path("text").asText()).isEqualTo("The merchant replied from the merchant.");
+        assertThat(block.path("link").asText())
+                .isEqualTo("https://official.example/products/shoe");
+        assertThat(block.path("nested").path("label").asText())
+                .isEqualTo("Sold by the merchant");
+    }
+
+    @Test
+    void neutralizesTechnicalMerchantCoordinatesInThePersistedConversationTitle() {
+        var sanitized = sanitizer.sanitize(
+                "History from seller.myshopify.com",
+                "{\"messages\":[]}"
+        );
+
+        assertThat(sanitized.title()).isEqualTo("History from the merchant");
+    }
+
+    @Test
     void keepsComparisonAndCartBlocksForTheOriginalHistoryUi() {
         String sanitized = sanitizer.sanitize("""
                 {"messages":[{"id":"answer-1","role":"ai","blocks":[

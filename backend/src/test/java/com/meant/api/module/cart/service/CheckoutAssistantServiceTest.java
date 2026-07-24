@@ -9,6 +9,7 @@ import com.meant.api.common.service.OpenRouterChatClient;
 import com.meant.api.common.service.dto.OpenRouterJsonSchemaDefinition;
 import com.meant.api.common.service.dto.OpenRouterPlugin;
 import com.meant.api.module.cart.exception.CartException;
+import com.meant.api.module.cart.entity.Cart;
 import com.meant.api.module.cart.service.command.AssistCheckoutCommand;
 import com.meant.api.module.cart.service.command.UpdateCheckoutCommand;
 import com.meant.api.module.cart.service.dto.CheckoutAssistResult;
@@ -18,12 +19,19 @@ import com.meant.api.module.merchant.constant.CapabilityAvailability;
 import com.meant.api.module.merchant.constant.CapabilityIntegrationHealth;
 import com.meant.api.module.merchant.constant.CommerceExecutionRail;
 import com.meant.api.module.merchant.constant.CommerceOperation;
+import com.meant.api.module.merchant.constant.MerchantIntegrationProvider;
+import com.meant.api.module.merchant.constant.MerchantIntegrationRole;
+import com.meant.api.module.merchant.constant.MerchantIntegrationStatus;
 import com.meant.api.module.merchant.service.dto.CapabilityAuthorizationDecision;
 import com.meant.api.module.merchant.service.dto.CommerceCapabilityDecision;
+import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.module.merchant.service.dto.MerchantExecutionPolicy;
+import com.meant.api.module.merchant.service.dto.MerchantIntegrationRouting;
+import com.meant.api.plugin.checkout.common.dto.UcpCheckoutResponse;
 import java.util.Arrays;
 import com.meant.api.module.cart.service.query.GetCheckoutQuery;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
@@ -52,6 +60,25 @@ class CheckoutAssistantServiceTest {
         assertThat(result.reply()).isEqualTo("What street address should I ship to?");
         assertThat(result.checkoutUpdated()).isFalse();
         assertThat(cartService.updateCommand).isNull();
+    }
+
+    @Test
+    void neutralizesTransportCoordinatesReturnedByCheckoutAssistantModel() {
+        CheckoutAssistantService service = service("""
+                {
+                  "reply": "Continue at manningshoes.myshopify.com or https://transport.example/api/ucp/mcp.",
+                  "readyToUpdate": false,
+                  "buyer": {"email": "", "firstName": "", "lastName": "", "phoneNumber": ""},
+                  "shippingAddress": {"streetAddress": "", "extendedAddress": "", "addressLocality": "",
+                    "addressRegion": "", "postalCode": "", "addressCountry": ""}
+                }
+                """);
+
+        CheckoutAssistResult result = service.assist(command("What happens next?"));
+
+        assertThat(result.reply())
+                .isEqualTo("Continue at the merchant or the merchant.")
+                .doesNotContain("myshopify.com", "/api/ucp/mcp");
     }
 
     @Test
@@ -87,6 +114,97 @@ class CheckoutAssistantServiceTest {
         assertThat(cartService.updateCommand.shippingAddress().streetAddress()).isEqualTo("1531 Hyde St");
         assertThat(cartService.updateCommand.shippingAddress().extendedAddress()).isNull();
         assertThat(cartService.updateCommand.shippingAddress().addressCountry()).isEqualTo("US");
+    }
+
+    @Test
+    void sanitizesUcpTransportEndpointBeforeBuildingCheckoutAssistantReply() throws Exception {
+        String endpoint = "https://weareallbirds.myshopify.com/api/ucp/mcp";
+        String advertisedEndpoint =
+                "https://advertised.shopify-transport.example/api/ucp/mcp";
+        String profileEndpoint =
+                "https://profile.shopify-transport.example/.well-known/ucp";
+        String integrationEndpoint =
+                "https://integration.shopify-transport.example/custom/checkout";
+        Cart cart = Cart.builder()
+                .id(CART_ID)
+                .merchantDomain("allbirds.com")
+                .routingDomain("weareallbirds.myshopify.com")
+                .endpoint(endpoint)
+                .remoteCartId("gid://shopify/Cart/1")
+                .remoteCartIdHash("hash")
+                .rawCartResponse("{}")
+                .totalQuantity(1)
+                .build();
+        ObjectMapper objectMapper = new ObjectMapper();
+        UcpCheckoutResponse response = objectMapper.readValue("""
+                {
+                  "checkout": {
+                    "id": "gid://shopify/Checkout/1",
+                    "cart_id": "gid://shopify/Cart/1",
+                    "status": "incomplete",
+                    "checkout_url": "https://allbirds.com/checkouts/1",
+                    "messages": [
+                      {
+                        "type": "warning",
+                        "code": "merchant_notice",
+                        "severity": "recoverable",
+                        "content": "Continue at https://advertised.shopify-transport.example/api/ucp/mcp. Profile: profile.shopify-transport.example. Product: https://integration.shopify-transport.example/products/tree-runner"
+                      }
+                    ]
+                  },
+                  "messages": [],
+                  "errors": []
+                }
+                """, UcpCheckoutResponse.class);
+        MerchantCartProvider provider = new MerchantCartProvider(
+                UUID.randomUUID(),
+                "allbirds.com",
+                "weareallbirds.myshopify.com",
+                advertisedEndpoint,
+                profileEndpoint,
+                List.of(new MerchantIntegrationRouting(
+                        UUID.randomUUID(),
+                        MerchantIntegrationProvider.SHOPIFY,
+                        Set.of(MerchantIntegrationRole.CHECKOUT),
+                        MerchantIntegrationStatus.ACTIVE,
+                        "gid://shopify/Shop/1",
+                        "integration.shopify-transport.example",
+                        "gid://shopify/Shop/1",
+                        integrationEndpoint
+                )),
+                embeddedCheckoutPolicy(),
+                null,
+                Set.of("dev.ucp.shopping.checkout")
+        );
+        cartService.updatedCheckout = new CheckoutResultMapper(
+                objectMapper,
+                new CheckoutExecutionPlanner()
+        ).from(cart, response, provider);
+        CheckoutAssistantService service = service("""
+                {
+                  "reply": "Applying your details now.",
+                  "readyToUpdate": true,
+                  "buyer": {"email": "ada@example.com", "firstName": "Ada", "lastName": "Lovelace",
+                    "phoneNumber": "+14155551234"},
+                  "shippingAddress": {"streetAddress": "1531 Hyde St", "extendedAddress": "",
+                    "addressLocality": "San Francisco", "addressRegion": "CA", "postalCode": "94109",
+                    "addressCountry": "US"}
+                }
+                """);
+
+        CheckoutAssistResult result = service.assist(command("Use my shipping details"));
+
+        assertThat(result.reply())
+                .contains("Merchant response: Continue at allbirds.com")
+                .contains("Profile: allbirds.com")
+                .contains("https://allbirds.com/products/tree-runner")
+                .doesNotContain(
+                        "myshopify.com",
+                        "advertised.shopify-transport.example",
+                        "profile.shopify-transport.example",
+                        "integration.shopify-transport.example",
+                        "/api/ucp/mcp"
+                );
     }
 
     @Test

@@ -8,6 +8,7 @@ import com.meant.api.module.agent.service.AgentJsonSupport;
 import com.meant.api.module.agent.service.dto.AgentArtifact;
 import com.meant.api.module.agent.service.dto.AgentCartResult;
 import com.meant.api.module.cart.constant.CartAppliedCodeType;
+import com.meant.api.module.cart.service.BuyerSafeRoutingScopeKey;
 import com.meant.api.module.cart.service.dto.CartAppliedCodeResult;
 import com.meant.api.module.cart.service.dto.CartDeliveryGroupResult;
 import com.meant.api.module.cart.service.dto.CartDeliveryMoneyResult;
@@ -27,6 +28,8 @@ class AgentCartArtifactTest {
 
     private static final UUID CART_ID = UUID.fromString("00000000-0000-0000-0000-000000000301");
     private static final UUID CART_LINE_ID = UUID.fromString("00000000-0000-0000-0000-000000000302");
+    private static final String TECHNICAL_SCOPE =
+            "SHOPIFY:merchant:gid://shopify/Shop/1:domain:running.myshopify.com";
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
@@ -60,6 +63,12 @@ class AgentCartArtifactTest {
         assertThat(cart.at("/deliveryGroups/0/selectedDeliveryOption/handle").asText())
                 .isEqualTo("standard");
         assertThat(cart.at("/lines/0/offerKey").asText()).isEqualTo("offer-1");
+        assertThat(cart.get("routingScopeKey").asText())
+                .isEqualTo(BuyerSafeRoutingScopeKey.project(TECHNICAL_SCOPE));
+        assertThat(cart.get("merchantOrigin").asText()).isEqualTo("running.example");
+        assertThat(artifacts.getFirst().payloadJson())
+                .doesNotContain(TECHNICAL_SCOPE)
+                .doesNotContain("myshopify.com");
 
         JsonNode line = objectMapper.readTree(artifacts.getLast().payloadJson());
         assertThat(line.get("cartLineId").asText()).isEqualTo(CART_LINE_ID.toString());
@@ -68,6 +77,30 @@ class AgentCartArtifactTest {
         assertThat(line.get("productBrand").asText()).isEqualTo("Meant Running");
         assertThat(line.get("selectedOptionsJson").asText()).contains("Size", "42");
         assertThat(artifacts.getLast().canonicalProductKey()).isEqualTo("product-key-1");
+    }
+
+    @Test
+    void agentCartResultProjectsTechnicalScopesForCartsAndFailures() throws Exception {
+        AgentCartResult successful = AgentCartResult.success(List.of(cartResult()));
+        AgentCartResult result = new AgentCartResult(
+                successful.carts(),
+                List.of(new AgentCartResult.Failure(
+                        TECHNICAL_SCOPE,
+                        "SHOPIFY",
+                        "running.example",
+                        "This merchant cart could not be prepared."
+                ))
+        );
+
+        String resultJson = objectMapper.writeValueAsString(result);
+        String projected = BuyerSafeRoutingScopeKey.project(TECHNICAL_SCOPE);
+
+        assertThat(result.carts().getFirst().routingScopeKey()).isEqualTo(projected);
+        assertThat(result.failures().getFirst().routingScopeKey()).isEqualTo(projected);
+        assertThat(resultJson)
+                .contains(projected)
+                .doesNotContain(TECHNICAL_SCOPE)
+                .doesNotContain(":domain:", "myshopify.com");
     }
 
     @Test
@@ -132,7 +165,7 @@ class AgentCartArtifactTest {
                 "SHOPIFY",
                 null,
                 "merchant-1",
-                "SHOPIFY:merchant-1",
+                TECHNICAL_SCOPE,
                 "https://running.example/ucp",
                 "remote-cart-1",
                 "https://running.example/checkout",

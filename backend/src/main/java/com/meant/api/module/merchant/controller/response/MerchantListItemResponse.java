@@ -1,5 +1,6 @@
 package com.meant.api.module.merchant.controller.response;
 
+import com.meant.api.module.merchant.service.MerchantBuyerTextSanitizer;
 import com.meant.api.module.merchant.service.dto.MerchantListItemResult;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.UUID;
@@ -14,21 +15,34 @@ public record MerchantListItemResponse(
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String description,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
-        String advertisedMcpEndpoint,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
-        String profileMcpEndpoint,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         boolean supportsIdentityLinking
 ) {
 
     public static MerchantListItemResponse from(MerchantListItemResult result) {
+        String domain = MerchantBuyerTextSanitizer.buyerSafeMerchantOrigin(result.domain());
+        if (domain == null) {
+            domain = "Merchant";
+        }
         return new MerchantListItemResponse(
                 result.id(),
-                result.domain(),
-                result.name(),
-                result.description(),
-                result.advertisedMcpEndpoint(),
-                result.profileMcpEndpoint(),
+                domain,
+                MerchantBuyerTextSanitizer.sanitize(
+                        result.name(),
+                        result.domain(),
+                        null,
+                        result.advertisedMcpEndpoint()
+                ),
+                MerchantBuyerTextSanitizer.sanitize(
+                        MerchantBuyerTextSanitizer.sanitize(
+                                result.description(),
+                                result.domain(),
+                                null,
+                                result.advertisedMcpEndpoint()
+                        ),
+                        result.domain(),
+                        null,
+                        result.profileMcpEndpoint()
+                ),
                 result.supportsIdentityLinking()
         );
     }

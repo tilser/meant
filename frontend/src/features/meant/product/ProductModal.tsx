@@ -8,6 +8,7 @@ import {
 import { AskComposer } from '../ask/AskComposer'
 import { AskThread } from '../ask/AskThread'
 import type { Message } from '../ask/types'
+import { merchantAdjacentDisplayLabel } from '../cart/merchantOrigin'
 import { canResolveCartOffer, offerCartable } from '../cart/utils'
 import { InventorySignalBadge } from '../inventory/InventorySignalBadge'
 import { flyMessageToChat } from '../shared/animations'
@@ -31,6 +32,7 @@ import {
 } from './productCuration'
 import { mergeRehydratedProductDetails, savedProductDetailsRefreshShell } from './productSnapshots'
 import { mergeProductMedia } from './productMapping'
+import { safeProductMessageUrl } from './productMessageUrl'
 import { merchantProductDetailRequest } from './productDetailLoading'
 import { ProductReviewsPanel } from './ProductReviewsPanel'
 import { GroupedOfferSelector, type ProductPurchaseSelection } from './GroupedProductModal'
@@ -57,18 +59,6 @@ function stripMarkdown(value: string | null | undefined): string {
     .replace(/^\s*[-*+>#]+\s+/gm, '')
     .replace(/\s+/g, ' ')
     .trim()
-}
-
-function safeMessageUrl(value: string | null | undefined): string | null {
-  if (!value) {
-    return null
-  }
-  try {
-    const url = new URL(value)
-    return ['http:', 'https:', 'mailto:'].includes(url.protocol) ? value : null
-  } catch {
-    return null
-  }
 }
 
 function detailMoney(
@@ -475,7 +465,9 @@ export function ProductModal({
     activeMerchantDetails?.description || product.detailDescription || '',
   )
   const productCategory = displayProductCategoryValue(product.category)
-  const productMeta = [product.brand.trim(), productCategory].filter(Boolean).join(' · ')
+  const productMeta = [merchantAdjacentDisplayLabel(product.brand), productCategory]
+    .filter(Boolean)
+    .join(' · ')
   const merchantDetailCategories = cleanCategoryValues(
     activeMerchantDetails?.categories.map((category) => category?.value),
   )
@@ -952,7 +944,7 @@ export function ProductModal({
                   {detailMessages.length > 0 ? (
                     <div className="mt-product-messages">
                       {detailMessages.map((message, index) => {
-                        const messageUrl = safeMessageUrl(message.url)
+                        const messageUrl = safeProductMessageUrl(message.url)
                         return (
                           <div
                             className={`mt-product-message ${message.presentation === 'disclosure' ? 'disclosure' : ''} ${message.type || 'info'}`}
@@ -1067,7 +1059,7 @@ export function ProductModal({
                           key={offer.offerKey ?? `${offer.merchant}-${index}`}
                         >
                           <div className="mt-offer-merch">
-                            {offer.merchant}
+                            {merchantAdjacentDisplayLabel(offer.merchant, offer.merchantDomain)}
                             {index === 0 ? (
                               <span className="mt-mono mt-offer-tag">best</span>
                             ) : null}

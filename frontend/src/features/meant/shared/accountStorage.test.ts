@@ -14,18 +14,20 @@ describe('account storage isolation', () => {
   })
 
   test('admits product and transaction snapshots only to account-scoped session keys', () => {
-    expect(accountSessionStorageKey('meant.shelf', 'user-a')).toBe('meant.shelf.account.user-a')
+    expect(accountSessionStorageKey('meant.shelf', 'user-a')).toBe(
+      'meant.shelf.buyerSafeV2.account.user-a',
+    )
     expect(accountSessionStorageKey('meant.compareProducts', 'user-a')).toBe(
-      'meant.compareProducts.account.user-a',
+      'meant.compareProducts.buyerSafeV2.account.user-a',
     )
     expect(accountSessionStorageKey('meant.cartSnapshots', 'user-a')).toBe(
-      'meant.cartSnapshots.account.user-a',
+      'meant.cartSnapshots.buyerSafeV2.account.user-a',
     )
     expect(accountSessionStorageKey('meant.agentPendingCartRuns', 'user-a')).toBe(
-      'meant.agentPendingCartRuns.account.user-a',
+      'meant.agentPendingCartRuns.buyerSafeV2.account.user-a',
     )
     expect(accountSessionStorageKey('meant.agentCartProvenance', 'user-a')).toBe(
-      'meant.agentCartProvenance.account.user-a',
+      'meant.agentCartProvenance.buyerSafeV2.account.user-a',
     )
     expect(() => accountSessionStorageKey('meant.locations', 'user-a')).toThrow(
       'Account storage key is not session-only',

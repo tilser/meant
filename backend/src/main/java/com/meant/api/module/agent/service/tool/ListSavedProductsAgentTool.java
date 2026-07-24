@@ -5,12 +5,14 @@ import com.meant.api.module.agent.constant.AgentToolRisk;
 import com.meant.api.module.agent.service.AgentContextProfileService;
 import com.meant.api.module.agent.service.AgentJsonSupport;
 import com.meant.api.module.agent.service.dto.AgentArtifact;
+import com.meant.api.module.agent.service.dto.AgentSavedProductArtifact;
 import com.meant.api.module.agent.service.dto.AgentSavedProductListResult;
 import com.meant.api.module.agent.service.dto.AgentSavedProductReferenceResult;
 import com.meant.api.module.agent.service.dto.AgentToolDescriptor;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionResult;
 import com.meant.api.module.agent.service.dto.ListSavedProductsAgentToolInput;
+import com.meant.api.module.merchant.service.MerchantBuyerTextSanitizer;
 import com.meant.api.module.user.service.UserSavedProductService;
 import com.meant.api.module.user.service.dto.UserSavedProductResult;
 import com.meant.api.module.user.service.query.ListSavedProductsQuery;
@@ -59,22 +61,25 @@ public class ListSavedProductsAgentTool implements AgentTool {
                 .mapToObj(index -> artifact(products.get(index), index + 1))
                 .toList();
         return AgentToolExecutionResult.read(
-                json.write(new AgentSavedProductListResult(references)),
+                MerchantBuyerTextSanitizer.sanitizeJson(
+                        json.write(new AgentSavedProductListResult(references))
+                ),
                 "Loaded " + products.size() + " saved product(s).",
                 artifacts
         );
     }
 
     private AgentSavedProductReferenceResult reference(UserSavedProductResult product, int ordinal) {
-        return new AgentSavedProductReferenceResult(
-                ordinal, product.id(), product.name(), product.brand(), product.category(), product.imageUrl(),
-                product.match(), product.priceFromMinorUnits(), product.priceCurrency(), product.offers());
+        return AgentSavedProductReferenceResult.from(product, ordinal);
     }
 
     private AgentArtifact artifact(UserSavedProductResult product, int ordinal) {
         String offerKey = product.offers().isEmpty() ? null : product.offers().getFirst().offerKey();
+        AgentSavedProductArtifact payload = AgentSavedProductArtifact.from(product);
         return new AgentArtifact(
-                AgentArtifactType.SAVED_PRODUCT, ordinal, product.id(), product.name(), product.id(), offerKey,
-                null, null, null, null, json.writeArtifact(product));
+                AgentArtifactType.SAVED_PRODUCT, ordinal, product.id(), payload.name(), product.id(), offerKey,
+                null, null, null, null, MerchantBuyerTextSanitizer.sanitizeJson(
+                        json.writeArtifact(payload)
+                ));
     }
 }

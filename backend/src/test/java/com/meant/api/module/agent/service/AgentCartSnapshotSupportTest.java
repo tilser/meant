@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.meant.api.module.agent.constant.AgentArtifactType;
 import com.meant.api.module.agent.entity.AgentArtifactReference;
+import com.meant.api.module.cart.service.BuyerSafeRoutingScopeKey;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -37,6 +38,8 @@ class AgentCartSnapshotSupportTest {
         AgentCartSnapshotSupport.CartState state = support.project(List.of(cart));
 
         assertThat(state.current()).hasSize(1);
+        assertThat(state.current().getFirst().routingScopeKey())
+                .isEqualTo(BuyerSafeRoutingScopeKey.project("SHOPIFY:merchant-jackets"));
         assertThat(state.current().getFirst().lines())
                 .singleElement()
                 .satisfies(line -> {

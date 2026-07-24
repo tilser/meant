@@ -28,6 +28,7 @@ import { CartView } from './cart/CartView'
 import { resolveLiveCartItem } from './cart/cartPartition'
 import type { ActiveCheckoutSession, CheckoutAssistantContext } from './cart/checkoutTypes'
 import { resolveCartableOffer } from './cart/cartOfferResolver'
+import { merchantDisplayOrigin, merchantOriginFromItems } from './cart/merchantOrigin'
 import type { MerchantCartSnapshot, MerchantCartStateReplacement } from './cart/types'
 import { useCartController } from './cart/useCartController'
 import { AgentDiscoverView } from './agent/AgentDiscoverView'
@@ -1629,7 +1630,9 @@ export function MeantApp() {
       })
       .catch(() => {
         if (activeUserIdRef.current !== requestedUserId) return
-        setMerchantIdentityLinksError(`Could not start account linking for ${merchant.name}`)
+        setMerchantIdentityLinksError(
+          `Could not start account linking for ${merchantDisplayOrigin(merchant.domain)}`,
+        )
       })
   }
 
@@ -2692,6 +2695,7 @@ export function MeantApp() {
   ): Promise<string | null> => {
     const requestedUserId = requireCurrentAccountUser()
     const merchant = payload.merchant ?? payload.items[0]?.merchant ?? 'merchant'
+    const merchantOrigin = merchantOriginFromItems(payload.items)
     const merchantKey =
       payload.merchantKey ??
       (payload.items[0] ? cartMerchantKey(payload.items[0]) : normalizedMerchantName(merchant))
@@ -2707,7 +2711,7 @@ export function MeantApp() {
     }
     const currentCheckout = activeCheckoutRef.current
     if (currentCheckout?.ownerId === requestedUserId && currentCheckout.cartId !== cartId) {
-      const message = `Finish or close the active checkout for ${currentCheckout.merchant} before starting another.`
+      const message = `Finish or close the active checkout for ${merchantDisplayOrigin(currentCheckout.merchantOrigin)} before starting another.`
       setCheckoutError({ merchant, merchantKey, message })
       return message
     }
@@ -2744,6 +2748,7 @@ export function MeantApp() {
         cartId,
         threadId: payload.chatThreadId ?? null,
         merchant,
+        merchantOrigin,
         source,
         items: payload.items,
         saved: payload.saved,

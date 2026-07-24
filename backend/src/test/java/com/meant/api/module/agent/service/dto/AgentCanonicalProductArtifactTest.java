@@ -9,6 +9,7 @@ import com.meant.api.module.catalog.service.dto.CanonicalProduct;
 import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifier;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifierType;
+import com.meant.api.module.catalog.service.dto.IdentityEvidenceStrength;
 import com.meant.api.module.catalog.service.dto.Money;
 import com.meant.api.module.catalog.service.dto.Offer;
 import com.meant.api.module.catalog.service.dto.OfferAvailability;
@@ -16,6 +17,9 @@ import com.meant.api.module.catalog.service.dto.OfferAvailabilityStatus;
 import com.meant.api.module.catalog.service.dto.OfferIdentity;
 import com.meant.api.module.catalog.service.dto.OfferMerchantScope;
 import com.meant.api.module.catalog.service.dto.ProductAttribute;
+import com.meant.api.module.catalog.service.dto.ProductAttribution;
+import com.meant.api.module.catalog.service.dto.ProductIdentityEvidence;
+import com.meant.api.module.catalog.service.dto.ProductIdentityEvidenceKind;
 import com.meant.api.module.catalog.service.dto.ProviderIdentity;
 import com.meant.api.module.catalog.service.dto.ResultFreshness;
 import com.meant.api.module.catalog.service.dto.ResultProvenance;
@@ -24,6 +28,7 @@ import com.meant.api.module.catalog.service.dto.ResultSourceType;
 import com.meant.api.module.user.controller.response.UserGroupedProductSearchV1Response.CanonicalProductResponse;
 import com.meant.api.module.user.service.dto.UserCanonicalProductPersonalizationResult;
 import com.meant.api.module.user.service.dto.UserOfferCommercialState;
+import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -74,12 +79,22 @@ class AgentCanonicalProductArtifactTest {
 
         assertThat(artifactJson).isEqualTo(establishedJson);
         assertThat(durableArtifact.payloadJson()).hasSizeGreaterThan(256);
+        assertThat(durableArtifact.payloadJson())
+                .doesNotContain(
+                        "catalog.shopify.com",
+                        "manning.myshopify.com",
+                        "transport-secret",
+                        "\"externalMerchantDomain\"",
+                        "\"uri\""
+                );
         assertThat(durableArtifactJson.has("truncated")).isFalse();
         assertThat(durableArtifactJson.toString()).isEqualTo(establishedJson.toString());
         assertThat(artifactJson.get("recommendedOfferKey").asText())
                 .isEqualTo(product.offers().getFirst().key());
         assertThat(artifactJson.at("/offers/0/key").asText())
                 .isEqualTo(product.offers().getFirst().key());
+        assertThat(artifactJson.at("/offers/0/merchantOrigin").asText())
+                .isEqualTo("running.example");
         assertThat(artifactJson.at("/offers/0/selectedOptions/0/value").asText()).isEqualTo("42");
         assertThat(artifactJson.at("/offers/0/identity/provider").asText()).isEqualTo("SHOPIFY");
         assertThat(artifactJson.at("/offers/0/identity/merchantScope/type").asText())
@@ -88,6 +103,60 @@ class AgentCanonicalProductArtifactTest {
                 .isEqualTo("DISCOVERY_OBSERVATION");
         assertThat(artifactJson.at("/offers/0/provenance/0/provider").asText())
                 .isEqualTo("SHOPIFY");
+        assertThat(artifactJson.at("/offers/0/checkoutUrl").asText())
+                .isEqualTo("https://running.example/cart/shoe-1-size-42");
+        assertThat(artifactJson.at("/attribution/0/url").asText())
+                .isEqualTo("https://running.example/products/shoe-1");
+        assertThat(artifactJson.at("/provenance/0/sourceReference").has("uri")).isFalse();
+        assertThat(artifactJson.at("/attribution/0/sourceReference").has("uri")).isFalse();
+        assertThat(artifactJson.at("/identityEvidence/0/sourceReference").has("uri")).isFalse();
+        assertThat(artifactJson.at("/offers/0/provenance/0/sourceReference").has("uri")).isFalse();
+
+        AgentArtifact durableOfferArtifact = new AgentProductReadResultService(
+                new AgentJsonSupport(mapper, properties())
+        ).discoveryArtifacts(product, 1, null, personalization, Map.of()).get(1);
+        JsonNode durableOfferJson = mapper.readTree(durableOfferArtifact.payloadJson());
+
+        assertThat(durableOfferJson.toString()).isEqualTo(artifactJson.at("/offers/0").toString());
+        assertThat(durableOfferArtifact.payloadJson())
+                .doesNotContain(
+                        "catalog.shopify.com",
+                        "manning.myshopify.com",
+                        "transport-secret",
+                        "\"externalMerchantDomain\"",
+                        "\"uri\""
+                );
+        assertThat(durableOfferJson.at("/checkoutUrl").asText())
+                .isEqualTo("https://running.example/cart/shoe-1-size-42");
+    }
+
+    @Test
+    void neutralizesTechnicalMerchantAndBrandLabelsWithoutChangingOfferKeys() throws Exception {
+        CanonicalProduct product = product("manning.myshopify.com", "manning.myshopify.com");
+        AgentCanonicalProductArtifact artifact = AgentCanonicalProductArtifact.discovery(
+                product,
+                null,
+                null,
+                Map.of()
+        );
+        ObjectMapper mapper = new ObjectMapper();
+        AgentProductReadResultService resultService = new AgentProductReadResultService(
+                new AgentJsonSupport(mapper, properties())
+        );
+
+        JsonNode artifactJson = mapper.valueToTree(artifact);
+        AgentProductReferenceResult reference = resultService.reference(product, 1);
+
+        assertThat(artifactJson.at("/offers/0/merchantName").asText())
+                .isEqualTo("running.example");
+        assertThat(artifactJson.at("/offers/0/merchantOrigin").asText())
+                .isEqualTo("running.example");
+        assertThat(artifactJson.at("/attributes/0/value").asText())
+                .isEqualTo("running.example");
+        assertThat(artifactJson.toString()).doesNotContain("manning.myshopify.com");
+        assertThat(artifactJson.at("/offers/0/key").asText()).isEqualTo(product.offers().getFirst().key());
+        assertThat(reference.offers().getFirst().merchant()).isEqualTo("running.example");
+        assertThat(reference.offers().getFirst().offerKey()).isEqualTo(product.offers().getFirst().key());
     }
 
     @Test
@@ -112,20 +181,30 @@ class AgentCanonicalProductArtifactTest {
     }
 
     private CanonicalProduct product() {
+        return product("Running Shop", "Meant Test");
+    }
+
+    private CanonicalProduct product(String merchantName, String brand) {
         Instant observedAt = Instant.parse("2026-07-19T10:00:00Z");
         ExternalIdentifier merchant = identifier(ExternalIdentifierType.MERCHANT, "merchant-running");
         ExternalIdentifier product = identifier(ExternalIdentifierType.PRODUCT, "shoe-1");
         ExternalIdentifier variant = identifier(ExternalIdentifierType.VARIANT, "shoe-1-size-42");
+        ResultSourceReference sourceReference = new ResultSourceReference(
+                ResultSourceType.PROVIDER_CATALOG,
+                "GLOBAL_CATALOG",
+                URI.create("https://catalog.shopify.com/api/ucp/mcp?access_token=transport-secret")
+        );
         ResultProvenance provenance = new ResultProvenance(
                 PROVIDER,
                 new DiscoverySourceIdentity(PROVIDER, ResultSourceType.PROVIDER_CATALOG, "GLOBAL_CATALOG"),
                 null,
                 merchant,
-                "running.example",
+                "manning.myshopify.com",
                 product,
                 variant,
                 new ResultFreshness(observedAt, observedAt.plusSeconds(300)),
-                new ResultSourceReference(ResultSourceType.PROVIDER_CATALOG, "GLOBAL_CATALOG", null)
+                sourceReference,
+                "running.example"
         );
         List<ProductAttribute> selectedOptions = List.of(
                 new ProductAttribute("variant", "Size", "42")
@@ -140,13 +219,13 @@ class AgentCanonicalProductArtifactTest {
                         List.of(),
                         null
                 ),
-                "Running Shop",
+                merchantName,
                 "Size 42",
                 new Money(12_900, "USD"),
                 null,
                 new OfferAvailability(OfferAvailabilityStatus.IN_STOCK, 3, null),
                 List.of(),
-                null,
+                URI.create("https://running.example/cart/shoe-1-size-42"),
                 List.of(provenance)
         );
         return new CanonicalProduct(
@@ -154,11 +233,21 @@ class AgentCanonicalProductArtifactTest {
                 "Grounded running shoe",
                 "A responsive road running shoe.",
                 List.of(),
-                List.of(new ProductAttribute(null, "brand", "Meant Test")),
+                List.of(new ProductAttribute(null, "brand", brand)),
                 List.of(),
                 List.of(),
-                List.of(),
-                List.of(),
+                List.of(new ProductAttribution(
+                        "Merchant product page",
+                        URI.create("https://running.example/products/shoe-1"),
+                        sourceReference
+                )),
+                List.of(new ProductIdentityEvidence(
+                        ProductIdentityEvidenceKind.PROVIDER_GROUPING_ID,
+                        IdentityEvidenceStrength.TRUSTED_EXACT,
+                        10_000,
+                        List.of(product),
+                        sourceReference
+                )),
                 List.of(provenance),
                 List.of(offer)
         );

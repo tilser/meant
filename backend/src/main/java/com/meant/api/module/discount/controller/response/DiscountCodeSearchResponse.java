@@ -1,5 +1,7 @@
 package com.meant.api.module.discount.controller.response;
 
+import com.meant.api.module.discount.service.DiscountCodeBuyerProjection;
+import com.meant.api.module.discount.service.dto.BuyerDiscountCodeSearchResult;
 import com.meant.api.module.discount.service.dto.DiscountCodeSearchResult;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
@@ -23,9 +25,13 @@ public record DiscountCodeSearchResponse(
 ) {
 
     public static DiscountCodeSearchResponse from(DiscountCodeSearchResult result) {
+        return from(DiscountCodeBuyerProjection.from(result));
+    }
+
+    public static DiscountCodeSearchResponse from(BuyerDiscountCodeSearchResult result) {
         return new DiscountCodeSearchResponse(
                 result.merchantId(),
-                result.merchantDomain(),
+                result.merchantOrigin(),
                 result.cached(),
                 result.searchedAt(),
                 result.expiresAt(),

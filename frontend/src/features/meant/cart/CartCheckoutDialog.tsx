@@ -1,8 +1,10 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 
 import type { CheckoutAssistantMessage, CheckoutProfile } from '../../../lib/apiClient'
+import { sanitizeBuyerVisibleText } from '../agent/buyerVisibleText'
 import { CloseIcon, SparkMark } from '../shared/ui'
 import { EmbeddedCheckout } from './EmbeddedCheckout'
+import { merchantDisplayOrigin } from './merchantOrigin'
 import { MerchantCheckoutHandoff } from './MerchantCheckoutHandoff'
 import { MerchantCheckoutLink } from './MerchantCheckoutLink'
 import { SavedCheckoutDetailsPrompt } from './SavedCheckoutDetailsPrompt'
@@ -73,6 +75,7 @@ export function CartCheckoutDialog({
   const savedDetails = savedCheckoutDetails(session.profile)
   const offerSavedDetails = checkoutShouldOfferSavedDetails(session, savedDetailsDismissed)
   const embedded = checkoutUsesEmbeddedCheckout(session)
+  const merchantDisplay = merchantDisplayOrigin(session.merchantOrigin)
 
   const requestClose = useCallback(() => {
     if (embedded && !window.confirm('Close checkout? Your merchant cart will be preserved.')) return
@@ -127,15 +130,18 @@ export function CartCheckoutDialog({
     setAssistantBusy(true)
     try {
       const result = await onCheckoutAssistant(message, history, {
-        merchantDeliveryHint: merchantDeliveryCoverageSummary(session.merchant),
+        merchantDeliveryHint: merchantDeliveryCoverageSummary(merchantDisplay),
       })
       setMessages((current) => [
         ...current,
         {
           role: 'assistant',
           content:
-            result?.reply ??
-            'I could not reach the checkout agent. Send the details again or continue with the merchant link if one is available.',
+            sanitizeBuyerVisibleText(
+              result?.reply ??
+                'I could not reach the checkout agent. Send the details again or continue with the merchant link if one is available.',
+              merchantDisplay,
+            ),
         },
       ])
     } catch {
@@ -164,7 +170,7 @@ export function CartCheckoutDialog({
         <div className="mt-checkout-head">
           <div>
             <div className="mt-checkout-eyebrow">Checkout</div>
-            <h2 id="mt-cart-checkout-title">{session.merchant}</h2>
+            <h2 id="mt-cart-checkout-title">{merchantDisplay}</h2>
           </div>
           <button
             className="mt-checkout-close"
@@ -187,7 +193,7 @@ export function CartCheckoutDialog({
           </div>
           <div>
             <span>Merchant</span>
-            <strong>{session.merchant}</strong>
+            <strong>{merchantDisplay}</strong>
           </div>
         </div>
 

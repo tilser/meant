@@ -69,7 +69,6 @@ export interface UserProductSearchProductProfile {
   merchantId: string
   merchantDomain: string
   merchantName: string | null
-  endpoint: string | null
   merchantRank: number
   merchantSemanticScore: number
   merchantRerankScore: number
@@ -164,7 +163,6 @@ export interface ProductSelectedOptionProfile {
 }
 
 export interface MerchantProductDetailsProfile {
-  endpoint: string | null
   productId: string | null
   handle: string | null
   title: string | null
@@ -337,7 +335,7 @@ export interface UserSavedProductOfferProfile {
   priceCurrency: string | null
   delivery: string | null
   merchantId: string | null
-  merchantDomain: string | null
+  merchantOrigin?: string | null
   productVariantId: string | null
   variantTitle: string | null
   available: boolean | null
@@ -349,11 +347,12 @@ export interface UserSavedProductReviewProfile {
   insight: string | null
 }
 
-export type UserSavedProductDetailsProfile = Omit<MerchantProductDetailsProfile, 'endpoint'> & {
+export type UserSavedProductDetailsProfile = MerchantProductDetailsProfile & {
   ratingScore?: number | null
   ratingScaleMax?: number | null
   reviewCount?: number | null
   merchantName?: string | null
+  merchantOrigin?: string | null
 }
 
 export interface ProductVariantSelectionProfile {
@@ -446,8 +445,6 @@ export interface MerchantProfile {
   domain: string
   name: string
   description: string
-  advertisedMcpEndpoint: string | null
-  profileMcpEndpoint: string | null
   supportsIdentityLinking: boolean
 }
 
@@ -610,7 +607,7 @@ export interface UserInventoryCommerceReferenceProfile {
   provider: string
   merchantIntegrationId?: string | null
   externalMerchantId?: string | null
-  externalMerchantDomain?: string | null
+  merchantOrigin?: string | null
   canonicalProductKey?: string | null
   offerKey?: string | null
   sourceType: UserInventoryCommerceSourceType

@@ -12,7 +12,9 @@ import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionResult;
 import com.meant.api.module.agent.service.dto.FindDiscountCodesAgentToolInput;
 import com.meant.api.module.discount.service.DiscountCodeSearchService;
+import com.meant.api.module.discount.service.DiscountCodeBuyerProjection;
 import com.meant.api.module.discount.service.command.SearchDiscountCodesCommand;
+import com.meant.api.module.discount.service.dto.BuyerDiscountCodeSearchResult;
 import com.meant.api.module.discount.service.dto.DiscountCodeSearchResult;
 import com.meant.api.module.user.service.UserCommerceContextService;
 import java.util.List;
@@ -71,6 +73,7 @@ public class FindDiscountCodesAgentTool implements AgentTool {
                 List.of(),
                 List.of()
         ));
+        BuyerDiscountCodeSearchResult buyerResult = DiscountCodeBuyerProjection.from(result);
         AgentArtifact artifact = new AgentArtifact(
                 AgentArtifactType.DISCOUNT_CODES,
                 1,
@@ -79,11 +82,11 @@ public class FindDiscountCodesAgentTool implements AgentTool {
                 selection.detail().product().key(),
                 selection.offer().key(),
                 null, null, null, null,
-                json.writeArtifact(result)
+                json.writeArtifact(buyerResult)
         );
         return AgentToolExecutionResult.read(
-                json.write(result),
-                "Found " + result.codes().size() + " validated discount code(s).",
+                json.write(buyerResult),
+                "Found " + buyerResult.codes().size() + " validated discount code(s).",
                 List.of(artifact)
         );
     }

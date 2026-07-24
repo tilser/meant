@@ -1,5 +1,6 @@
 package com.meant.api.module.user.controller.response;
 
+import com.meant.api.module.merchant.service.MerchantBuyerTextSanitizer;
 import com.meant.api.module.merchant.service.dto.ProductCatalogAttribute;
 import com.meant.api.module.merchant.service.dto.ProductCatalogCategory;
 import com.meant.api.module.merchant.service.dto.ProductCatalogMedia;
@@ -20,8 +21,6 @@ public record UserProductSearchProductResponse(
         String merchantDomain,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String merchantName,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
-        String endpoint,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         int merchantRank,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
@@ -117,59 +116,61 @@ public record UserProductSearchProductResponse(
 ) {
 
     public static UserProductSearchProductResponse from(UserProductSearchProductResult result) {
+        BuyerTextContext buyerText = new BuyerTextContext(result.merchantDomain(), result.endpoint());
         return new UserProductSearchProductResponse(
                 result.productKey(),
                 result.productHash(),
                 result.merchantId(),
                 result.merchantDomain(),
-                result.merchantName(),
-                result.endpoint(),
+                buyerText.text(result.merchantName()),
                 result.merchantRank(),
                 result.merchantSemanticScore(),
                 result.merchantRerankScore(),
                 result.productId(),
-                result.title(),
-                result.descriptionHtml(),
-                result.url(),
-                result.imageUrl(),
+                buyerText.text(result.title()),
+                buyerText.text(result.descriptionHtml()),
+                buyerText.url(result.url()),
+                buyerText.url(result.imageUrl()),
                 result.priceMinAmount(),
                 result.priceMaxAmount(),
-                result.priceCurrency(),
+                buyerText.text(result.priceCurrency()),
                 result.listPriceAmount(),
-                result.listPriceCurrency(),
+                buyerText.text(result.listPriceCurrency()),
                 result.ratingScore(),
                 result.reviewCount(),
-                result.media().stream().map(ProductMediaResponse::from).toList(),
-                result.categories().stream().map(ProductCategoryResponse::from).toList(),
-                result.certifications(),
-                result.materials(),
-                result.skus(),
-                result.collections(),
-                result.attributes().stream().map(ProductAttributeResponse::from).toList(),
+                result.media().stream().map(media -> ProductMediaResponse.from(media, buyerText)).toList(),
+                result.categories().stream().map(category -> ProductCategoryResponse.from(category, buyerText)).toList(),
+                buyerText.texts(result.certifications()),
+                buyerText.texts(result.materials()),
+                buyerText.texts(result.skus()),
+                buyerText.texts(result.collections()),
+                result.attributes().stream()
+                        .map(attribute -> ProductAttributeResponse.from(attribute, buyerText))
+                        .toList(),
                 result.available(),
-                result.detailError(),
-                result.detailDescription(),
-                result.detailImageUrl(),
-                result.detailPriceMin(),
-                result.detailPriceMax(),
-                result.detailPriceCurrency(),
+                buyerText.text(result.detailError()),
+                buyerText.text(result.detailDescription()),
+                buyerText.url(result.detailImageUrl()),
+                buyerText.text(result.detailPriceMin()),
+                buyerText.text(result.detailPriceMax()),
+                buyerText.text(result.detailPriceCurrency()),
                 result.selectedVariantId(),
-                result.selectedVariantTitle(),
-                result.selectedVariantPriceAmount(),
-                result.selectedVariantPriceCurrency(),
-                result.selectedVariantImageUrl(),
-                result.selectedVariantImageAltText(),
+                buyerText.text(result.selectedVariantTitle()),
+                buyerText.text(result.selectedVariantPriceAmount()),
+                buyerText.text(result.selectedVariantPriceCurrency()),
+                buyerText.url(result.selectedVariantImageUrl()),
+                buyerText.text(result.selectedVariantImageAltText()),
                 result.selectedVariantAvailable(),
                 result.catalogRank(),
                 result.productRerankScore(),
                 result.rank(),
                 result.matchScore(),
-                result.whyMeantForYou(),
+                buyerText.text(result.whyMeantForYou()),
                 result.matchedFilterIds(),
                 result.missedFilterIds(),
                 result.inventoryRelationship(),
                 result.inventoryItemId(),
-                result.inventoryItemName()
+                buyerText.text(result.inventoryItemName())
         );
     }
 
@@ -182,8 +183,12 @@ public record UserProductSearchProductResponse(
             String altText
     ) {
 
-        static ProductMediaResponse from(ProductCatalogMedia media) {
-            return new ProductMediaResponse(media.type(), media.url(), media.altText());
+        static ProductMediaResponse from(ProductCatalogMedia media, BuyerTextContext buyerText) {
+            return new ProductMediaResponse(
+                    buyerText.text(media.type()),
+                    buyerText.url(media.url()),
+                    buyerText.text(media.altText())
+            );
         }
     }
 
@@ -194,8 +199,11 @@ public record UserProductSearchProductResponse(
             String taxonomy
     ) {
 
-        static ProductCategoryResponse from(ProductCatalogCategory category) {
-            return new ProductCategoryResponse(category.value(), category.taxonomy());
+        static ProductCategoryResponse from(ProductCatalogCategory category, BuyerTextContext buyerText) {
+            return new ProductCategoryResponse(
+                    buyerText.text(category.value()),
+                    buyerText.text(category.taxonomy())
+            );
         }
     }
 
@@ -206,8 +214,35 @@ public record UserProductSearchProductResponse(
             String value
     ) {
 
-        static ProductAttributeResponse from(ProductCatalogAttribute attribute) {
-            return new ProductAttributeResponse(attribute.name(), attribute.value());
+        static ProductAttributeResponse from(ProductCatalogAttribute attribute, BuyerTextContext buyerText) {
+            return new ProductAttributeResponse(
+                    buyerText.text(attribute.name()),
+                    buyerText.text(attribute.value())
+            );
+        }
+    }
+
+    private record BuyerTextContext(String merchantDomain, String endpoint) {
+
+        private String text(String value) {
+            return MerchantBuyerTextSanitizer.sanitize(
+                    value,
+                    merchantDomain,
+                    endpoint,
+                    endpoint
+            );
+        }
+
+        private List<String> texts(List<String> values) {
+            return values == null ? null : values.stream().map(this::text).toList();
+        }
+
+        private String url(String value) {
+            if (value == null || value.isBlank()) {
+                return value;
+            }
+            String trimmed = value.trim();
+            return trimmed.equals(text(trimmed)) ? trimmed : null;
         }
     }
 }

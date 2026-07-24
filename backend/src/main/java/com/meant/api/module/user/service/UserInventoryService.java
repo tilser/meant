@@ -362,6 +362,7 @@ public class UserInventoryService {
                 .merchantIntegrationId(item.getMerchantIntegrationId())
                 .externalMerchantId(item.getExternalMerchantId())
                 .externalMerchantDomain(item.getExternalMerchantDomain())
+                .merchantOrigin(item.getMerchantOrigin())
                 .canonicalProductKey(item.getCanonicalProductKey())
                 .offerKey(item.getOfferKey())
                 .sourceType(item.getSourceType())
@@ -420,6 +421,9 @@ public class UserInventoryService {
                 .externalMerchantDomain(reference == null
                         ? existingValue(existing, UserInventoryItem::getExternalMerchantDomain)
                         : reference.externalMerchantDomain())
+                .merchantOrigin(reference == null
+                        ? existingValue(existing, UserInventoryItem::getMerchantOrigin)
+                        : reference.merchantOrigin())
                 .canonicalProductKey(reference == null
                         ? existingValue(existing, UserInventoryItem::getCanonicalProductKey)
                         : reference.canonicalProductKey())
@@ -609,6 +613,7 @@ public class UserInventoryService {
                     entity.getMerchantIntegrationId(),
                     entity.getExternalMerchantId(),
                     entity.getExternalMerchantDomain(),
+                    entity.getMerchantOrigin(),
                     entity.getCanonicalProductKey(),
                     entity.getOfferKey(),
                     entity.getSourceType(),

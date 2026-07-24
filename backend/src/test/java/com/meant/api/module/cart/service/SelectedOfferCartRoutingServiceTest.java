@@ -32,6 +32,7 @@ import com.meant.api.module.merchant.service.dto.CapabilityAuthorizationDecision
 import com.meant.api.module.merchant.service.dto.CommerceCapabilityDecision;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.module.merchant.service.dto.MerchantExecutionPolicy;
+import com.meant.api.module.merchant.service.dto.MerchantIntegrationRouting;
 import com.meant.api.module.merchant.service.dto.MerchantIntegrationResult;
 import com.meant.api.module.merchant.service.query.ListMerchantIntegrationsByIdsQuery;
 import com.meant.api.module.user.service.dto.ResolvedSelectedOffer;
@@ -92,8 +93,8 @@ class SelectedOfferCartRoutingServiceTest {
             }
         };
         SelectedOfferCartRoutingService service = new SelectedOfferCartRoutingService(
-                new StubIntegrationLookup(), new StubProviderLookup(provider(
-                        UUID.randomUUID(), UUID.randomUUID(), MerchantIntegrationProvider.GENERIC_UCP)),
+                new StubIntegrationLookup(), new StubProviderLookup(new MerchantCartProvider(
+                        UUID.randomUUID(), "merchant.test", "https://merchant.test/api/ucp/mcp", null)),
                 List.of(external), new CartBindingMetrics(new SimpleMeterRegistry()));
 
         CartRoutingTarget cartTarget = service.resolvePersistedExternal(persisted);
@@ -116,7 +117,7 @@ class SelectedOfferCartRoutingServiceTest {
                 null, "merchant.test", null, "https://merchant.test/api/ucp/mcp", "2026-04-08",
                 MerchantIntegrationAuthStrategy.NONE, MerchantIntegrationStatus.ACTIVE,
                 MerchantIntegrationSource.DISCOVERY, Instant.now(), Instant.now(), Instant.now());
-        MerchantCartProvider provider = provider(merchantId, integrationId, MerchantIntegrationProvider.GENERIC_UCP);
+        MerchantCartProvider provider = provider(integration, "merchant.test");
         SelectedOfferCartRoutingService service = new SelectedOfferCartRoutingService(
                 new StubIntegrationLookup(integration), new StubProviderLookup(provider), List.of(),
                 new CartBindingMetrics(new SimpleMeterRegistry()));
@@ -125,7 +126,10 @@ class SelectedOfferCartRoutingServiceTest {
 
         assertThat(target.provider()).isEqualTo(MerchantIntegrationProvider.GENERIC_UCP);
         assertThat(target.merchantIntegrationId()).isEqualTo(integrationId);
-        assertThat(target.merchantProvider()).isSameAs(provider);
+        assertThat(target.merchantProvider().merchantDomain()).isEqualTo("merchant.test");
+        assertThat(target.merchantProvider().routingDomain()).isEqualTo("merchant.test");
+        assertThat(target.merchantProvider().advertisedMcpEndpoint())
+                .isEqualTo("https://merchant.test/api/ucp/mcp");
         assertThat(target.scopeKey()).isEqualTo("GENERIC_UCP:integration:" + integrationId);
     }
 
@@ -137,10 +141,11 @@ class SelectedOfferCartRoutingServiceTest {
         MerchantIntegrationResult integration = new MerchantIntegrationResult(
                 integrationId, merchantId, MerchantIntegrationProvider.SHOPIFY,
                 MerchantIntegrationKind.MERCHANT_CONNECTION, Set.of(MerchantIntegrationRole.CART),
-                shopId, "shop.test", shopId, "https://cart.shopify.test/api/ucp/mcp", "1.0",
+                shopId, "allbirds.com", shopId,
+                "https://weareallbirds.myshopify.com/api/ucp/mcp", "1.0",
                 MerchantIntegrationAuthStrategy.OAUTH_BEARER, MerchantIntegrationStatus.ACTIVE,
                 MerchantIntegrationSource.DISCOVERY, Instant.now(), Instant.now(), Instant.now());
-        MerchantCartProvider provider = provider(merchantId, integrationId, MerchantIntegrationProvider.SHOPIFY);
+        MerchantCartProvider provider = provider(integration, "allbirds.com");
         SelectedOfferCartRoutingService service = new SelectedOfferCartRoutingService(
                 new StubIntegrationLookup(integration), new StubProviderLookup(provider), List.of(),
                 new CartBindingMetrics(new SimpleMeterRegistry()));
@@ -151,6 +156,11 @@ class SelectedOfferCartRoutingServiceTest {
         assertThat(target.merchantIntegrationId()).isEqualTo(integrationId);
         assertThat(target.externalMerchantId()).isEqualTo(shopId);
         assertThat(target.scopeKey()).isEqualTo("SHOPIFY:integration:" + integrationId);
+        assertThat(target.merchantProvider().merchantDomain()).isEqualTo("allbirds.com");
+        assertThat(target.merchantProvider().routingDomain())
+                .isEqualTo("weareallbirds.myshopify.com");
+        assertThat(target.merchantProvider().advertisedMcpEndpoint())
+                .isEqualTo("https://weareallbirds.myshopify.com/api/ucp/mcp");
     }
 
     @Test
@@ -171,8 +181,7 @@ class SelectedOfferCartRoutingServiceTest {
                 null, "merchant.test", null, "https://cart.merchant.test/api/ucp/mcp", "2026-04-08",
                 MerchantIntegrationAuthStrategy.NONE, MerchantIntegrationStatus.ACTIVE,
                 MerchantIntegrationSource.DISCOVERY, Instant.now(), Instant.now(), Instant.now());
-        MerchantCartProvider provider = provider(
-                merchantId, cartIntegrationId, MerchantIntegrationProvider.GENERIC_UCP);
+        MerchantCartProvider provider = provider(cartIntegration, "merchant.test");
         SelectedOfferCartRoutingService service = new SelectedOfferCartRoutingService(
                 new StubIntegrationLookup(catalogIntegration, cartIntegration),
                 new StubProviderLookup(provider), List.of(),
@@ -182,7 +191,8 @@ class SelectedOfferCartRoutingServiceTest {
 
         assertThat(target.merchantIntegrationId()).isEqualTo(cartIntegrationId);
         assertThat(target.scopeKey()).isEqualTo("GENERIC_UCP:integration:" + cartIntegrationId);
-        assertThat(target.merchantProvider()).isSameAs(provider);
+        assertThat(target.merchantProvider().merchantDomain()).isEqualTo("merchant.test");
+        assertThat(target.merchantProvider().routingDomain()).isEqualTo("merchant.test");
     }
 
     @Test
@@ -197,8 +207,7 @@ class SelectedOfferCartRoutingServiceTest {
                 MerchantIntegrationAuthStrategy.NONE, MerchantIntegrationStatus.ACTIVE,
                 MerchantIntegrationSource.LEGACY_MERCHANT_BACKFILL,
                 Instant.now(), Instant.now(), Instant.now());
-        MerchantCartProvider provider = provider(
-                merchantId, integrationId, MerchantIntegrationProvider.GENERIC_UCP);
+        MerchantCartProvider provider = provider(staleBackfillIntegration, "allbirds.com");
         SelectedOfferCartRoutingService service = new SelectedOfferCartRoutingService(
                 new StubIntegrationLookup(staleBackfillIntegration),
                 new StubProviderLookup(provider), List.of(),
@@ -210,18 +219,32 @@ class SelectedOfferCartRoutingServiceTest {
         assertThat(target.scopeKey()).isEqualTo("GENERIC_UCP:integration:" + integrationId);
     }
 
-    private MerchantCartProvider provider(
-            UUID merchantId,
-            UUID integrationId,
-            MerchantIntegrationProvider integrationProvider
-    ) {
+    private MerchantCartProvider provider(MerchantIntegrationResult integration, String merchantDomain) {
         CommerceCapabilityDecision cart = new CommerceCapabilityDecision(
                 CommerceOperation.CART, true, CapabilityAuthorizationDecision.notRequired(), true,
                 CapabilityIntegrationHealth.HEALTHY, false, CapabilityAvailability.AVAILABLE,
-                CommerceExecutionRail.PROVIDER_CART, List.of(), integrationId, integrationProvider);
+                CommerceExecutionRail.PROVIDER_CART, List.of(), integration.id(), integration.provider());
+        MerchantIntegrationRouting routing = new MerchantIntegrationRouting(
+                integration.id(),
+                integration.provider(),
+                integration.roles(),
+                integration.status(),
+                integration.externalMerchantId(),
+                integration.verifiedDomain(),
+                integration.verifiedShopIdentity(),
+                integration.endpoint()
+        );
         return new MerchantCartProvider(
-                merchantId, "merchant.test", "https://merchant.test/api/ucp/mcp", null, List.of(),
-                new MerchantExecutionPolicy(List.of(cart)));
+                integration.merchantId(),
+                merchantDomain,
+                merchantDomain,
+                integration.endpoint(),
+                null,
+                List.of(routing),
+                new MerchantExecutionPolicy(List.of(cart)),
+                integration.capturedAt(),
+                Set.of()
+        );
     }
 
     private ResolvedSelectedOffer offer(UUID integrationId) {

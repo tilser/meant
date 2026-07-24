@@ -6,6 +6,8 @@ import com.meant.api.module.order.entity.MerchantOrderLine;
 import com.meant.api.module.order.service.dto.OrderLineResult;
 import com.meant.api.module.order.service.dto.OrderSummaryResult;
 import com.meant.api.module.order.service.dto.OrderResult;
+import com.meant.api.module.merchant.service.MerchantBuyerTextSanitizer;
+import com.meant.api.module.merchant.service.MerchantProductMessageSanitizer;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -20,11 +22,11 @@ public class OrderResultMapper {
         return new OrderResult(
                 order.getId(),
                 order.getMerchantId(),
-                order.getMerchantDomain(),
-                order.getMerchantName(),
+                buyerText(order, order.getMerchantDomain()),
+                buyerText(order, order.getMerchantName()),
                 order.getRemoteOrderId(),
-                displayId(order),
-                order.getOrderNumber(),
+                buyerText(order, displayId(order)),
+                buyerText(order, order.getOrderNumber()),
                 state,
                 state.displayStatus(),
                 statusNote(state),
@@ -33,7 +35,7 @@ public class OrderResultMapper {
                 order.getSubtotalAmount(),
                 order.getCurrency(),
                 order.getTotalQuantity(),
-                order.getOrderStatusUrl(),
+                buyerUrl(order, order.getOrderStatusUrl()),
                 order.getLines().stream()
                         .sorted(Comparator.comparing(MerchantOrderLine::getPosition))
                         .map(line -> lineResult(order, line))
@@ -48,11 +50,11 @@ public class OrderResultMapper {
         return new OrderSummaryResult(
                 order.getId(),
                 order.getMerchantId(),
-                order.getMerchantDomain(),
-                order.getMerchantName(),
+                buyerText(order, order.getMerchantDomain()),
+                buyerText(order, order.getMerchantName()),
                 order.getRemoteOrderId(),
-                displayId(order),
-                order.getOrderNumber(),
+                buyerText(order, displayId(order)),
+                buyerText(order, order.getOrderNumber()),
                 state,
                 state.displayStatus(),
                 statusNote(state),
@@ -61,7 +63,7 @@ public class OrderResultMapper {
                 order.getSubtotalAmount(),
                 order.getCurrency(),
                 order.getTotalQuantity(),
-                order.getOrderStatusUrl(),
+                buyerUrl(order, order.getOrderStatusUrl()),
                 order.getCreatedAt(),
                 order.getUpdatedAt()
         );
@@ -72,17 +74,42 @@ public class OrderResultMapper {
                 line.getId(),
                 productKey(order, line),
                 line.getProductId(),
-                line.getProductTitle(),
-                order.getMerchantName() == null ? order.getMerchantDomain() : order.getMerchantName(),
+                buyerText(order, line.getProductTitle()),
+                buyerText(
+                        order,
+                        order.getMerchantName() == null
+                                ? order.getMerchantDomain()
+                                : order.getMerchantName()
+                ),
                 line.getProductVariantId(),
-                line.getVariantTitle(),
-                line.getSku(),
-                line.getImageUrl(),
-                line.getProductUrl(),
+                buyerText(order, line.getVariantTitle()),
+                buyerText(order, line.getSku()),
+                buyerUrl(order, line.getImageUrl()),
+                buyerUrl(order, line.getProductUrl()),
                 line.getQuantity(),
                 line.getUnitAmount(),
                 line.getTotalAmount(),
                 line.getCurrency()
+        );
+    }
+
+    private String buyerText(MerchantOrder order, String value) {
+        return MerchantBuyerTextSanitizer.sanitize(
+                value,
+                order.getMerchantDomain(),
+                null,
+                order.getEndpoint()
+        );
+    }
+
+    private String buyerUrl(MerchantOrder order, String value) {
+        return MerchantProductMessageSanitizer.buyerSafeUrl(
+                value,
+                MerchantProductMessageSanitizer.context(
+                        order.getMerchantDomain(),
+                        null,
+                        order.getEndpoint()
+                )
         );
     }
 

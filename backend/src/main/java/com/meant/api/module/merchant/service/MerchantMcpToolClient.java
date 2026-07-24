@@ -147,7 +147,7 @@ public class MerchantMcpToolClient {
             Map<String, String> headers
     ) {
         return callTool(
-                provider.domain(),
+                provider.routingDomain(),
                 provider.advertisedMcpEndpoint(),
                 provider.profileMcpEndpoint(),
                 toolName,
@@ -195,7 +195,7 @@ public class MerchantMcpToolClient {
                     endpointUri.toString(), response.textContent(), response.structuredContent(),
                     response.negotiatedCapabilities());
         } catch (RestClientException | MerchantOutboundUrlException | UcpMcpException exception) {
-            logEndpointFailure(provider.domain(), "exact MCP tool " + toolName, exception);
+            logEndpointFailure(provider.routingDomain(), "exact MCP tool " + toolName, exception);
             throw new MerchantMcpToolException("Exact MCP tool " + toolName + " failed", exception);
         }
     }
@@ -215,7 +215,7 @@ public class MerchantMcpToolClient {
             Map<String, String> headers
     ) {
         return callTool(
-                provider.domain(),
+                provider.routingDomain(),
                 provider.advertisedMcpEndpoint(),
                 provider.profileMcpEndpoint(),
                 toolName,

@@ -10,8 +10,6 @@ const merchant: MerchantProfile = {
   domain: 'merchant.example',
   name: 'Example Merchant',
   description: 'Direct merchant catalog',
-  advertisedMcpEndpoint: 'https://merchant.example/mcp',
-  profileMcpEndpoint: null,
   supportsIdentityLinking: false,
 }
 

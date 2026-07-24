@@ -341,6 +341,100 @@ class ShopifyCatalogProductRehydrationProviderTest {
     }
 
     @Test
+    void sanitizesBuyerVisibleMessagesWithoutTrustingShopifySellerCoordinatesAsOrigin() {
+        ShopifyGlobalCatalogProvider global = providerSource(50);
+        ProductCandidate selected = detailedCandidate(
+                "product-1", "variant-m", "seller-a", "seller.example", "M", 1299);
+        ProductCandidate sibling = detailedCandidate(
+                "product-1", "variant-l", "seller-a", "seller.example", "L", 1399);
+        CatalogSourceResult productResult = successful(List.of(selected, sibling));
+        ShopifyGlobalCatalogResponse.Product product = rawProduct();
+        ShopifyGlobalCatalogResponse.Seller technicalSeller = new ShopifyGlobalCatalogResponse.Seller(
+                "Seller A",
+                "seller-a",
+                "seller.example",
+                "https://seller-profile.transport.test/storefront",
+                List.of()
+        );
+        product = withVariants(
+                product,
+                product.variants().stream()
+                        .map(variant -> "seller-a".equals(variant.seller().id())
+                                ? withSeller(variant, technicalSeller)
+                                : variant)
+                        .toList()
+        );
+        ShopifyGlobalCatalogResponse.Message technical = new ShopifyGlobalCatalogResponse.Message(
+                "https://catalog.test/mcp",
+                "https://seller.example/mcp",
+                "/mcp",
+                "https://seller-profile.transport.test/storefront",
+                "Retry https://catalog.test/mcp, seller.example, or seller-profile.transport.test",
+                "https://catalog.test/mcp",
+                "https://seller.example/mcp",
+                "https://seller-profile.transport.test/private.png",
+                "https://seller.example/help"
+        );
+        ShopifyGlobalCatalogResponse.Message legitimate = new ShopifyGlobalCatalogResponse.Message(
+                "INFO",
+                "CARE_GUIDE",
+                "/product/care",
+                "text/plain",
+                "Read the independent care guide",
+                "INFO",
+                "INLINE",
+                "https://cdn.example/care.png",
+                "https://brand.example/care"
+        );
+        ShopifyGlobalCatalogProductResult detailsResult = new ShopifyGlobalCatalogProductResult(
+                productResult,
+                product,
+                List.of(technical, legitimate)
+        );
+        when(global.getProductWithDetails(any())).thenReturn(detailsResult);
+        CatalogProductReference requested = new CatalogProductReference(
+                "saved-product-message-sanitization",
+                SOURCE,
+                null,
+                null,
+                merchant("seller-a"),
+                "seller.example",
+                product("product-1"),
+                variant("variant-m"),
+                List.of(new ProductAttribute("variant-option", "Size", "M"))
+        );
+
+        CatalogProductDetailResult result = rehydrator(global, 50).getDetails(
+                requested,
+                new CatalogRehydrationContext("CZ", "en")
+        );
+
+        assertThat(result.rehydration().status()).isEqualTo(CatalogRehydrationStatus.FRESH);
+        assertThat(result.details().messages()).hasSize(2);
+        assertThat(result.details().messages().getFirst()).satisfies(message -> {
+            assertThat(message.type()).isEqualTo("notice");
+            assertThat(message.code()).isNull();
+            assertThat(message.path()).isNull();
+            assertThat(message.contentType()).isEqualTo("text/plain");
+            assertThat(message.severity()).isNull();
+            assertThat(message.presentation()).isEqualTo("inline");
+            assertThat(message.imageUrl()).isNull();
+            assertThat(message.url()).isNull();
+            assertThat(message.content())
+                    .contains("the merchant")
+                    .doesNotContain("catalog.test")
+                    .doesNotContain("seller.example")
+                    .doesNotContain("seller-profile.transport.test");
+        });
+        assertThat(result.details().messages().getLast()).satisfies(message -> {
+            assertThat(message.type()).isEqualTo("info");
+            assertThat(message.content()).isEqualTo("Read the independent care guide");
+            assertThat(message.imageUrl()).isEqualTo("https://cdn.example/care.png");
+            assertThat(message.url()).isEqualTo("https://brand.example/care");
+        });
+    }
+
+    @Test
     void partialSelectionReturnsCompatibleVariantsAndRequestsTheAnchoredShopIncludingUnavailableValues() {
         ShopifyGlobalCatalogProvider global = providerSource(50);
         ShopifyGlobalCatalogResponse.Product base = rawProduct();
@@ -799,6 +893,35 @@ class ShopifyCatalogProductRehydrationProviderTest {
                 variant.barcodes(),
                 variant.inputs(),
                 variant.seller(),
+                variant.checkoutUrl(),
+                variant.sellingPlan(),
+                variant.components()
+        );
+    }
+
+    private ShopifyGlobalCatalogResponse.Variant withSeller(
+            ShopifyGlobalCatalogResponse.Variant variant,
+            ShopifyGlobalCatalogResponse.Seller seller
+    ) {
+        return new ShopifyGlobalCatalogResponse.Variant(
+                variant.id(),
+                variant.productId(),
+                variant.sku(),
+                variant.handle(),
+                variant.title(),
+                variant.description(),
+                variant.url(),
+                variant.price(),
+                variant.listPrice(),
+                variant.availability(),
+                variant.requires(),
+                variant.options(),
+                variant.media(),
+                variant.categories(),
+                variant.tags(),
+                variant.barcodes(),
+                variant.inputs(),
+                seller,
                 variant.checkoutUrl(),
                 variant.sellingPlan(),
                 variant.components()

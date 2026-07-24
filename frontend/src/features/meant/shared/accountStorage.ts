@@ -45,7 +45,7 @@ export function accountSessionStorageKey(baseKey: string, userId: string | undef
   if (!PRODUCT_BEARING_ACCOUNT_STORAGE_KEYS.includes(baseKey as never)) {
     throw new Error(`Account storage key is not session-only: ${baseKey}`)
   }
-  return accountStorageKey(baseKey, userId)
+  return accountStorageKey(`${baseKey}.buyerSafeV2`, userId)
 }
 
 export function purgeLegacyAccountStorage(storage?: RemovableStorage): void {

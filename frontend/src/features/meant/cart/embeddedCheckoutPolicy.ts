@@ -26,7 +26,11 @@ export function resolveEmbeddedCheckoutBootstrap(
   now = Date.now(),
 ): EmbeddedCheckoutBootstrapDecision {
   if (descriptor.action === 'COMPLETED') return { mode: 'COMPLETED', reason: 'NONE' }
-  if (descriptor.action !== 'EMBEDDED' || !descriptor.sessionId || !descriptor.checkoutUrl) {
+  if (
+    descriptor.action !== 'EMBEDDED' ||
+    !descriptor.sessionId ||
+    !safeExternalCheckoutUrl(descriptor.checkoutUrl)
+  ) {
     return {
       mode: 'FALLBACK',
       reason: descriptor.action === 'EXTERNAL_HANDOFF' ? 'MERCHANT_HANDOFF' : 'BOOTSTRAP_FAILED',
@@ -51,6 +55,20 @@ export function safeExternalCheckoutUrl(value: string | null | undefined): strin
   try {
     const url = new URL(value)
     if (url.protocol !== 'https:' || !url.hostname || url.username || url.password) return null
+    const host = url.hostname.toLocaleLowerCase()
+    if (host.startsWith('mcp.') || host.includes('.mcp.')) return null
+    const path = url.pathname.toLocaleLowerCase().replace(/\/+$/, '') || '/'
+    if (
+      [
+        '/.well-known/ucp.json',
+        '/.well-known/ucp',
+        '/api/ucp/mcp',
+        '/api/mcp',
+        '/mcp',
+      ].some((protocolPath) => path === protocolPath || path.startsWith(`${protocolPath}/`))
+    ) {
+      return null
+    }
     return url.toString()
   } catch {
     return null

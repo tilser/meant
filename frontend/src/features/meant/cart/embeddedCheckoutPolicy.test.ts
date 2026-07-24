@@ -60,6 +60,24 @@ describe('embedded checkout bootstrap policy', () => {
     expect(safeExternalCheckoutUrl('javascript:alert(1)')).toBeNull()
     expect(safeExternalCheckoutUrl('http://shop.example/checkout')).toBeNull()
     expect(safeExternalCheckoutUrl('https://user:secret@shop.example/checkout')).toBeNull()
+    expect(safeExternalCheckoutUrl('https://shop.example/.well-known/ucp.json')).toBeNull()
+    expect(safeExternalCheckoutUrl('https://shop.example/api/ucp/mcp/session/1')).toBeNull()
+    expect(safeExternalCheckoutUrl('https://shop.example/api/mcp')).toBeNull()
+    expect(safeExternalCheckoutUrl('https://shop.example/mcp')).toBeNull()
+    expect(safeExternalCheckoutUrl('https://mcp.shop.example/checkouts/1')).toBeNull()
+    expect(safeExternalCheckoutUrl('https://shop.example/mcpology')).toBe(
+      'https://shop.example/mcpology',
+    )
     expect(safeExternalCheckoutUrl(undefined)).toBeNull()
+  })
+
+  test('never bootstraps an embedded checkout on an MCP host', () => {
+    expect(
+      resolveEmbeddedCheckoutBootstrap(
+        { ...descriptor, checkoutUrl: 'https://mcp.shop.example/checkouts/1' },
+        true,
+        Date.parse('2026-07-12T00:00:00Z'),
+      ),
+    ).toEqual({ mode: 'FALLBACK', reason: 'BOOTSTRAP_FAILED' })
   })
 })

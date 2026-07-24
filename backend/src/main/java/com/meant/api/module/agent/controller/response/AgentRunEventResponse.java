@@ -1,5 +1,6 @@
 package com.meant.api.module.agent.controller.response;
 
+import com.meant.api.module.agent.service.AgentBuyerPayloadSanitizer;
 import com.meant.api.module.agent.service.dto.AgentRunEventResult;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
@@ -24,7 +25,7 @@ public record AgentRunEventResponse(
                 result.runId(),
                 result.type(),
                 result.occurredAt(),
-                result.payloadJson()
+                AgentBuyerPayloadSanitizer.sanitize(result.payloadJson())
         );
     }
 }

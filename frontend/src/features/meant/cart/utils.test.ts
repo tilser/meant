@@ -99,6 +99,22 @@ describe('cart feature utilities', () => {
     expect(snapshot.appliedCodes[0]?.amount).toBe(0)
   })
 
+  test('stores the cart profile merchant domain as the trusted merchant origin', () => {
+    const profile = {
+      cartId: 'cart-1',
+      merchantDomain: ' nycfactory.com ',
+    } as unknown as CartProfile
+
+    const snapshot = cartSnapshotFromProfile(
+      profile,
+      'merchant-1',
+      'sollys-online-grocery.myshopify.com',
+    )
+
+    expect(snapshot.merchant).toBe('sollys-online-grocery.myshopify.com')
+    expect(snapshot.merchantOrigin).toBe('nycfactory.com')
+  })
+
   test('keeps delivery fees in automatic merchant savings calculations', () => {
     const snapshot = merchantSnapshot({
       subtotalAmount: 100,

@@ -1,12 +1,14 @@
 import { type FormEvent, useEffect, useRef, useState } from 'react'
 
 import type { CheckoutAssistantMessage, CheckoutProfile } from '../../../../lib/apiClient'
+import { sanitizeBuyerVisibleText } from '../../agent/buyerVisibleText'
 import type {
   ActiveCheckoutSession,
   CheckoutAssistantHandler,
   CheckoutReleaseHandler,
   CheckoutReleaseOutcome,
 } from '../../cart/checkoutTypes'
+import { merchantDisplayOrigin } from '../../cart/merchantOrigin'
 import { liveCheckoutGroupFor } from '../../cart/checkoutGroupResolution'
 import { EmbeddedCheckout } from '../../cart/EmbeddedCheckout'
 import {
@@ -44,14 +46,6 @@ function cartItemReadyForCheckout(item: CartItem): boolean {
     (item.cartLineId || item.remoteCartLineId) &&
     item.syncing !== true &&
     !item.syncError,
-  )
-}
-
-function checkoutMerchantDomain(group: CartGroup | null | undefined): string | null {
-  return (
-    group?.items
-      .map((item) => item.merchantDomain?.trim())
-      .find((domain): domain is string => Boolean(domain)) ?? null
   )
 }
 
@@ -201,15 +195,20 @@ export function InlineCheckoutBlock({
     setAssistantBusy(true)
     try {
       const result = await onCheckoutAssistant(message, history, {
-        merchantDeliveryHint: merchantDeliveryCoverageSummary(activeCheckout.merchant),
+        merchantDeliveryHint: merchantDeliveryCoverageSummary(
+          merchantDisplayOrigin(activeCheckout.merchantOrigin),
+        ),
       })
       setAssistantMessages((current) => [
         ...current,
         {
           role: 'assistant',
           content:
-            result?.reply ??
-            'I could not reach the checkout agent. Try again, or continue with the merchant link if one is available.',
+            sanitizeBuyerVisibleText(
+              result?.reply ??
+                'I could not reach the checkout agent. Try again, or continue with the merchant link if one is available.',
+              merchantDisplayOrigin(activeCheckout.merchantOrigin),
+            ),
         },
       ])
     } catch {
@@ -376,8 +375,7 @@ export function InlineCheckoutBlock({
           <div className="mt-ct-checkout-groups">
             {groups.map((group) => {
               const actionGroup = actionCart ? liveCheckoutGroupFor(group, liveGroups) : group
-              const merchantDomain =
-                checkoutMerchantDomain(actionGroup) ?? checkoutMerchantDomain(group)
+              const merchantOrigin = actionGroup?.merchantOrigin ?? group.merchantOrigin
               const groupCartId = actionGroup?.items.find((item) => item.cartId)?.cartId
               const releasedOutcome = groupCartId ? releasedCheckouts.get(groupCartId) : undefined
               const groupIsActive =
@@ -426,7 +424,9 @@ export function InlineCheckoutBlock({
                 <div className="mt-ct-cogroup" key={group.merchantKey}>
                   <div className="mt-ct-cogroup-head">
                     <div>
-                      <div className="mt-ct-cogroup-name">{merchantDomain ?? group.merchant}</div>
+                      <div className="mt-ct-cogroup-name">
+                        {merchantDisplayOrigin(merchantOrigin)}
+                      </div>
                       <div className="mt-mono mt-ct-cogroup-meta">
                         {group.items.reduce((sum, line) => sum + line.qty, 0)} items · Estimated{' '}
                         {money(group.total)}

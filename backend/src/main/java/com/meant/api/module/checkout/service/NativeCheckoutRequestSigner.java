@@ -71,7 +71,7 @@ public class NativeCheckoutRequestSigner {
                 provider.advertisedMcpEndpoint()
         );
         if (!StringUtils.hasText(endpoint)) {
-            endpoint = "https://" + provider.domain() + "/api/mcp";
+            endpoint = "https://" + provider.routingDomain() + "/api/mcp";
         }
         return URI.create(endpoint);
     }

@@ -5,6 +5,7 @@ import type {
   UserInventoryItemUpdateInput,
   UserInventorySelectedOptionProfile,
 } from '../../../lib/apiClient'
+import { merchantAdjacentEditableLabel } from '../cart/merchantOrigin'
 
 export type UserInventoryItemDraftInput = Omit<UserInventoryItemInput, 'photoPath'>
 
@@ -60,16 +61,44 @@ export function inventoryItemImage(
   item: UserInventoryItemProfile,
   signedPhotoUrl?: string | null,
 ): string | null {
-  return signedPhotoUrl || item.imageUrl || item.photoUrl
+  return (
+    signedPhotoUrl ||
+    safeInventoryProductUrl(item.imageUrl, item.commerceReference?.merchantOrigin) ||
+    safeInventoryProductUrl(item.photoUrl, item.commerceReference?.merchantOrigin)
+  )
 }
 
-export function safeInventoryProductUrl(value?: string | null): string | null {
+export function safeInventoryProductUrl(
+  value?: string | null,
+  merchantOrigin?: string | null,
+): string | null {
   if (!value) {
     return null
   }
   try {
     const url = new URL(value)
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+      return null
+    }
+    const host = url.hostname.toLocaleLowerCase()
+    const officialHost = merchantOrigin?.trim().toLocaleLowerCase() || null
+    if (
+      host.startsWith('mcp.') ||
+      host.includes('.mcp.') ||
+      ((host === 'myshopify.com' || host.endsWith('.myshopify.com')) && host !== officialHost)
+    ) {
+      return null
+    }
+    const path = url.pathname.toLocaleLowerCase().replace(/\/+$/, '') || '/'
+    if (
+      [
+        '/.well-known/ucp.json',
+        '/.well-known/ucp',
+        '/api/ucp/mcp',
+        '/api/mcp',
+        '/mcp',
+      ].some((protocolPath) => path === protocolPath || path.startsWith(`${protocolPath}/`))
+    ) {
       return null
     }
     return url.toString()
@@ -176,7 +205,7 @@ export function initialInventoryForm(
 export function inventoryFormFromItem(item: UserInventoryItemProfile): InventoryFormState {
   return {
     name: item.name,
-    brand: item.brand ?? '',
+    brand: merchantAdjacentEditableLabel(item.brand),
     category: item.category,
     description: item.description ?? '',
     productUrl: item.productUrl ?? '',

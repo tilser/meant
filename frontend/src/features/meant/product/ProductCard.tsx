@@ -9,6 +9,7 @@ import {
 } from 'react'
 
 import { InventorySignalBadge } from '../inventory/InventorySignalBadge'
+import { merchantAdjacentDisplayLabel } from '../cart/merchantOrigin'
 import { ChevronIcon, HeartIcon, MatchRing, PrefChip } from '../shared/icons'
 import { CloseIcon, ProductArtwork } from '../shared/ui'
 import type { Preference, Product, UserLocation } from '../types'
@@ -313,7 +314,7 @@ export function ProductCard({
       </div>
 
       <div className="mt-card-body">
-        <div className="mt-mono mt-card-brand">{product.brand}</div>
+        <div className="mt-mono mt-card-brand">{merchantAdjacentDisplayLabel(product.brand)}</div>
         <InventorySignalBadge product={product} compact />
         <div className="mt-card-name">{product.name}</div>
         {preferenceTagCount > 0 ? (

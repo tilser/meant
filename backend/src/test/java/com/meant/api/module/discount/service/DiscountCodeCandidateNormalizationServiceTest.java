@@ -25,6 +25,21 @@ class DiscountCodeCandidateNormalizationServiceTest {
                 .containsExactly("SAVE10", "DEAL20");
     }
 
+    @Test
+    void dropsCodesThatCouldSmuggleTransportCoordinatesOrMarkup() {
+        List<DiscountCodeCandidateSource> normalized = service.normalize(List.of(
+                candidate("SAVE10"),
+                candidate("https://seller.myshopify.com/api/mcp"),
+                candidate("<script>alert(1)</script>"),
+                candidate("SAVE 20"),
+                candidate("A".repeat(65))
+        ), 10);
+
+        assertThat(normalized)
+                .extracting(DiscountCodeCandidateSource::code)
+                .containsExactly("SAVE10");
+    }
+
     private DiscountCodeCandidateSource candidate(String code) {
         return new DiscountCodeCandidateSource(
                 code,

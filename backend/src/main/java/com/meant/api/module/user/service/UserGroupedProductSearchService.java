@@ -21,14 +21,13 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
 
 @Service
 @Validated
-@RequiredArgsConstructor
 @Slf4j
 public class UserGroupedProductSearchService {
 
@@ -43,6 +42,57 @@ public class UserGroupedProductSearchService {
     private final UserCanonicalProductReferencePersistenceService productReferencePersistenceService;
     private final UserDiscoverProductResultSetPersistenceService productResultSetPersistenceService;
     private final UserProductPreferenceMatchCuratorService preferenceMatchCuratorService;
+    private final UserCatalogMerchantOriginEnrichmentService merchantOriginEnrichmentService;
+
+    @Autowired
+    public UserGroupedProductSearchService(
+            UserProductSearchPreparationService preparationService,
+            FederatedCatalogDiscoveryService federatedDiscoveryService,
+            ExactProductGroupingService exactProductGroupingService,
+            ProductRankingService productRankingService,
+            UserProductRankingContextFactory rankingContextFactory,
+            UserCanonicalProductSessionStore productSessionStore,
+            UserCanonicalProductReferencePersistenceService productReferencePersistenceService,
+            UserDiscoverProductResultSetPersistenceService productResultSetPersistenceService,
+            UserProductPreferenceMatchCuratorService preferenceMatchCuratorService,
+            UserCatalogMerchantOriginEnrichmentService merchantOriginEnrichmentService
+    ) {
+        this.preparationService = preparationService;
+        this.federatedDiscoveryService = federatedDiscoveryService;
+        this.exactProductGroupingService = exactProductGroupingService;
+        this.productRankingService = productRankingService;
+        this.rankingContextFactory = rankingContextFactory;
+        this.productSessionStore = productSessionStore;
+        this.productReferencePersistenceService = productReferencePersistenceService;
+        this.productResultSetPersistenceService = productResultSetPersistenceService;
+        this.preferenceMatchCuratorService = preferenceMatchCuratorService;
+        this.merchantOriginEnrichmentService = merchantOriginEnrichmentService;
+    }
+
+    public UserGroupedProductSearchService(
+            UserProductSearchPreparationService preparationService,
+            FederatedCatalogDiscoveryService federatedDiscoveryService,
+            ExactProductGroupingService exactProductGroupingService,
+            ProductRankingService productRankingService,
+            UserProductRankingContextFactory rankingContextFactory,
+            UserCanonicalProductSessionStore productSessionStore,
+            UserCanonicalProductReferencePersistenceService productReferencePersistenceService,
+            UserDiscoverProductResultSetPersistenceService productResultSetPersistenceService,
+            UserProductPreferenceMatchCuratorService preferenceMatchCuratorService
+    ) {
+        this(
+                preparationService,
+                federatedDiscoveryService,
+                exactProductGroupingService,
+                productRankingService,
+                rankingContextFactory,
+                productSessionStore,
+                productReferencePersistenceService,
+                productResultSetPersistenceService,
+                preferenceMatchCuratorService,
+                new UserCatalogMerchantOriginEnrichmentService(null)
+        );
+    }
 
     public UserGroupedProductSearchResult search(
             @NotNull @Valid EnsureUserProfileCommand profileCommand,
@@ -148,7 +198,9 @@ public class UserGroupedProductSearchService {
             throw new UserProductSearchGroupingException("Every catalog discovery source failed");
         }
 
-        ProductGroupingResult grouping = exactProductGroupingService.evaluate(discovery.candidates());
+        ProductGroupingResult grouping = exactProductGroupingService.evaluate(
+                merchantOriginEnrichmentService.enrichCandidates(discovery.candidates())
+        );
         List<CanonicalProduct> groupedProducts = grouping.products().stream()
                 .filter(product -> !sameProduct(product, anchor, similarityReference))
                 .toList();

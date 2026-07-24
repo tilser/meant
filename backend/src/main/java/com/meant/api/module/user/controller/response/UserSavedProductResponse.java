@@ -1,6 +1,8 @@
 package com.meant.api.module.user.controller.response;
 
 import com.meant.api.module.user.service.dto.UserSavedProductResult;
+import com.meant.api.module.merchant.service.MerchantBuyerTextSanitizer;
+import com.meant.api.module.merchant.service.MerchantProductMessageSanitizer;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.util.List;
@@ -85,30 +87,33 @@ public record UserSavedProductResponse(
 ) {
 
     public static UserSavedProductResponse from(UserSavedProductResult result) {
+        MerchantProductMessageSanitizer.TransportContext buyerContext = buyerContext(result);
         return new UserSavedProductResponse(
                 result.id(),
                 result.productHash(),
-                result.name(),
-                result.brand(),
-                result.category(),
+                buyerText(result.name(), buyerContext),
+                buyerText(result.brand(), buyerContext),
+                buyerText(result.category(), buyerContext),
                 result.tone(),
-                result.imageUrl(),
-                result.productUrl(),
+                buyerUrl(result.imageUrl(), buyerContext),
+                buyerUrl(result.productUrl(), buyerContext),
                 result.remote(),
                 result.match(),
                 result.priceFrom(),
                 result.priceFromMinorUnits(),
                 result.priceCurrency(),
                 result.merchants(),
-                result.satisfies(),
-                result.misses(),
-                result.note(),
-                result.pros(),
-                result.cons(),
-                result.review() == null ? null : SavedReview.from(result.review()),
-                result.offers().stream().map(SavedOffer::from).toList(),
-                result.needs(),
-                result.provides(),
+                buyerTextValues(result.satisfies(), buyerContext),
+                buyerTextValues(result.misses(), buyerContext),
+                buyerText(result.note(), buyerContext),
+                buyerTextValues(result.pros(), buyerContext),
+                buyerTextValues(result.cons(), buyerContext),
+                result.review() == null ? null : SavedReview.from(result.review(), buyerContext),
+                result.offers().stream()
+                        .map(offer -> SavedOffer.from(offer, buyerContext))
+                        .toList(),
+                buyerText(result.needs(), buyerContext),
+                buyerTextValues(result.provides(), buyerContext),
                 result.marketCountry(),
                 result.marketContextApplied(),
                 result.commercialFactsAuthoritative(),
@@ -116,6 +121,53 @@ public record UserSavedProductResponse(
                 result.createdAt(),
                 result.updatedAt()
         );
+    }
+
+    private static MerchantProductMessageSanitizer.TransportContext buyerContext(
+            UserSavedProductResult result
+    ) {
+        String merchantOrigin = result.offers().stream()
+                .map(UserSavedProductResult.Offer::merchantOrigin)
+                .filter(value -> value != null && !value.isBlank())
+                .findFirst()
+                .orElseGet(() -> result.details() != null && result.details().merchantOrigin() != null
+                        ? result.details().merchantOrigin()
+                        : result.merchantOrigin());
+        List<String> technicalAliases = java.util.stream.Stream.concat(
+                        result.technicalEndpointAliases().stream(),
+                        result.details() == null
+                                ? java.util.stream.Stream.empty()
+                                : result.details().technicalEndpointAliases().stream()
+                )
+                .filter(value -> value != null && !value.isBlank())
+                .distinct()
+                .toList();
+        return MerchantProductMessageSanitizer.context(
+                merchantOrigin,
+                null,
+                technicalAliases.toArray(String[]::new)
+        );
+    }
+
+    private static String buyerText(
+            String value,
+            MerchantProductMessageSanitizer.TransportContext context
+    ) {
+        return MerchantProductMessageSanitizer.sanitizeBuyerText(value, context);
+    }
+
+    private static List<String> buyerTextValues(
+            List<String> values,
+            MerchantProductMessageSanitizer.TransportContext context
+    ) {
+        return values.stream().map(value -> buyerText(value, context)).toList();
+    }
+
+    private static String buyerUrl(
+            String value,
+            MerchantProductMessageSanitizer.TransportContext context
+    ) {
+        return MerchantProductMessageSanitizer.buyerSafeUrl(value, context);
     }
 
     @Schema(name = "UserSavedProductReview")
@@ -128,8 +180,15 @@ public record UserSavedProductResponse(
             String insight
     ) {
 
-        private static SavedReview from(UserSavedProductResult.Review result) {
-            return new SavedReview(result.score(), result.count(), result.insight());
+        private static SavedReview from(
+                UserSavedProductResult.Review result,
+                MerchantProductMessageSanitizer.TransportContext context
+        ) {
+            return new SavedReview(
+                    result.score(),
+                    result.count(),
+                    buyerText(result.insight(), context)
+            );
         }
     }
 
@@ -153,8 +212,12 @@ public record UserSavedProductResponse(
             String delivery,
             @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
             String merchantId,
-            @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
-            String merchantDomain,
+            @Schema(
+                    description = "Verified official storefront origin for buyer display",
+                    nullable = true,
+                    requiredMode = Schema.RequiredMode.NOT_REQUIRED
+            )
+            String merchantOrigin,
             @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
             String productVariantId,
             @Schema(nullable = true, requiredMode = Schema.RequiredMode.NOT_REQUIRED)
@@ -163,18 +226,29 @@ public record UserSavedProductResponse(
             Boolean available
     ) {
 
-        private static SavedOffer from(UserSavedProductResult.Offer result) {
+        private static SavedOffer from(
+                UserSavedProductResult.Offer result,
+                MerchantProductMessageSanitizer.TransportContext parentContext
+        ) {
+            String merchantOrigin =
+                    MerchantBuyerTextSanitizer.buyerSafeMerchantOrigin(result.merchantOrigin());
+            MerchantProductMessageSanitizer.TransportContext context =
+                    MerchantProductMessageSanitizer.context(
+                            merchantOrigin,
+                            null,
+                            parentContext.endpoints().toArray(String[]::new)
+                    );
             return new SavedOffer(
                     result.offerKey(),
-                    result.merchant(),
+                    buyerText(result.merchant(), context),
                     result.price(),
                     result.priceMinorUnits(),
                     result.priceCurrency(),
-                    result.delivery(),
+                    buyerText(result.delivery(), context),
                     result.merchantId(),
-                    result.merchantDomain(),
+                    merchantOrigin,
                     result.productVariantId(),
-                    result.variantTitle(),
+                    buyerText(result.variantTitle(), context),
                     result.available()
             );
         }

@@ -164,6 +164,7 @@ export interface CartItem {
   id: ProductId
   merchant: string
   qty: number
+  merchantOrigin?: string | null
   merchantId?: string | null
   merchantDomain?: string | null
   provider?: string | null

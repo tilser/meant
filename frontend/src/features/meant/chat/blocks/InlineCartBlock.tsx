@@ -1,6 +1,7 @@
 import { CloseIcon, ProductArtwork } from '../../shared/ui'
 import type { CartItem, Product, ProductId } from '../../types'
 import { cartGroups, cartLines, computeSmartAlerts, money } from '../../utils'
+import { merchantDisplayOrigin } from '../../cart/merchantOrigin'
 import { cartItemIdentity } from '../utils'
 
 export function InlineCartBlock({
@@ -97,7 +98,7 @@ export function InlineCartBlock({
               <div className="mt-ct-cart-info">
                 <div className="mt-ct-cart-name">{line.product.name}</div>
                 <div className="mt-mono mt-ct-cart-meta">
-                  {line.merchant} · {line.delivery}
+                  {merchantDisplayOrigin(line.merchantOrigin)} · {line.delivery}
                 </div>
                 {line.syncing || line.syncError ? (
                   <div

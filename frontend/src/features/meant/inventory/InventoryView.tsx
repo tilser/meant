@@ -16,6 +16,7 @@ import {
   type UserInventoryItemUpdateInput,
   validateInventoryPhotoFile,
 } from '../../../lib/apiClient'
+import { merchantAdjacentDisplayLabel } from '../cart/merchantOrigin'
 import { ProductSearchLoading } from '../chat/ProductSearchLoading'
 import { PrefChip } from '../shared/icons'
 import { EmptyState, Placeholder, SparkMark, ViewHead } from '../shared/ui'
@@ -335,7 +336,10 @@ function InventoryItemCard({
   const image = inventoryItemImage(item, signedPhotoUrl)
   const purchaseDate = inventoryDateLabel(item.purchasedOn ?? item.purchasedAt)
   const updatedAt = inventoryDateLabel(item.updatedAt)
-  const productUrl = safeInventoryProductUrl(item.productUrl)
+  const productUrl = safeInventoryProductUrl(
+    item.productUrl,
+    item.commerceReference?.merchantOrigin,
+  )
   const selectedOptionLabels = (item.commerceReference?.selectedOptions ?? [])
     .map(inventorySelectedOptionLabel)
     .filter((label): label is string => Boolean(label))
@@ -425,7 +429,14 @@ function InventoryItemCard({
               {inventorySourceLabel(item.source)} · {inventoryCategoryLabel(item.category)}
             </div>
             <h3 className="mt-inv-name">{item.name}</h3>
-            {item.brand ? <div className="mt-inv-brand">{item.brand}</div> : null}
+            {item.brand ? (
+              <div className="mt-inv-brand">
+                {merchantAdjacentDisplayLabel(
+                  item.brand,
+                  item.commerceReference?.merchantOrigin,
+                )}
+              </div>
+            ) : null}
           </div>
           <div className="mt-inv-actions">
             <button className="mt-act mt-act-ghost" type="button" onClick={toggleEditing}>

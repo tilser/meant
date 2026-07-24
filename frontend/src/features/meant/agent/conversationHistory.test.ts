@@ -33,4 +33,16 @@ describe('agent conversation history', () => {
     expect(discoverThreadMessageCount(thread)).toBe('2 messages')
     expect(discoverThreadPreview(thread)).toBe('Here are my picks.')
   })
+
+  test('sanitizes technical transport coordinates in persisted titles', () => {
+    const thread = threadFromAgentConversationSummary({
+      ...summary,
+      title:
+        'Continue with seller.myshopify.com, then browse https://official.example/products/shoe',
+    })
+
+    expect(thread.title).toBe(
+      'Continue with the merchant, then browse https://official.example/products/shoe',
+    )
+  })
 })

@@ -1,6 +1,7 @@
 import type { CheckoutCompletionProfile, CheckoutProfile } from '../../../lib/apiClient'
 import type { ActiveCheckoutSession } from './checkoutTypes'
 import { safeExternalCheckoutUrl } from './embeddedCheckoutPolicy'
+import { merchantDisplayOrigin } from './merchantOrigin'
 import { merchantDeliveryCoverageSummary } from '../utils'
 import { savedCheckoutDetails } from './savedCheckoutDetails'
 
@@ -171,7 +172,8 @@ export function checkoutPhase(session: ActiveCheckoutSession): string {
 export function checkoutAssistantPrompt(session: ActiveCheckoutSession): string {
   const merchantUrl = merchantCheckoutUrl(session)
   const continueUrl = merchantContinueUrl(session)
-  const coverage = merchantDeliveryCoverageSummary(session.merchant)
+  const merchantDisplay = merchantDisplayOrigin(session.merchantOrigin)
+  const coverage = merchantDeliveryCoverageSummary(merchantDisplay)
   if (checkoutRequiresMerchantRedirect(session.profile)) {
     return continueUrl
       ? 'Checkout inside Meant is not available for this Merchant. Please continue to Merchant checkout below.'
@@ -179,10 +181,10 @@ export function checkoutAssistantPrompt(session: ActiveCheckoutSession): string 
   }
   if (checkoutNeedsAddress(session)) {
     if (savedCheckoutDetails(session.profile)) {
-      return `I need shipping and contact details before I can continue with ${session.merchant}. You can reuse your saved details below or enter different details.`
+      return `I need shipping and contact details before I can continue with ${merchantDisplay}. You can reuse your saved details below or enter different details.`
     }
     return [
-      `I need shipping and contact details before I can continue with ${session.merchant}.`,
+      `I need shipping and contact details before I can continue with ${merchantDisplay}.`,
       coverage,
       'Send them here in one message, for example: "Ship to 1531 Hyde St, San Francisco, CA 94109, US, John Novak, john.novak@gmail.com, +1 415 555 0137".',
     ].join(' ')
@@ -204,6 +206,7 @@ export function checkoutAssistantPrompt(session: ActiveCheckoutSession): string 
 }
 
 export function merchantHandoffReason(session: ActiveCheckoutSession): string {
+  const merchantDisplay = merchantDisplayOrigin(session.merchantOrigin)
   const reasons = new Set(session.profile.ineligibilityReasons ?? [])
   if (
     reasons.has('AUTHORIZATION_REQUIRED') ||
@@ -220,7 +223,7 @@ export function merchantHandoffReason(session: ActiveCheckoutSession): string {
     return 'Everything is prepared — only the secure payment step remains with the merchant.'
   }
   if (checkoutHasExtensionInteraction(session.profile)) {
-    return `${session.merchant} requires additional interaction in its checkout before the order can be completed.`
+    return `${merchantDisplay} requires additional interaction in its checkout before the order can be completed.`
   }
-  return `Continue in ${session.merchant}'s checkout to finish the order.`
+  return `Continue in ${merchantDisplay}'s checkout to finish the order.`
 }

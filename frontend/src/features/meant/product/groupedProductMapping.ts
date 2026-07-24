@@ -1,4 +1,5 @@
 import type { CanonicalProductProfile } from '../../../lib/apiClient'
+import { merchantAdjacentDisplayLabel, merchantDisplayOrigin } from '../cart/merchantOrigin'
 import type { Product, ProductMedia } from '../types'
 import { minorUnitsToMajor } from '../utils'
 
@@ -75,7 +76,9 @@ export function productFromCanonical(product: CanonicalProductProfile): Product 
   const media: ProductMedia[] = product.media
     .filter((item) => Boolean(item.url))
     .map((item) => ({ type: item.type || 'image', url: item.url, altText: item.altText }))
-  const merchantName = recommended?.merchantName?.trim()
+  const merchantName = recommended?.merchantOrigin
+    ? merchantDisplayOrigin(recommended.merchantOrigin)
+    : merchantAdjacentDisplayLabel(recommended?.merchantName)
   const rankingUnavailable = !product.rankingExplanation
   const match = Math.round((product.rankingExplanation?.scoreBasisPoints ?? 0) / 100)
   const detailOptions = canonicalProductOptions(product)
@@ -94,8 +97,11 @@ export function productFromCanonical(product: CanonicalProductProfile): Product 
 
   return {
     id: product.key,
+    merchantDomain: recommended?.merchantOrigin ?? null,
     name: product.title?.trim() || 'Untitled product',
-    brand: firstAttribute(product, 'brand') || merchantName || 'Multiple merchants',
+    brand: merchantAdjacentDisplayLabel(
+      firstAttribute(product, 'brand') || merchantName || 'Multiple merchants',
+    ),
     category: firstAttribute(product, 'category') || 'Product',
     tone: productTone(product.key),
     imageUrl: media.find((item) => item.type.toLowerCase() === 'image')?.url ?? null,
@@ -125,12 +131,15 @@ export function productFromCanonical(product: CanonicalProductProfile): Product 
     // Existing cards require their established view-model offer shape. Exact selection always
     // reads canonicalProduct.offers and never uses these display-only projections for cart input.
     offers: product.offers.map((offer) => ({
-      merchant: offer.merchantName?.trim() || 'Merchant',
+      merchant: offer.merchantOrigin
+        ? merchantDisplayOrigin(offer.merchantOrigin)
+        : merchantAdjacentDisplayLabel(offer.merchantName),
       price: offer.price
         ? (minorUnitsToMajor(offer.price.minorUnits, offer.price.currency) ?? Number.NaN)
         : Number.NaN,
       priceMinorUnits: offer.price?.minorUnits ?? null,
       priceCurrency: offer.price?.currency ?? null,
+      merchantDomain: offer.merchantOrigin ?? null,
       delivery:
         offer.delivery.length > 0
           ? 'Delivery estimate available'

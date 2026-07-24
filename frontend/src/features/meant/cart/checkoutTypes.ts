@@ -13,6 +13,7 @@ export interface ActiveCheckoutSession {
   cartId: string
   threadId?: string | null
   merchant: string
+  merchantOrigin: string | null
   source: 'cart' | 'chat'
   items: readonly CartItem[]
   saved: number

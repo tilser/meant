@@ -1,5 +1,6 @@
 package com.meant.api.module.catalog.service.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.util.List;
 
 /**
@@ -35,8 +36,139 @@ public record RehydratedProductDetails(
         Double ratingScore,
         Double ratingScaleMax,
         Long reviewCount,
-        String merchantName
+        String merchantName,
+        String merchantOrigin,
+        @JsonIgnore List<String> technicalEndpointAliases
 ) {
+    public RehydratedProductDetails(
+            String productId,
+            String handle,
+            String title,
+            String description,
+            String url,
+            String imageUrl,
+            List<Image> images,
+            List<Media> media,
+            List<Category> categories,
+            List<String> tags,
+            List<Option> options,
+            List<SelectedOption> selected,
+            List<Variant> variants,
+            Integer totalVariants,
+            PriceRange priceRange,
+            PriceRange listPriceRange,
+            Boolean requiresSellingPlan,
+            Variant selectedVariant,
+            List<String> skus,
+            List<String> certifications,
+            List<String> materials,
+            List<String> collections,
+            List<Attribute> attributes,
+            List<Message> messages,
+            Double ratingScore,
+            Double ratingScaleMax,
+            Long reviewCount,
+            String merchantName
+    ) {
+        this(
+                productId,
+                handle,
+                title,
+                description,
+                url,
+                imageUrl,
+                images,
+                media,
+                categories,
+                tags,
+                options,
+                selected,
+                variants,
+                totalVariants,
+                priceRange,
+                listPriceRange,
+                requiresSellingPlan,
+                selectedVariant,
+                skus,
+                certifications,
+                materials,
+                collections,
+                attributes,
+                messages,
+                ratingScore,
+                ratingScaleMax,
+                reviewCount,
+                merchantName,
+                null,
+                List.of()
+        );
+    }
+
+    public RehydratedProductDetails(
+            String productId,
+            String handle,
+            String title,
+            String description,
+            String url,
+            String imageUrl,
+            List<Image> images,
+            List<Media> media,
+            List<Category> categories,
+            List<String> tags,
+            List<Option> options,
+            List<Variant> variants,
+            Integer totalVariants,
+            PriceRange priceRange,
+            PriceRange listPriceRange,
+            Boolean requiresSellingPlan,
+            Variant selectedVariant,
+            List<String> skus,
+            List<String> certifications,
+            List<String> materials,
+            List<String> collections,
+            List<Attribute> attributes,
+            List<Message> messages,
+            Double ratingScore,
+            Double ratingScaleMax,
+            Long reviewCount,
+            String merchantName,
+            String merchantOrigin,
+            List<String> technicalEndpointAliases
+    ) {
+        this(
+                productId,
+                handle,
+                title,
+                description,
+                url,
+                imageUrl,
+                images,
+                media,
+                categories,
+                tags,
+                options,
+                List.of(),
+                variants,
+                totalVariants,
+                priceRange,
+                listPriceRange,
+                requiresSellingPlan,
+                selectedVariant,
+                skus,
+                certifications,
+                materials,
+                collections,
+                attributes,
+                messages,
+                ratingScore,
+                ratingScaleMax,
+                reviewCount,
+                merchantName,
+                merchantOrigin,
+                technicalEndpointAliases
+        );
+    }
+
     public RehydratedProductDetails(
             String productId,
             String handle,
@@ -94,7 +226,9 @@ public record RehydratedProductDetails(
                 ratingScore,
                 ratingScaleMax,
                 reviewCount,
-                merchantName
+                merchantName,
+                null,
+                List.of()
         );
     }
 
@@ -112,6 +246,54 @@ public record RehydratedProductDetails(
         collections = immutable(collections);
         attributes = immutable(attributes);
         messages = immutable(messages);
+        technicalEndpointAliases = immutable(technicalEndpointAliases);
+    }
+
+    public RehydratedProductDetails withMerchantPresentation(
+            String verifiedMerchantOrigin,
+            List<String> additionalTechnicalAliases
+    ) {
+        List<String> aliases = java.util.stream.Stream.concat(
+                        technicalEndpointAliases.stream(),
+                        additionalTechnicalAliases == null
+                                ? java.util.stream.Stream.empty()
+                                : additionalTechnicalAliases.stream()
+                )
+                .filter(value -> value != null && !value.isBlank())
+                .distinct()
+                .toList();
+        return new RehydratedProductDetails(
+                productId,
+                handle,
+                title,
+                description,
+                url,
+                imageUrl,
+                images,
+                media,
+                categories,
+                tags,
+                options,
+                selected,
+                variants,
+                totalVariants,
+                priceRange,
+                listPriceRange,
+                requiresSellingPlan,
+                selectedVariant,
+                skus,
+                certifications,
+                materials,
+                collections,
+                attributes,
+                messages,
+                ratingScore,
+                ratingScaleMax,
+                reviewCount,
+                merchantName,
+                verifiedMerchantOrigin,
+                aliases
+        );
     }
 
     public record Image(String url, String altText) {

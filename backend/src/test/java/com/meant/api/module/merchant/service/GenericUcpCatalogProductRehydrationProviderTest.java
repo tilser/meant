@@ -276,6 +276,84 @@ class GenericUcpCatalogProductRehydrationProviderTest {
     }
 
     @Test
+    void sanitizesBuyerVisibleMessagesUsingTheMerchantTableOriginAndEveryTransportAlias() {
+        String ucpUrl = "https://profile-source.transport.test/custom-ucp.json";
+        String advertised = "https://advertised.transport.test/custom-mcp";
+        String profileMcp = "https://profile-mcp.transport.test/legacy-mcp";
+        String profileEndpoint = "https://fetched-profile.transport.test/redirected-ucp.json";
+        String integration = "https://integration.transport.test/catalog-mcp";
+        String runtime = "https://runtime.transport.test/api/ucp/mcp";
+        ProductDetailsResult base = details(
+                "product-1",
+                selected("variant-1", "12.99", "M"),
+                List.of(variant("variant-1", "12.99", "M"))
+        );
+        ProductDetailsResponse.Message technical = new ProductDetailsResponse.Message(
+                runtime,
+                advertised,
+                "/mcp",
+                profileMcp,
+                "Retry " + String.join(", ", ucpUrl, advertised, profileMcp, profileEndpoint, integration, runtime),
+                runtime,
+                profileEndpoint,
+                profileEndpoint + "/private.png",
+                integration + "/internal"
+        );
+        ProductDetailsResponse.Message legitimate = new ProductDetailsResponse.Message(
+                "INFO",
+                "CARE_GUIDE",
+                "/product/care",
+                "text/plain",
+                "Read the care guide",
+                "INFO",
+                "INLINE",
+                "https://cdn.example/care.png",
+                "https://official.example/products/product-1"
+        );
+        when(detailsService.get(any())).thenReturn(new ProductDetailsResult(
+                runtime,
+                "redacted",
+                base.product(),
+                List.of(technical, legitimate),
+                com.meant.api.plugin.spi.NegotiatedCapabilities.none(),
+                "official.example",
+                List.of(ucpUrl, advertised, profileMcp, profileEndpoint, integration)
+        ));
+
+        CatalogProductDetailResult result = provider.getDetails(
+                reference(MERCHANT_ID, null, "merchant-1", "variant-1", List.of(option("M"))),
+                new CatalogRehydrationContext("CZ", "en")
+        );
+
+        assertThat(result.rehydration().status()).isEqualTo(CatalogRehydrationStatus.FRESH);
+        assertThat(result.details().messages()).hasSize(2);
+        assertThat(result.details().messages().getFirst()).satisfies(message -> {
+            assertThat(message.type()).isEqualTo("notice");
+            assertThat(message.code()).isNull();
+            assertThat(message.path()).isNull();
+            assertThat(message.contentType()).isEqualTo("text/plain");
+            assertThat(message.severity()).isNull();
+            assertThat(message.presentation()).isEqualTo("inline");
+            assertThat(message.imageUrl()).isNull();
+            assertThat(message.url()).isNull();
+            assertThat(message.content())
+                    .contains("official.example")
+                    .doesNotContain("profile-source.transport.test")
+                    .doesNotContain("advertised.transport.test")
+                    .doesNotContain("profile-mcp.transport.test")
+                    .doesNotContain("fetched-profile.transport.test")
+                    .doesNotContain("integration.transport.test")
+                    .doesNotContain("runtime.transport.test");
+        });
+        assertThat(result.details().messages().getLast()).satisfies(message -> {
+            assertThat(message.type()).isEqualTo("info");
+            assertThat(message.content()).isEqualTo("Read the care guide");
+            assertThat(message.imageUrl()).isEqualTo("https://cdn.example/care.png");
+            assertThat(message.url()).isEqualTo("https://official.example/products/product-1");
+        });
+    }
+
+    @Test
     void resolvesSessionReferenceByServerRoutingInOneBoundedIntegrationRead() {
         CatalogProductReference first = reference(null, INTEGRATION_ID, "merchant-1", "variant-1", List.of(option("M")));
         CatalogProductReference second = new CatalogProductReference(

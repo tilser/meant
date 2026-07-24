@@ -43,16 +43,18 @@ public record CartResult(
     public static CartResult from(
             Cart cart,
             List<CartDeliveryGroupResult> deliveryGroups,
-            List<CartMessageResult> messages
+            List<CartMessageResult> messages,
+            String instructions
     ) {
-        return from(cart, null, deliveryGroups, messages);
+        return from(cart, null, deliveryGroups, messages, instructions);
     }
 
     public static CartResult from(
             Cart cart,
             UcpCartResponse currentResponse,
             List<CartDeliveryGroupResult> deliveryGroups,
-            List<CartMessageResult> messages
+            List<CartMessageResult> messages,
+            String instructions
     ) {
         UcpCartResponse.Cart currentCart = currentResponse == null ? null : currentResponse.cart();
         UcpCartResponse.Money currentTotal = currentCart == null || currentCart.cost() == null
@@ -71,7 +73,7 @@ public record CartResult(
                 cart.getRemoteCartId(),
                 currentCart == null ? cart.getCheckoutUrl() : currentCart.checkoutUrl(),
                 currentCart == null ? cart.getContinueUrl() : currentCart.continueUrl(),
-                currentResponse == null ? cart.getInstructions() : currentResponse.instructions(),
+                instructions,
                 currentCart == null || currentCart.totalQuantity() == null
                         ? cart.getTotalQuantity() : currentCart.totalQuantity(),
                 currentCart == null ? cart.getTotalAmount() : UcpCartMoney.displayAmount(currentTotal),

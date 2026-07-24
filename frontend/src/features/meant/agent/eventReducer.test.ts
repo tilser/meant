@@ -178,6 +178,39 @@ describe('agent v1 event reducer', () => {
     expect(state.runs['run-a']?.artifacts['product:one']?.label).toBe('Updated trail shoe')
   })
 
+  test('sanitizes live assistant and tool text without collapsing ordinary sentences', () => {
+    let state = reduceAgentEvent(createAgentEventReducerState(), event('run-a', 1, 'run.started'))
+    state = reduceAgentEvent(
+      state,
+      event('run-a', 2, 'assistant.delta', {
+        text:
+          'I need details from seller.myshopify.com. ' +
+          'Browse https://official.example/products/shoe.',
+      }),
+    )
+    state = reduceAgentEvent(
+      state,
+      event('run-a', 3, 'tool.completed', {
+        modelToolCallId: 'tool-call-1',
+        toolName: 'search_catalog',
+        summary: 'Called mcp.shop.example.',
+        resultJson: JSON.stringify({
+          message: 'Retry https://transport.example/api/ucp/mcp/session/1.',
+          officialUrl: 'https://official.example/products/shoe',
+        }),
+      }),
+    )
+
+    expect(state.runs['run-a']?.streamingAssistantText).toBe(
+      'I need details from the merchant. Browse https://official.example/products/shoe.',
+    )
+    expect(state.runs['run-a']?.tools['tool-call-1']?.summary).toBe('Called the merchant.')
+    expect(JSON.parse(state.runs['run-a']?.tools['tool-call-1']?.resultJson ?? 'null')).toEqual({
+      message: 'Retry the merchant.',
+      officialUrl: 'https://official.example/products/shoe',
+    })
+  })
+
   test('persists terminal state before ignoring duplicate terminal replay', () => {
     let state = reduceAgentEvent(createAgentEventReducerState(), event('run-a', 1, 'run.started'))
     const failed = event('run-a', 2, 'run.failed', {

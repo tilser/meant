@@ -49,6 +49,8 @@ public class Cart extends AssignedIdEntity<UUID> {
 
     private String merchantDomain;
 
+    private String routingDomain;
+
     private String provider;
 
     private UUID merchantIntegrationId;
@@ -133,8 +135,13 @@ public class Cart extends AssignedIdEntity<UUID> {
     private List<CartAppliedCode> appliedCodes = new ArrayList<>();
 
     public void assignProvider(UUID merchantId, String merchantDomain) {
+        assignProvider(merchantId, merchantDomain, merchantDomain);
+    }
+
+    public void assignProvider(UUID merchantId, String merchantDomain, String routingDomain) {
         this.merchantId = merchantId;
         this.merchantDomain = merchantDomain;
+        this.routingDomain = routingDomain;
     }
 
     public void assignRoutingScope(
@@ -145,12 +152,32 @@ public class Cart extends AssignedIdEntity<UUID> {
             UUID merchantId,
             String merchantDomain
     ) {
+        assignRoutingScope(
+                provider,
+                merchantIntegrationId,
+                externalMerchantId,
+                routingScopeKey,
+                merchantId,
+                merchantDomain,
+                merchantDomain
+        );
+    }
+
+    public void assignRoutingScope(
+            String provider,
+            UUID merchantIntegrationId,
+            String externalMerchantId,
+            String routingScopeKey,
+            UUID merchantId,
+            String merchantDomain,
+            String routingDomain
+    ) {
         if (this.routingScopeKey != null && (!Objects.equals(this.routingScopeKey, routingScopeKey)
                 || !Objects.equals(this.provider, provider)
                 || !Objects.equals(this.merchantIntegrationId, merchantIntegrationId)
                 || !Objects.equals(this.externalMerchantId, externalMerchantId)
                 || !Objects.equals(this.merchantId, merchantId)
-                || !Objects.equals(this.merchantDomain, merchantDomain))) {
+                || !Objects.equals(effectiveRoutingDomain(), routingDomain))) {
             throw new IllegalStateException("A remote cart cannot change merchant/provider scope");
         }
         this.provider = provider;
@@ -158,7 +185,14 @@ public class Cart extends AssignedIdEntity<UUID> {
         this.externalMerchantId = externalMerchantId;
         this.routingScopeKey = routingScopeKey;
         this.merchantId = merchantId;
-        this.merchantDomain = merchantDomain;
+        if (merchantDomain != null && !merchantDomain.isBlank()) {
+            this.merchantDomain = merchantDomain;
+        }
+        this.routingDomain = routingDomain;
+    }
+
+    private String effectiveRoutingDomain() {
+        return routingDomain == null || routingDomain.isBlank() ? merchantDomain : routingDomain;
     }
 
     public void replaceSnapshot(

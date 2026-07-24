@@ -67,6 +67,7 @@ public class MerchantUcpProfileObservationService {
         return new MerchantUcpProfileObservation(
                 domain,
                 profileEndpoint,
+                profile,
                 profile.services() == null ? Map.of() : Map.copyOf(profile.services()),
                 profile.capabilities() == null ? Set.of() : Set.copyOf(profile.capabilities().keySet()),
                 result.capturedAt()

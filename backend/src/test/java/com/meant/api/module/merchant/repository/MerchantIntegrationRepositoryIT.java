@@ -136,7 +136,8 @@ class MerchantIntegrationRepositoryIT extends PostgresIntegrationTestSupport {
         assertThat(merchantCartProviderLookupService.findById(merchant.getId()))
                 .get()
                 .satisfies(provider -> {
-                    assertThat(provider.domain()).isEqualTo(merchant.getDomain());
+                    assertThat(provider.merchantDomain()).isEqualTo(merchant.getDomain());
+                    assertThat(provider.routingDomain()).isEqualTo(merchant.getDomain());
                     assertThat(provider.advertisedMcpEndpoint()).isEqualTo(merchant.getAdvertisedMcpEndpoint());
                 });
         assertThat(merchantLookupService.activeSearchResult(merchant.getId()).domain())

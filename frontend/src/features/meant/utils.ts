@@ -1,4 +1,5 @@
 import { CORE_PREFERENCE_IDS, LOCATIONS, MERCHANTS, PRODUCTS, REPLIES } from './data'
+import { merchantAdjacentDisplayLabel } from './cart/merchantOrigin'
 import { ApiError } from '../../lib/apiError'
 import type { CanonicalOfferProfile, CartProfile } from '../../lib/apiClient'
 import type {
@@ -464,7 +465,7 @@ export function resolveAsk(
         return 'Current merchant prices are unavailable. Open this product again to retry.'
       }
       const prices = pricedOffers.map((offer) => offer.price)
-      return `Best price is ${money(firstOffer.price)} at ${firstOffer.merchant}. Across ${
+      return `Best price is ${money(firstOffer.price)} at ${merchantAdjacentDisplayLabel(firstOffer.merchant)}. Across ${
         product.offers.length
       } stores it runs ${money(Math.min(...prices))} to ${money(Math.max(...prices))}.`
     }
@@ -484,7 +485,7 @@ export function resolveAsk(
       if (!fastest) {
         return 'Current delivery options are unavailable. Open this product again to retry.'
       }
-      return `Fastest option is ${fastest.merchant}: ${fastest.delivery.toLowerCase()}.`
+      return `Fastest option is ${merchantAdjacentDisplayLabel(fastest.merchant)}: ${fastest.delivery.toLowerCase()}.`
     }
 
     if (/material|made of|fabric|polyester|natural|organic|ingredient|synthetic/.test(normalized)) {
@@ -583,6 +584,7 @@ export function mergeCartSnapshot(
   merchantKey: string,
   snapshot: CartProfile,
 ): CartItem[] {
+  const merchantOrigin = snapshot.merchantDomain?.trim() || null
   const snapshotDeliveryGroups = (
     snapshot.deliveryGroups as readonly (CartDeliveryGroup | null | undefined)[] | undefined
   )?.filter((group): group is CartDeliveryGroup => Boolean(group))
@@ -597,6 +599,7 @@ export function mergeCartSnapshot(
     if (!line && (item.productVariantId || item.offerKey)) {
       return {
         ...item,
+        merchantOrigin: merchantOrigin ?? item.merchantOrigin,
         merchantId: snapshot.merchantId ?? item.merchantId,
         merchantDomain: snapshot.merchantDomain ?? item.merchantDomain,
         provider: snapshot.provider ?? item.provider,
@@ -615,6 +618,7 @@ export function mergeCartSnapshot(
     }
     return {
       ...item,
+      merchantOrigin: merchantOrigin ?? item.merchantOrigin,
       merchantId: snapshot.merchantId ?? item.merchantId,
       merchantDomain: snapshot.merchantDomain ?? item.merchantDomain,
       provider: snapshot.provider ?? item.provider,
@@ -722,6 +726,7 @@ export function computeSmartAlerts(
 export interface CartGroup {
   merchantKey: string
   merchant: string
+  merchantOrigin: string | null
   items: CartLine[]
   subtotal: number
   deliveryRaw: number
@@ -735,17 +740,21 @@ export interface CartGroup {
 }
 
 export function cartGroups(lines: readonly CartLine[]): CartGroup[] {
-  const groups = new Map<string, { merchant: string; items: CartLine[] }>()
+  const groups = new Map<
+    string,
+    { merchant: string; merchantOrigin: string | null; items: CartLine[] }
+  >()
   lines.forEach((line) => {
     const merchantKey = cartMerchantKey(line)
     const existing = groups.get(merchantKey)
     groups.set(merchantKey, {
       merchant: existing?.merchant ?? line.merchant,
+      merchantOrigin: existing?.merchantOrigin ?? line.merchantOrigin?.trim() ?? null,
       items: [...(existing?.items ?? []), line],
     })
   })
 
-  return [...groups.entries()].map(([merchantKey, { merchant, items }]) => {
+  return [...groups.entries()].map(([merchantKey, { merchant, merchantOrigin, items }]) => {
     const localSubtotal = items.reduce((sum, item) => sum + item.price * item.qty, 0)
     const rawRemoteSubtotal = firstCartAmount(items, (item) => item.cartSubtotalAmount)
     const remoteSubtotal = reliableRemoteCartSubtotal(rawRemoteSubtotal, localSubtotal)
@@ -771,6 +780,7 @@ export function cartGroups(lines: readonly CartLine[]): CartGroup[] {
     return {
       merchantKey,
       merchant,
+      merchantOrigin,
       items,
       subtotal,
       deliveryRaw,

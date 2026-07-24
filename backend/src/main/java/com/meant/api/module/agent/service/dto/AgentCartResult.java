@@ -3,6 +3,7 @@ package com.meant.api.module.agent.service.dto;
 import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
 
 import com.meant.api.module.cart.constant.CartAppliedCodeType;
+import com.meant.api.module.cart.service.BuyerSafeRoutingScopeKey;
 import com.meant.api.module.cart.service.dto.CartAppliedCodeResult;
 import com.meant.api.module.cart.service.dto.CartDeliveryGroupResult;
 import com.meant.api.module.cart.service.dto.CartDeliveryMoneyResult;
@@ -30,7 +31,7 @@ public record AgentCartResult(
     public record Cart(
             UUID cartId,
             UUID merchantId,
-            String merchantDomain,
+            String merchantOrigin,
             String provider,
             UUID merchantIntegrationId,
             String externalMerchantId,
@@ -49,6 +50,7 @@ public record AgentCartResult(
             List<DeliveryGroup> deliveryGroups
     ) {
         public Cart {
+            routingScopeKey = BuyerSafeRoutingScopeKey.project(routingScopeKey);
             appliedCodes = appliedCodes == null ? List.of() : List.copyOf(appliedCodes);
             lines = lines == null ? List.of() : List.copyOf(lines);
             deliveryGroups = deliveryGroups == null ? List.of() : List.copyOf(deliveryGroups);
@@ -214,8 +216,11 @@ public record AgentCartResult(
     public record Failure(
             String routingScopeKey,
             String provider,
-            String merchantDomain,
+            String merchantOrigin,
             String safeMessage
     ) {
+        public Failure {
+            routingScopeKey = BuyerSafeRoutingScopeKey.project(routingScopeKey);
+        }
     }
 }

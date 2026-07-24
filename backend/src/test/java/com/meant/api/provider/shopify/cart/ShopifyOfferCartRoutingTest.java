@@ -33,6 +33,7 @@ import com.meant.api.module.merchant.constant.*;
 import com.meant.api.module.merchant.service.dto.UcpCapabilityDefinition;
 import com.meant.api.module.merchant.service.dto.UcpProfile;
 import com.meant.api.module.merchant.service.dto.UcpProfileFetchResult;
+import com.meant.api.module.merchant.service.dto.UcpPaymentHandlerDefinition;
 import com.meant.api.module.merchant.service.dto.UcpServiceDefinition;
 import com.meant.api.module.user.service.dto.ResolvedSelectedOffer;
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
@@ -144,7 +145,8 @@ class ShopifyOfferCartRoutingTest {
         assertThat(first.merchantProvider().merchantId()).isNull();
         assertThat(first.scopeKey())
                 .isEqualTo("SHOPIFY:merchant:gid://shopify/Shop/1:domain:shop.example");
-        assertThat(first.merchantProvider().domain()).isEqualTo("shop.example");
+        assertThat(first.merchantProvider().merchantDomain()).isEqualTo("shop.example");
+        assertThat(first.merchantProvider().routingDomain()).isEqualTo("shop.example");
         assertThat(first.merchantProvider().advertisedMcpEndpoint())
                 .isEqualTo("https://shop.example/api/ucp/mcp");
         assertThat(second.merchantProvider().advertisedMcpEndpoint())
@@ -155,6 +157,72 @@ class ShopifyOfferCartRoutingTest {
                 MerchantIntegrationProvider.SHOPIFY,
                 "gid://shopify/Shop/1"
         );
+    }
+
+    @Test
+    void technicalShopifyRouteKeepsVerifiedStorefrontOriginAsBuyerFacingDomain() throws Exception {
+        String routingDomain = "weareallbirds.myshopify.com";
+        String endpoint = "https://" + routingDomain + "/api/ucp/mcp";
+        MerchantCartProviderLookupService lookup = mock(MerchantCartProviderLookupService.class);
+        when(lookup.findActiveByCanonicalDomain(routingDomain)).thenReturn(Optional.empty());
+        when(lookup.findActiveByShopifyShopId("gid://shopify/Shop/1")).thenReturn(Optional.empty());
+        UcpProfileClient profiles = mock(UcpProfileClient.class);
+        when(profiles.fetchProfileResult(eq(routingDomain), any())).thenReturn(profile(
+                endpoint,
+                Map.of("dev.ucp.shopping.cart", List.of(capability("dev.ucp.shopping.cart"))),
+                "allbirds.com"
+        ));
+        ShopifyExternalOfferCartRoutingProvider provider = routingProvider(
+                properties(),
+                lookup,
+                profiles,
+                publicUrlValidator(),
+                mock(MerchantEnrichmentCandidateService.class)
+        );
+
+        CartRoutingTarget target = provider.resolve(offer(routingDomain)).orElseThrow();
+
+        assertThat(target.merchantProvider().merchantDomain()).isEqualTo("allbirds.com");
+        assertThat(target.merchantProvider().routingDomain()).isEqualTo(routingDomain);
+        assertThat(target.merchantProvider().advertisedMcpEndpoint()).isEqualTo(endpoint);
+        assertThat(target.scopeKey())
+                .isEqualTo("SHOPIFY:merchant:gid://shopify/Shop/1:domain:" + routingDomain);
+    }
+
+    @Test
+    void shopIdentityMatchReusesCanonicalStorefrontWithoutProfileDiscovery() {
+        String routingDomain = "weareallbirds.myshopify.com";
+        String endpoint = "https://" + routingDomain + "/api/ucp/mcp";
+        MerchantCartProviderLookupService lookup = mock(MerchantCartProviderLookupService.class);
+        when(lookup.findActiveByCanonicalDomain(routingDomain)).thenReturn(Optional.empty());
+        when(lookup.findActiveByShopifyShopId("gid://shopify/Shop/1")).thenReturn(Optional.of(
+                new MerchantCartProvider(
+                        UUID.randomUUID(),
+                        "allbirds.com",
+                        routingDomain,
+                        endpoint,
+                        "https://" + routingDomain + "/.well-known/ucp",
+                        List.of(),
+                        MerchantExecutionPolicy.unavailable(),
+                        Instant.now(),
+                        Set.of("dev.ucp.shopping.cart")
+                )
+        ));
+        UcpProfileClient profiles = mock(UcpProfileClient.class);
+        ShopifyExternalOfferCartRoutingProvider provider = routingProvider(
+                properties(),
+                lookup,
+                profiles,
+                publicUrlValidator(),
+                mock(MerchantEnrichmentCandidateService.class)
+        );
+
+        CartRoutingTarget target = provider.resolve(offer(routingDomain)).orElseThrow();
+
+        assertThat(target.merchantProvider().merchantDomain()).isEqualTo("allbirds.com");
+        assertThat(target.merchantProvider().routingDomain()).isEqualTo(routingDomain);
+        assertThat(target.merchantProvider().advertisedMcpEndpoint()).isEqualTo(endpoint);
+        verifyNoInteractions(profiles);
     }
 
     @Test
@@ -484,13 +552,39 @@ class ShopifyOfferCartRoutingTest {
 
     private UcpProfileFetchResult profile(
             String endpoint, Map<String, List<UcpCapabilityDefinition>> capabilities) {
+        return profile(endpoint, capabilities, "shop.example");
+    }
+
+    private UcpProfileFetchResult profile(
+            String endpoint,
+            Map<String, List<UcpCapabilityDefinition>> capabilities,
+            String merchantOrigin
+    ) {
+        ObjectMapper objectMapper = new ObjectMapper();
+        var shopPayConfig = objectMapper.createObjectNode();
+        shopPayConfig.put("shop_id", "1");
+        var googlePayConfig = objectMapper.createObjectNode();
+        googlePayConfig.putObject("merchant_info")
+                .put("merchant_origin", merchantOrigin)
+                .put("merchant_name", "Shop");
+        googlePayConfig.putArray("allowed_payment_methods")
+                .addObject()
+                .putObject("tokenization_specification")
+                .putObject("parameters")
+                .put("gateway", "shopify")
+                .put("gatewayMerchantId", "1");
         UcpProfile profile = new UcpProfile(
                 "2026-04-08", Map.of(),
                 Map.of("dev.ucp.shopping", List.of(new UcpServiceDefinition(
                         "dev.ucp.shopping", "2026-04-08", null, "mcp",
                         endpoint, null))),
                 capabilities,
-                Map.of());
+                Map.of(
+                        "dev.shopify.shop_pay", List.of(new UcpPaymentHandlerDefinition(
+                                "dev.shopify.shop_pay", "2026-04-08", null, null, shopPayConfig)),
+                        "com.google.pay", List.of(new UcpPaymentHandlerDefinition(
+                                "com.google.pay", "2026-04-08", null, null, googlePayConfig))
+                ));
         return new UcpProfileFetchResult(profile, "{}", "https://shop.example/.well-known/ucp", Instant.now());
     }
 
@@ -538,7 +632,8 @@ class ShopifyOfferCartRoutingTest {
                 new CapabilityExecutionPolicyEvaluator(),
                 List.of(new ShopifyCapabilityReadinessAdapter(readiness, auth)));
         return new ShopifyExternalOfferCartRoutingProvider(
-                properties, lookup, observations, validator, executionPolicyService);
+                properties, lookup, observations, validator, executionPolicyService,
+                new com.meant.api.provider.shopify.identity.ShopifyMerchantIdentityResolver());
     }
 
     private ShopifyCartRetryPolicy retryPolicy() {

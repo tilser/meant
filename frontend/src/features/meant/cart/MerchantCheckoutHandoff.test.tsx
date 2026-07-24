@@ -41,7 +41,9 @@ const product: Product = {
 const items: CartItem[] = [
   {
     id: product.id,
-    merchant: 'Example Shop',
+    merchant: 'sollys-online-grocery.myshopify.com',
+    merchantOrigin: 'nycfactory.com',
+    merchantDomain: 'nycfactory.com',
     qty: 1,
     cartId: 'cart-1',
     productVariantId: 'variant-1',
@@ -72,7 +74,8 @@ const profile: CheckoutProfile = {
 const session: ActiveCheckoutSession = {
   ownerId: 'user-a',
   cartId: 'cart-1',
-  merchant: 'Example Shop',
+  merchant: 'sollys-online-grocery.myshopify.com',
+  merchantOrigin: 'nycfactory.com',
   source: 'cart',
   items,
   saved: 0,
@@ -147,6 +150,8 @@ test('uses the same merchant handoff panel in cart and chat without entering emb
   )
 
   for (const markup of [cartMarkup, chatMarkup]) {
+    expect(markup).toContain('nycfactory.com')
+    expect(markup).not.toContain('sollys-online-grocery.myshopify.com')
     expect(markup).toContain('Checkout inside Meant is not available for this Merchant')
     expect(markup).toContain('Open Merchant checkout')
     expect(markup).not.toContain('Open secure checkout')

@@ -35,6 +35,7 @@ function canonicalProduct(key: string): CanonicalProductProfile {
         components: [],
       },
       merchantName: `Merchant ${suffix}`,
+      merchantOrigin: `${key}-${suffix}.example`,
       price: { minorUnits: 1200 - index * 200, currency: 'USD' },
       availability: { status: 'IN_STOCK' },
       delivery: [],
@@ -56,6 +57,26 @@ describe('grouped product card mapping', () => {
     expect(mapped[0]?.merchants).toBe(2)
     expect(mapped[0]?.priceFrom).toBe(10)
     expect(mapped[0]?.rankingUnavailable).toBe(true)
+  })
+
+  test('uses verified origins for technical canonical merchant labels', () => {
+    const canonical = canonicalProduct('technical-labels')
+    canonical.attributes = [{ name: 'brand', value: 'sollys-online-grocery.myshopify.com' }]
+    canonical.offers = canonical.offers.map((offer) => ({
+      ...offer,
+      merchantName: 'https://sollys-online-grocery.myshopify.com/mcp',
+    }))
+
+    const mapped = productFromCanonical(canonical)
+
+    expect(mapped.brand).toBe('Merchant')
+    expect(mapped.offers.map((offer) => offer.merchant)).toEqual([
+      'technical-labels-a.example',
+      'technical-labels-b.example',
+    ])
+    expect(JSON.stringify({ brand: mapped.brand, offers: mapped.offers })).not.toContain(
+      'sollys-online-grocery.myshopify.com',
+    )
   })
 
   test('marks a product ranking as available only when the canonical response includes it', () => {

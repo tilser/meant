@@ -7,10 +7,12 @@ import type {
   MiniCompareRow,
   SimilarProductsRehydrationResult,
 } from './types'
+import { merchantAdjacentDisplayLabel, merchantDisplayOrigin } from '../cart/merchantOrigin'
 import { normalizedProductResultSetId } from './productResultSetReference'
 
 let discoverChatThreadSequence = 0
-const DISCOVER_CHAT_THREADS_STORAGE_KEY = 'meant.discoverChatThreads'
+const DISCOVER_CHAT_THREADS_STORAGE_KEY = 'meant.discoverChatThreads.buyerSafeV2'
+const LEGACY_DISCOVER_CHAT_THREADS_STORAGE_KEY = 'meant.discoverChatThreads'
 const LEGACY_DISCOVER_CHAT_MESSAGES_STORAGE_KEY = 'meant.discoverChatMessages'
 const DISCOVER_CHAT_THREAD_UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -530,7 +532,7 @@ export function initialDiscoverChatThreads(storageScope?: string): DiscoverChatT
   if (storageScope) {
     // Pre-account-scoping builds stored whole Shopify results under shared keys. Never migrate
     // those facts into an authenticated account; purge them once scoped storage is available.
-    writeStorage(DISCOVER_CHAT_THREADS_STORAGE_KEY, [])
+    writeStorage(LEGACY_DISCOVER_CHAT_THREADS_STORAGE_KEY, [])
     writeStorage(LEGACY_DISCOVER_CHAT_MESSAGES_STORAGE_KEY, [])
   }
   const storedThreads = readStorage<DiscoverChatThread[] | null>(
@@ -835,7 +837,9 @@ export function searchProductReviewInsight(
 }
 
 function productCopyLine(product: Product): string {
-  const merchant = product.offers[0]?.merchant ?? `${product.merchants} merchants`
+  const merchant = product.offers[0]?.merchant
+    ? merchantAdjacentDisplayLabel(product.offers[0].merchant)
+    : `${product.merchants} merchants`
   return `${product.name} - ${money(product.priceFrom)} - ${merchant}`
 }
 
@@ -902,7 +906,7 @@ function discoverBlockCopyText(block: DiscoverChatBlock): string {
       .join('\n')
   }
   if (block.type === 'watch') {
-    return `Watching ${block.product.name}: ${money(block.price)} at ${block.merchant}`
+    return `Watching ${block.product.name}: ${money(block.price)} at ${merchantAdjacentDisplayLabel(block.merchant)}`
   }
   if (block.type === 'friendvote') {
     return `${block.person} voted ${block.vote} on ${block.product.name}: ${block.note}`
@@ -910,7 +914,7 @@ function discoverBlockCopyText(block: DiscoverChatBlock): string {
   if (block.type === 'added') {
     const price = block.price ?? block.product.priceFrom
     return [
-      `Added ${block.product.name} to cart from ${block.merchant}.`,
+      `Added ${block.product.name} to cart from ${merchantAdjacentDisplayLabel(block.merchant)}.`,
       price === null ? '' : `Price: ${money(price)}.`,
       block.count === undefined
         ? ''
@@ -949,7 +953,7 @@ function discoverBlockCopyText(block: DiscoverChatBlock): string {
         const priceLabel = price
           ? ` · ${price}${line.cartCurrency ? ` ${line.cartCurrency}` : ''}`
           : ''
-        return `${line.qty} x ${product}${line.variantTitle ? ` (${line.variantTitle})` : ''} - ${line.merchant}${priceLabel}`
+        return `${line.qty} x ${product}${line.variantTitle ? ` (${line.variantTitle})` : ''} - ${merchantDisplayOrigin(line.merchantOrigin)}${priceLabel}`
       }),
     ].join('\n')
   }

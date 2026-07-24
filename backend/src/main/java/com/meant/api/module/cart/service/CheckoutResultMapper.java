@@ -4,6 +4,8 @@ import com.meant.api.module.cart.entity.Cart;
 import com.meant.api.module.cart.service.dto.CheckoutResult;
 import com.meant.api.module.checkout.constant.CheckoutLifecycleState;
 import com.meant.api.module.merchant.constant.CommerceOperation;
+import com.meant.api.module.merchant.service.MerchantBuyerTextSanitizer;
+import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.module.merchant.service.dto.MerchantExecutionPolicy;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutResponse;
 import com.meant.api.plugin.support.UcpMoney;
@@ -26,11 +28,37 @@ public class CheckoutResultMapper {
     private final CheckoutExecutionPlanner checkoutExecutionPlanner;
 
     public CheckoutResult from(Cart cart, MerchantExecutionPolicy policy) {
-        return from(cart, parseStoredResponse(cart.getRawCheckoutResponse()), policy);
+        return from(cart, parseStoredResponse(cart.getRawCheckoutResponse()), policy, null);
+    }
+
+    public CheckoutResult from(Cart cart, MerchantCartProvider provider) {
+        return from(
+                cart,
+                parseStoredResponse(cart.getRawCheckoutResponse()),
+                provider.executionPolicy(),
+                provider
+        );
     }
 
     public CheckoutResult from(
             Cart cart, UcpCheckoutResponse response, MerchantExecutionPolicy policy) {
+        return from(cart, response, policy, null);
+    }
+
+    public CheckoutResult from(
+            Cart cart,
+            UcpCheckoutResponse response,
+            MerchantCartProvider provider
+    ) {
+        return from(cart, response, provider.executionPolicy(), provider);
+    }
+
+    private CheckoutResult from(
+            Cart cart,
+            UcpCheckoutResponse response,
+            MerchantExecutionPolicy policy,
+            MerchantCartProvider provider
+    ) {
         UcpCheckoutResponse.Checkout checkout = response == null ? null : response.resolvedCheckout();
         UcpMoney total = checkout == null ? null : checkout.resolvedTotal();
         String currency = firstText(
@@ -38,9 +66,19 @@ public class CheckoutResultMapper {
                 checkout == null ? null : checkout.resolvedCurrency(cart.getCurrency()),
                 cart.getCurrency()
         );
-        String continueUrl = firstText(checkout == null ? null : checkout.continueUrl(), cart.getContinueUrl());
-        String checkoutUrl = firstText(checkout == null ? null : checkout.checkoutUrl(), cart.getCheckoutUrl());
-        List<CheckoutResult.Message> checkoutMessages = messages(response);
+        String continueUrl = BuyerSafeCheckoutUrl.firstSafe(
+                cart,
+                provider,
+                checkout == null ? null : checkout.continueUrl(),
+                cart.getContinueUrl()
+        );
+        String checkoutUrl = BuyerSafeCheckoutUrl.firstSafe(
+                cart,
+                provider,
+                checkout == null ? null : checkout.checkoutUrl(),
+                cart.getCheckoutUrl()
+        );
+        List<CheckoutResult.Message> checkoutMessages = messages(cart, response, provider);
         String lifecycle = response == null
                 ? firstText(cart.getCheckoutLifecycleState(), cart.getCheckoutStatus())
                 : CheckoutLifecycleState.from(response).name();
@@ -108,21 +146,27 @@ public class CheckoutResultMapper {
         }
     }
 
-    private List<CheckoutResult.Message> messages(UcpCheckoutResponse response) {
+    private List<CheckoutResult.Message> messages(
+            Cart cart,
+            UcpCheckoutResponse response,
+            MerchantCartProvider provider
+    ) {
         if (response == null) {
             return List.of();
         }
         List<CheckoutResult.Message> messages = new ArrayList<>();
-        addMessages(messages, response.messages());
-        addErrors(messages, response.errors());
+        addMessages(cart, provider, messages, response.messages());
+        addErrors(cart, provider, messages, response.errors());
         UcpCheckoutResponse.Checkout checkout = response.resolvedCheckout();
         if (checkout != null) {
-            addMessages(messages, checkout.messages());
+            addMessages(cart, provider, messages, checkout.messages());
         }
         return messages;
     }
 
     private void addMessages(
+            Cart cart,
+            MerchantCartProvider provider,
             List<CheckoutResult.Message> target,
             List<UcpCheckoutResponse.CheckoutMessage> messages
     ) {
@@ -135,13 +179,15 @@ public class CheckoutResultMapper {
                         message.type(),
                         message.code(),
                         message.severity(),
-                        message.message(),
-                        message.target()
+                        sanitize(cart, provider, message.message()),
+                        sanitize(cart, provider, message.target())
                 ))
                 .forEach(target::add);
     }
 
     private void addErrors(
+            Cart cart,
+            MerchantCartProvider provider,
             List<CheckoutResult.Message> target,
             List<UcpCheckoutResponse.CheckoutError> errors
     ) {
@@ -154,10 +200,20 @@ public class CheckoutResultMapper {
                         "error",
                         error.code(),
                         error.isRecoverable() ? "recoverable" : "unrecoverable",
-                        error.message(),
+                        sanitize(cart, provider, error.message()),
                         null
                 ))
                 .forEach(target::add);
+    }
+
+    private String sanitize(Cart cart, MerchantCartProvider provider, String value) {
+        String providerSafe = MerchantBuyerTextSanitizer.sanitize(value, provider);
+        return MerchantBuyerTextSanitizer.sanitize(
+                providerSafe,
+                cart.getMerchantDomain(),
+                cart.getRoutingDomain(),
+                cart.getEndpoint()
+        );
     }
 
     private String firstText(String... values) {

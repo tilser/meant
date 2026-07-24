@@ -1,14 +1,17 @@
 package com.meant.api.module.merchant.service.dto;
 
 import com.meant.api.module.merchant.constant.CommerceOperation;
+import java.net.URI;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 import java.time.Instant;
 
 public record MerchantCartProvider(
         UUID merchantId,
-        String domain,
+        String merchantDomain,
+        String routingDomain,
         String advertisedMcpEndpoint,
         String profileMcpEndpoint,
         List<MerchantIntegrationRouting> integrations,
@@ -21,6 +24,20 @@ public record MerchantCartProvider(
         integrations = integrations == null ? List.of() : List.copyOf(integrations);
         executionPolicy = executionPolicy == null ? MerchantExecutionPolicy.unavailable() : executionPolicy;
         advertisedCapabilities = advertisedCapabilities == null ? Set.of() : Set.copyOf(advertisedCapabilities);
+    }
+
+    public MerchantCartProvider(
+            UUID merchantId,
+            String domain,
+            String advertisedMcpEndpoint,
+            String profileMcpEndpoint,
+            List<MerchantIntegrationRouting> integrations,
+            MerchantExecutionPolicy executionPolicy,
+            Instant profileCapturedAt,
+            Set<String> advertisedCapabilities
+    ) {
+        this(merchantId, domain, domain, advertisedMcpEndpoint, profileMcpEndpoint, integrations, executionPolicy,
+                profileCapturedAt, advertisedCapabilities);
     }
 
     public MerchantCartProvider(
@@ -104,9 +121,14 @@ public record MerchantCartProvider(
     }
 
     public MerchantCartProvider forOperation(CommerceOperation operation) {
+        UUID integrationId = executionPolicy.decision(operation).integrationId();
+        if (integrationId != null) {
+            return forIntegration(integrationId);
+        }
         return new MerchantCartProvider(
                 merchantId,
-                domain,
+                merchantDomain,
+                routingDomain,
                 advertisedMcpEndpoint(operation),
                 profileMcpEndpoint,
                 integrations,
@@ -120,15 +142,40 @@ public record MerchantCartProvider(
         if (integrationId == null) {
             return this;
         }
-        String endpoint = integrations.stream()
+        MerchantIntegrationRouting selected = integrations.stream()
                 .filter(integration -> integrationId.equals(integration.integrationId()))
-                .map(MerchantIntegrationRouting::endpoint)
-                .filter(value -> value != null && !value.isBlank())
                 .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("Merchant integration endpoint is unavailable"));
+                .orElseThrow(() -> new IllegalArgumentException("Merchant integration is unavailable"));
+        String endpoint = selected.endpoint();
+        if (endpoint == null || endpoint.isBlank()) {
+            throw new IllegalArgumentException("Merchant integration endpoint is unavailable");
+        }
+        String selectedRoutingDomain = routingDomain(selected, endpoint);
         return new MerchantCartProvider(
-                merchantId, domain, endpoint, profileMcpEndpoint, integrations, executionPolicy,
-                profileCapturedAt, advertisedCapabilities);
+                merchantId, merchantDomain, selectedRoutingDomain, endpoint, profileMcpEndpoint, integrations,
+                executionPolicy, profileCapturedAt, advertisedCapabilities);
+    }
+
+    private String routingDomain(MerchantIntegrationRouting integration, String endpoint) {
+        String endpointHost;
+        try {
+            endpointHost = URI.create(endpoint).getHost();
+        } catch (IllegalArgumentException exception) {
+            endpointHost = null;
+        }
+        if (endpointHost != null && !endpointHost.isBlank()) {
+            endpointHost = endpointHost.toLowerCase(Locale.ROOT);
+        }
+        String verifiedDomain = integration.verifiedDomain();
+        if (verifiedDomain != null && !verifiedDomain.isBlank()) {
+            String normalizedVerifiedDomain = verifiedDomain.trim().toLowerCase(Locale.ROOT);
+            if (endpointHost == null
+                    || endpointHost.equals(normalizedVerifiedDomain)
+                    || endpointHost.endsWith("." + normalizedVerifiedDomain)) {
+                return normalizedVerifiedDomain;
+            }
+        }
+        return endpointHost == null || endpointHost.isBlank() ? routingDomain : endpointHost;
     }
 
     /**

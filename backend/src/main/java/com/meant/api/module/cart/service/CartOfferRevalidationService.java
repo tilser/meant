@@ -89,13 +89,19 @@ public class CartOfferRevalidationService {
                 line.getOfferKey(), source, null,
                 line.getMerchantIntegrationId() == null ? null : new LocalMerchantRouting(line.getMerchantIntegrationId()),
                 ExternalIdentifier.optional(ExternalIdentifierType.MERCHANT, provider.value(), line.getExternalMerchantId()),
-                cart.getMerchantDomain(),
+                routingDomain(cart),
                 new ExternalIdentifier(ExternalIdentifierType.PRODUCT, provider.value(), line.getExternalProductId()),
                 ExternalIdentifier.optional(ExternalIdentifierType.VARIANT, provider.value(), line.getExternalVariantId()),
                 options(line.getSelectedOptionsJson()),
                 components(line.getComponentsJson()),
                 sellingPlan(line.getSellingPlanJson())
         );
+    }
+
+    private String routingDomain(Cart cart) {
+        return cart.getRoutingDomain() == null || cart.getRoutingDomain().isBlank()
+                ? cart.getMerchantDomain()
+                : cart.getRoutingDomain();
     }
 
     private List<ProductAttribute> options(String json) {

@@ -32,6 +32,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -214,14 +215,24 @@ public class GenericUcpProductObservationMapper {
                 attributes(product.metadata(), product.metafields(), product.techSpecs()),
                 safe(details.messages()).stream()
                         .filter(Objects::nonNull)
-                        .map(this::detailMessage)
+                        .map(message -> detailMessage(message, details))
                         .toList(),
                 product.rating() == null ? null : UcpDecimal.ratingValue(product.rating().value()),
                 product.rating() == null ? null
                         : product.rating().scaleMax() == null ? 5.0d : product.rating().scaleMax(),
                 reviewCount(product.reviewCount(), product.rating() == null ? null : product.rating().count()),
-                merchantName
+                merchantName,
+                details.merchantDomain(),
+                technicalEndpointAliases(details)
         );
+    }
+
+    private List<String> technicalEndpointAliases(ProductDetailsResult details) {
+        LinkedHashSet<String> aliases = new LinkedHashSet<>(details.technicalEndpointAliases());
+        if (details.endpoint() != null && !details.endpoint().isBlank()) {
+            aliases.add(details.endpoint().trim());
+        }
+        return List.copyOf(aliases);
     }
 
     private Long reviewCount(Integer explicit, Integer ratingCount) {
@@ -396,17 +407,22 @@ public class GenericUcpProductObservationMapper {
                 range.min(), range.max(), range.currency());
     }
 
-    private RehydratedProductDetails.Message detailMessage(ProductDetailsResponse.Message message) {
+    private RehydratedProductDetails.Message detailMessage(
+            ProductDetailsResponse.Message message,
+            ProductDetailsResult details
+    ) {
+        MerchantProductMessageSanitizer.SanitizedMessage sanitized =
+                MerchantProductMessageSanitizer.sanitize(message, details);
         return new RehydratedProductDetails.Message(
-                message.type(),
-                message.code(),
-                message.path(),
-                message.contentType(),
-                message.content(),
-                message.severity(),
-                message.presentation(),
-                message.imageUrl(),
-                message.url()
+                sanitized.type(),
+                sanitized.code(),
+                sanitized.path(),
+                sanitized.contentType(),
+                sanitized.content(),
+                sanitized.severity(),
+                sanitized.presentation(),
+                sanitized.imageUrl(),
+                sanitized.url()
         );
     }
 

@@ -192,6 +192,7 @@ export function cartSnapshotFromProfile(
   return {
     merchantKey,
     merchant,
+    merchantOrigin: snapshot.merchantDomain?.trim() || null,
     cartId: snapshot.cartId ?? null,
     remoteCartId: snapshot.remoteCartId ?? null,
     checkoutUrl: snapshot.checkoutUrl ?? null,

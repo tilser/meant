@@ -58,4 +58,24 @@ describe('ProductCard tag rails', () => {
     expect(markup).toContain('Organic cotton')
     expect(markup).toContain('Essentials')
   })
+
+  test('does not render Shopify or generic MCP transport identities as a product brand', () => {
+    for (const technicalSeller of ['sollys-online-grocery.myshopify.com', 'mcp.shop.example']) {
+      const markup = renderToStaticMarkup(
+        <ProductCard
+          product={{ ...product, brand: technicalSeller }}
+          index={0}
+          deliveryLocations={[]}
+          preferences={preferences}
+          onOpen={() => undefined}
+          savedSet={new Set()}
+          savePendingSet={new Set()}
+          onToggleSave={() => undefined}
+        />,
+      )
+
+      expect(markup).toContain('>Merchant<')
+      expect(markup).not.toContain(technicalSeller)
+    }
+  })
 })

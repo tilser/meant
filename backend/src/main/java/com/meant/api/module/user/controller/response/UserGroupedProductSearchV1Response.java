@@ -39,6 +39,7 @@ import com.meant.api.module.catalog.service.dto.ResultSourceReference;
 import com.meant.api.module.catalog.service.dto.ResultSourceType;
 import com.meant.api.module.catalog.service.dto.SellingPlanIdentity;
 import com.meant.api.module.catalog.service.dto.SellingPlanOption;
+import com.meant.api.module.catalog.service.support.CatalogBuyerPresentation;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.net.URI;
 import java.time.Instant;
@@ -201,17 +202,51 @@ public record UserGroupedProductSearchV1Response(
                 Map<String, OfferRankingExplanation> offerExplanations,
                 Map<String, UserOfferCommercialState> commercialStates
         ) {
-            return product == null ? null : new CanonicalProductResponse(
-                    product.key(), product.title(), product.description(),
-                    product.media().stream().map(ProductMediaResponse::from).toList(),
-                    product.attributes().stream().map(ProductAttributeResponse::from).toList(),
-                    product.materials().stream().map(ProductMaterialResponse::from).toList(),
-                    product.certifications().stream().map(ProductCertificationResponse::from).toList(),
-                    product.attribution().stream().map(ProductAttributionResponse::from).toList(),
+            if (product == null) {
+                return null;
+            }
+            List<ResultProvenance> buyerProvenance = java.util.stream.Stream.concat(
+                            product.provenance().stream(),
+                            product.offers().stream().flatMap(offer -> offer.provenance().stream())
+                    )
+                    .distinct()
+                    .toList();
+            return new CanonicalProductResponse(
+                    product.key(),
+                    CatalogBuyerPresentation.label(product.title(), buyerProvenance),
+                    CatalogBuyerPresentation.text(product.description(), buyerProvenance),
+                    product.media().stream()
+                            .map(media -> ProductMediaResponse.from(media, buyerProvenance))
+                            .filter(media -> media.url() != null)
+                            .toList(),
+                    product.attributes().stream()
+                            .map(attribute -> ProductAttributeResponse.from(
+                                    attribute,
+                                    buyerProvenance
+                            ))
+                            .toList(),
+                    product.materials().stream()
+                            .map(material -> ProductMaterialResponse.from(
+                                    material,
+                                    buyerProvenance
+                            ))
+                            .toList(),
+                    product.certifications().stream()
+                            .map(certification -> ProductCertificationResponse.from(
+                                    certification,
+                                    buyerProvenance
+                            ))
+                            .toList(),
+                    product.attribution().stream()
+                            .map(attribution -> ProductAttributionResponse.from(
+                                    attribution,
+                                    buyerProvenance
+                            ))
+                            .toList(),
                     product.identityEvidence().stream().map(ProductIdentityEvidenceResponse::from).toList(),
                     product.provenance().stream().map(ResultProvenanceResponse::from).toList(),
                     ProductRankingExplanationResponse.from(explanation),
-                    CanonicalProductPersonalizationResponse.from(personalization),
+                    CanonicalProductPersonalizationResponse.from(personalization, buyerProvenance),
                     product.offers().getFirst().key(),
                     product.offers().stream()
                             .map(offer -> OfferResponse.from(
@@ -233,13 +268,14 @@ public record UserGroupedProductSearchV1Response(
             List<String> missedFilterIds
     ) {
         static CanonicalProductPersonalizationResponse from(
-                UserCanonicalProductPersonalizationResult personalization
+                UserCanonicalProductPersonalizationResult personalization,
+                List<ResultProvenance> provenance
         ) {
             UserCanonicalProductPersonalizationResult resolved = personalization == null
                     ? UserCanonicalProductPersonalizationResult.searchRelevance()
                     : personalization;
             return new CanonicalProductPersonalizationResponse(
-                    resolved.whyMeantForYou(),
+                    CatalogBuyerPresentation.text(resolved.whyMeantForYou(), provenance),
                     resolved.matchedFilterIds(),
                     resolved.missedFilterIds()
             );
@@ -254,6 +290,11 @@ public record UserGroupedProductSearchV1Response(
             OfferIdentityResponse identity,
             @Schema(description = "Merchant display name", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
             String merchantName,
+            @Schema(
+                    description = "Verified official storefront origin for buyer display",
+                    requiredMode = Schema.RequiredMode.NOT_REQUIRED
+            )
+            String merchantOrigin,
             @Schema(description = "Variant display title", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
             String variantTitle,
             @Schema(description = "Current offer price in integer minor units", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
@@ -287,25 +328,45 @@ public record UserGroupedProductSearchV1Response(
                 OfferRankingExplanation explanation,
                 UserOfferCommercialState commercialState
         ) {
+            URI buyerSafeCheckoutUrl =
+                    CatalogBuyerPresentation.safeUri(offer.checkoutUrl(), offer.provenance());
             return new OfferResponse(
-                    offer.key(), OfferIdentityResponse.from(offer.identity()), offer.merchantName(), offer.variantTitle(),
+                    offer.key(),
+                    OfferIdentityResponse.from(offer.identity(), offer.provenance()),
+                    CatalogBuyerPresentation.label(offer.merchantName(), offer.provenance()),
+                    CatalogBuyerPresentation.merchantOrigin(offer.provenance()),
+                    CatalogBuyerPresentation.text(offer.variantTitle(), offer.provenance()),
                     MoneyResponse.from(offer.price()), MoneyResponse.from(offer.listPrice()),
                     OfferAvailabilityResponse.from(offer.availability()),
-                    offer.delivery().stream().map(OfferDeliveryResponse::from).toList(), offer.checkoutUrl(),
-                    offer.selectedOptions().stream().map(ProductAttributeResponse::from).toList(),
-                    checkoutExperience(offer),
+                    offer.delivery().stream()
+                            .map(delivery -> OfferDeliveryResponse.from(
+                                    delivery,
+                                    offer.provenance()
+                            ))
+                            .toList(),
+                    buyerSafeCheckoutUrl,
+                    offer.selectedOptions().stream()
+                            .map(attribute -> ProductAttributeResponse.from(
+                                    attribute,
+                                    offer.provenance()
+                            ))
+                            .toList(),
+                    checkoutExperience(offer, buyerSafeCheckoutUrl),
                     UserOfferCommercialStateResponse.from(commercialState),
                     OfferRankingExplanationResponse.from(explanation),
                     offer.provenance().stream().map(ResultProvenanceResponse::from).toList()
             );
         }
 
-        private static CheckoutExperienceLevel checkoutExperience(Offer offer) {
+        private static CheckoutExperienceLevel checkoutExperience(
+                Offer offer,
+                URI buyerSafeCheckoutUrl
+        ) {
             if (offer.provenance().stream().anyMatch(value -> value.localRouting() != null)
                     && Boolean.TRUE.equals(offer.rankingEvidence().checkoutCapable())) {
                 return CheckoutExperienceLevel.MEANT_MANAGED;
             }
-            return offer.checkoutUrl() == null
+            return buyerSafeCheckoutUrl == null
                     ? CheckoutExperienceLevel.UNKNOWN
                     : CheckoutExperienceLevel.PROVIDER_HANDOFF;
         }
@@ -346,7 +407,10 @@ public record UserGroupedProductSearchV1Response(
             SellingPlanIdentityResponse sellingPlanIdentity
     ) {
 
-        static OfferIdentityResponse from(OfferIdentity identity) {
+        static OfferIdentityResponse from(
+                OfferIdentity identity,
+                List<ResultProvenance> provenance
+        ) {
             return new OfferIdentityResponse(
                     identity.provider().value(),
                     identity.merchantScope().merchantIntegrationFallbackId(),
@@ -354,8 +418,13 @@ public record UserGroupedProductSearchV1Response(
                     OfferMerchantScopeResponse.from(identity.merchantScope()),
                     ExternalIdentifierResponse.from(identity.externalProductIdentity()),
                     ExternalIdentifierResponse.from(identity.externalVariantIdentity()),
-                    identity.components().stream().map(OfferComponentIdentityResponse::from).toList(),
-                    SellingPlanIdentityResponse.from(identity.sellingPlanIdentity())
+                    identity.components().stream()
+                            .map(component -> OfferComponentIdentityResponse.from(
+                                    component,
+                                    provenance
+                            ))
+                            .toList(),
+                    SellingPlanIdentityResponse.from(identity.sellingPlanIdentity(), provenance)
             );
         }
     }
@@ -394,12 +463,17 @@ public record UserGroupedProductSearchV1Response(
             List<ProductAttributeResponse> selectedOptions
     ) {
 
-        static OfferComponentIdentityResponse from(OfferComponentIdentity component) {
+        static OfferComponentIdentityResponse from(
+                OfferComponentIdentity component,
+                List<ResultProvenance> provenance
+        ) {
             return new OfferComponentIdentityResponse(
                     ExternalIdentifierResponse.from(component.externalProductIdentity()),
                     ExternalIdentifierResponse.from(component.externalVariantIdentity()),
                     component.quantity(),
-                    component.selectedOptions().stream().map(ProductAttributeResponse::from).toList()
+                    component.selectedOptions().stream()
+                            .map(attribute -> ProductAttributeResponse.from(attribute, provenance))
+                            .toList()
             );
         }
     }
@@ -414,11 +488,16 @@ public record UserGroupedProductSearchV1Response(
             List<SellingPlanOptionResponse> options
     ) {
 
-        static SellingPlanIdentityResponse from(SellingPlanIdentity identity) {
+        static SellingPlanIdentityResponse from(
+                SellingPlanIdentity identity,
+                List<ResultProvenance> provenance
+        ) {
             return identity == null ? null : new SellingPlanIdentityResponse(
                     ExternalIdentifierResponse.from(identity.groupReference()),
                     ExternalIdentifierResponse.from(identity.planReference()),
-                    identity.options().stream().map(SellingPlanOptionResponse::from).toList()
+                    identity.options().stream()
+                            .map(option -> SellingPlanOptionResponse.from(option, provenance))
+                            .toList()
             );
         }
     }
@@ -431,8 +510,14 @@ public record UserGroupedProductSearchV1Response(
             String value
     ) {
 
-        static SellingPlanOptionResponse from(SellingPlanOption option) {
-            return new SellingPlanOptionResponse(option.name(), option.value());
+        static SellingPlanOptionResponse from(
+                SellingPlanOption option,
+                List<ResultProvenance> provenance
+        ) {
+            return new SellingPlanOptionResponse(
+                    CatalogBuyerPresentation.text(option.name(), provenance),
+                    CatalogBuyerPresentation.text(option.value(), provenance)
+            );
         }
     }
 
@@ -495,10 +580,13 @@ public record UserGroupedProductSearchV1Response(
             MoneyResponse cost
     ) {
 
-        static OfferDeliveryResponse from(OfferDelivery delivery) {
+        static OfferDeliveryResponse from(
+                OfferDelivery delivery,
+                List<ResultProvenance> provenance
+        ) {
             return new OfferDeliveryResponse(
                     delivery.method(),
-                    delivery.destinationRegion(),
+                    CatalogBuyerPresentation.text(delivery.destinationRegion(), provenance),
                     delivery.minimumBusinessDays(),
                     delivery.maximumBusinessDays(),
                     MoneyResponse.from(delivery.cost())
@@ -520,8 +608,17 @@ public record UserGroupedProductSearchV1Response(
             Integer height
     ) {
 
-        static ProductMediaResponse from(ProductMedia media) {
-            return new ProductMediaResponse(media.type(), media.url(), media.altText(), media.width(), media.height());
+        static ProductMediaResponse from(
+                ProductMedia media,
+                List<ResultProvenance> provenance
+        ) {
+            return new ProductMediaResponse(
+                    media.type(),
+                    CatalogBuyerPresentation.safeUri(media.url(), provenance),
+                    CatalogBuyerPresentation.text(media.altText(), provenance),
+                    media.width(),
+                    media.height()
+            );
         }
     }
 
@@ -535,8 +632,15 @@ public record UserGroupedProductSearchV1Response(
             String value
     ) {
 
-        static ProductAttributeResponse from(ProductAttribute attribute) {
-            return new ProductAttributeResponse(attribute.group(), attribute.name(), attribute.value());
+        static ProductAttributeResponse from(
+                ProductAttribute attribute,
+                List<ResultProvenance> provenance
+        ) {
+            return new ProductAttributeResponse(
+                    CatalogBuyerPresentation.label(attribute.group(), provenance),
+                    CatalogBuyerPresentation.label(attribute.name(), provenance),
+                    CatalogBuyerPresentation.label(attribute.value(), provenance)
+            );
         }
     }
 
@@ -548,8 +652,14 @@ public record UserGroupedProductSearchV1Response(
             Integer percentageBasisPoints
     ) {
 
-        static ProductMaterialResponse from(ProductMaterial material) {
-            return new ProductMaterialResponse(material.name(), material.percentageBasisPoints());
+        static ProductMaterialResponse from(
+                ProductMaterial material,
+                List<ResultProvenance> provenance
+        ) {
+            return new ProductMaterialResponse(
+                    CatalogBuyerPresentation.label(material.name(), provenance),
+                    material.percentageBasisPoints()
+            );
         }
     }
 
@@ -565,12 +675,18 @@ public record UserGroupedProductSearchV1Response(
             URI verificationUrl
     ) {
 
-        static ProductCertificationResponse from(ProductCertification certification) {
+        static ProductCertificationResponse from(
+                ProductCertification certification,
+                List<ResultProvenance> provenance
+        ) {
             return new ProductCertificationResponse(
-                    certification.name(),
-                    certification.issuer(),
-                    certification.identifier(),
-                    certification.verificationUrl()
+                    CatalogBuyerPresentation.label(certification.name(), provenance),
+                    CatalogBuyerPresentation.label(certification.issuer(), provenance),
+                    CatalogBuyerPresentation.text(certification.identifier(), provenance),
+                    CatalogBuyerPresentation.safeUri(
+                            certification.verificationUrl(),
+                            provenance
+                    )
             );
         }
     }
@@ -585,10 +701,13 @@ public record UserGroupedProductSearchV1Response(
             ResultSourceReferenceResponse sourceReference
     ) {
 
-        static ProductAttributionResponse from(ProductAttribution attribution) {
+        static ProductAttributionResponse from(
+                ProductAttribution attribution,
+                List<ResultProvenance> provenance
+        ) {
             return new ProductAttributionResponse(
-                    attribution.label(),
-                    attribution.url(),
+                    CatalogBuyerPresentation.text(attribution.label(), provenance),
+                    CatalogBuyerPresentation.safeUri(attribution.url(), provenance),
                     ResultSourceReferenceResponse.from(attribution.sourceReference())
             );
         }
@@ -636,8 +755,6 @@ public record UserGroupedProductSearchV1Response(
             LocalMerchantRoutingResponse localRouting,
             @Schema(description = "External merchant reference when supplied by the provider", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
             ExternalIdentifierResponse externalMerchantReference,
-            @Schema(description = "Verified external merchant domain when supplied by the provider", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
-            String externalMerchantDomain,
             @Schema(description = "External product reference", requiredMode = Schema.RequiredMode.REQUIRED)
             ExternalIdentifierResponse externalProductReference,
             @Schema(description = "External variant reference", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
@@ -655,7 +772,6 @@ public record UserGroupedProductSearchV1Response(
                     DiscoverySourceIdentityResponse.from(provenance.discoverySource()),
                     LocalMerchantRoutingResponse.from(provenance.localRouting()),
                     ExternalIdentifierResponse.from(provenance.externalMerchantReference()),
-                    provenance.externalMerchantDomain(),
                     ExternalIdentifierResponse.from(provenance.externalProductReference()),
                     ExternalIdentifierResponse.from(provenance.externalVariantReference()),
                     ResultFreshnessResponse.from(provenance.freshness()),
@@ -710,14 +826,12 @@ public record UserGroupedProductSearchV1Response(
             @Schema(description = "Discovery source category", requiredMode = Schema.RequiredMode.REQUIRED)
             ResultSourceType type,
             @Schema(description = "Source-local debugging reference", requiredMode = Schema.RequiredMode.REQUIRED)
-            String reference,
-            @Schema(description = "Source endpoint or document URL", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
-            URI uri
+            String reference
     ) {
 
         static ResultSourceReferenceResponse from(ResultSourceReference sourceReference) {
             return new ResultSourceReferenceResponse(
-                    sourceReference.type(), sourceReference.reference(), sourceReference.uri());
+                    sourceReference.type(), sourceReference.reference());
         }
     }
 }

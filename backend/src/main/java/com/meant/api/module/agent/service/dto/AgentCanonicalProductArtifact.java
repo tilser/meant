@@ -3,6 +3,7 @@ package com.meant.api.module.agent.service.dto;
 import com.meant.api.module.catalog.service.dto.CanonicalProduct;
 import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifier;
+import com.meant.api.module.catalog.service.dto.IdentityEvidenceStrength;
 import com.meant.api.module.catalog.service.dto.LocalMerchantRouting;
 import com.meant.api.module.catalog.service.dto.Money;
 import com.meant.api.module.catalog.service.dto.Offer;
@@ -17,6 +18,7 @@ import com.meant.api.module.catalog.service.dto.ProductAttribute;
 import com.meant.api.module.catalog.service.dto.ProductAttribution;
 import com.meant.api.module.catalog.service.dto.ProductCertification;
 import com.meant.api.module.catalog.service.dto.ProductIdentityEvidence;
+import com.meant.api.module.catalog.service.dto.ProductIdentityEvidenceKind;
 import com.meant.api.module.catalog.service.dto.ProductMaterial;
 import com.meant.api.module.catalog.service.dto.ProductMedia;
 import com.meant.api.module.catalog.service.dto.ProductRankingExplanation;
@@ -25,6 +27,8 @@ import com.meant.api.module.catalog.service.dto.ResultProvenance;
 import com.meant.api.module.catalog.service.dto.ResultSourceReference;
 import com.meant.api.module.catalog.service.dto.ResultSourceType;
 import com.meant.api.module.catalog.service.dto.SellingPlanIdentity;
+import com.meant.api.module.catalog.service.dto.SellingPlanOption;
+import com.meant.api.module.catalog.service.support.CatalogBuyerPresentation;
 import com.meant.api.module.user.service.dto.UserCanonicalProductPersonalizationResult;
 import com.meant.api.module.user.service.dto.UserOfferCommercialState;
 import com.meant.api.module.user.service.dto.UserProductDetailResult;
@@ -32,6 +36,7 @@ import java.net.URI;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 /**
  * Stable product-artifact payload shaped like the existing grouped-product API contract.
@@ -48,8 +53,8 @@ public record AgentCanonicalProductArtifact(
         List<ProductAttribute> attributes,
         List<ProductMaterial> materials,
         List<ProductCertification> certifications,
-        List<ProductAttribution> attribution,
-        List<ProductIdentityEvidence> identityEvidence,
+        List<AgentProductAttributionArtifact> attribution,
+        List<AgentProductIdentityEvidenceArtifact> identityEvidence,
         List<AgentResultProvenanceArtifact> provenance,
         ProductRankingExplanation rankingExplanation,
         UserCanonicalProductPersonalizationResult personalization,
@@ -103,21 +108,76 @@ public record AgentCanonicalProductArtifact(
         Map<String, UserOfferCommercialState> states = commercialStates == null
                 ? Map.of()
                 : commercialStates;
+        List<ResultProvenance> buyerProvenance = Stream.concat(
+                        product.provenance().stream(),
+                        product.offers().stream().flatMap(offer -> offer.provenance().stream())
+                )
+                .distinct()
+                .toList();
+        UserCanonicalProductPersonalizationResult buyerPersonalization =
+                buyerPersonalization(personalization, buyerProvenance);
         return new AgentCanonicalProductArtifact(
                 product.key(),
-                product.title(),
-                product.description(),
-                product.media(),
-                product.attributes(),
-                product.materials(),
-                product.certifications(),
-                product.attribution(),
-                product.identityEvidence(),
+                CatalogBuyerPresentation.label(product.title(), buyerProvenance),
+                CatalogBuyerPresentation.text(product.description(), buyerProvenance),
+                product.media().stream()
+                        .flatMap(media -> Stream.ofNullable(
+                                CatalogBuyerPresentation.safeUri(media.url(), buyerProvenance)
+                        ).map(url -> new ProductMedia(
+                                        media.type(),
+                                        url,
+                                        CatalogBuyerPresentation.text(
+                                                media.altText(),
+                                                buyerProvenance
+                                        ),
+                                        media.width(),
+                                        media.height()
+                                )))
+                        .toList(),
+                product.attributes().stream()
+                        .map(attribute -> sanitizedAttribute(attribute, buyerProvenance))
+                        .toList(),
+                product.materials().stream()
+                        .map(material -> new ProductMaterial(
+                                CatalogBuyerPresentation.label(
+                                        material.name(),
+                                        buyerProvenance
+                                ),
+                                material.percentageBasisPoints()
+                        ))
+                        .toList(),
+                product.certifications().stream()
+                        .map(certification -> new ProductCertification(
+                                CatalogBuyerPresentation.label(
+                                        certification.name(),
+                                        buyerProvenance
+                                ),
+                                CatalogBuyerPresentation.label(
+                                        certification.issuer(),
+                                        buyerProvenance
+                                ),
+                                CatalogBuyerPresentation.text(
+                                        certification.identifier(),
+                                        buyerProvenance
+                                ),
+                                CatalogBuyerPresentation.safeUri(
+                                        certification.verificationUrl(),
+                                        buyerProvenance
+                                )
+                        ))
+                        .toList(),
+                product.attribution().stream()
+                        .map(attribution -> AgentProductAttributionArtifact.from(
+                                attribution,
+                                buyerProvenance
+                        ))
+                        .toList(),
+                product.identityEvidence().stream()
+                        .map(AgentProductIdentityEvidenceArtifact::from)
+                        .toList(),
                 product.provenance().stream().map(AgentResultProvenanceArtifact::from).toList(),
                 rankingExplanation,
-                personalization == null
-                        ? UserCanonicalProductPersonalizationResult.searchRelevance()
-                        : personalization,
+                buyerPersonalization,
                 recommendedOfferKey == null || recommendedOfferKey.isBlank()
                         ? product.offers().getFirst().key()
                         : recommendedOfferKey,
@@ -131,10 +191,36 @@ public record AgentCanonicalProductArtifact(
         );
     }
 
+    private static ProductAttribute sanitizedAttribute(
+            ProductAttribute attribute,
+            List<ResultProvenance> provenance
+    ) {
+        return new ProductAttribute(
+                CatalogBuyerPresentation.label(attribute.group(), provenance),
+                CatalogBuyerPresentation.label(attribute.name(), provenance),
+                CatalogBuyerPresentation.label(attribute.value(), provenance)
+        );
+    }
+
+    private static UserCanonicalProductPersonalizationResult buyerPersonalization(
+            UserCanonicalProductPersonalizationResult personalization,
+            List<ResultProvenance> provenance
+    ) {
+        UserCanonicalProductPersonalizationResult resolved = personalization == null
+                ? UserCanonicalProductPersonalizationResult.searchRelevance()
+                : personalization;
+        return new UserCanonicalProductPersonalizationResult(
+                CatalogBuyerPresentation.text(resolved.whyMeantForYou(), provenance),
+                resolved.matchedFilterIds(),
+                resolved.missedFilterIds()
+        );
+    }
+
     public record AgentCanonicalOfferArtifact(
             String key,
             AgentOfferIdentityArtifact identity,
             String merchantName,
+            String merchantOrigin,
             String variantTitle,
             Money price,
             Money listPrice,
@@ -153,30 +239,52 @@ public record AgentCanonicalProductArtifact(
                 OfferRankingExplanation rankingExplanation,
                 UserOfferCommercialState commercialState
         ) {
+            URI buyerSafeCheckoutUrl =
+                    CatalogBuyerPresentation.safeUri(offer.checkoutUrl(), offer.provenance());
             return new AgentCanonicalOfferArtifact(
                     offer.key(),
-                    AgentOfferIdentityArtifact.from(offer.identity()),
-                    offer.merchantName(),
-                    offer.variantTitle(),
+                    AgentOfferIdentityArtifact.from(offer.identity(), offer.provenance()),
+                    CatalogBuyerPresentation.label(offer.merchantName(), offer.provenance()),
+                    CatalogBuyerPresentation.merchantOrigin(offer.provenance()),
+                    CatalogBuyerPresentation.text(offer.variantTitle(), offer.provenance()),
                     offer.price(),
                     offer.listPrice(),
                     offer.availability(),
-                    offer.delivery(),
-                    offer.checkoutUrl(),
-                    offer.selectedOptions(),
-                    checkoutExperience(offer),
+                    offer.delivery().stream()
+                            .map(delivery -> new OfferDelivery(
+                                    delivery.method(),
+                                    CatalogBuyerPresentation.text(
+                                            delivery.destinationRegion(),
+                                            offer.provenance()
+                                    ),
+                                    delivery.minimumBusinessDays(),
+                                    delivery.maximumBusinessDays(),
+                                    delivery.cost()
+                            ))
+                            .toList(),
+                    buyerSafeCheckoutUrl,
+                    offer.selectedOptions().stream()
+                            .map(attribute -> sanitizedAttribute(
+                                    attribute,
+                                    offer.provenance()
+                            ))
+                            .toList(),
+                    checkoutExperience(offer, buyerSafeCheckoutUrl),
                     commercialState,
                     rankingExplanation,
                     offer.provenance().stream().map(AgentResultProvenanceArtifact::from).toList()
             );
         }
 
-        private static AgentCheckoutExperience checkoutExperience(Offer offer) {
+        private static AgentCheckoutExperience checkoutExperience(
+                Offer offer,
+                URI buyerSafeCheckoutUrl
+        ) {
             if (offer.provenance().stream().anyMatch(value -> value.localRouting() != null)
                     && Boolean.TRUE.equals(offer.rankingEvidence().checkoutCapable())) {
                 return AgentCheckoutExperience.MEANT_MANAGED;
             }
-            return offer.checkoutUrl() == null
+            return buyerSafeCheckoutUrl == null
                     ? AgentCheckoutExperience.UNKNOWN
                     : AgentCheckoutExperience.PROVIDER_HANDOFF;
         }
@@ -193,7 +301,10 @@ public record AgentCanonicalProductArtifact(
             SellingPlanIdentity sellingPlanIdentity
     ) {
 
-        private static AgentOfferIdentityArtifact from(OfferIdentity identity) {
+        private static AgentOfferIdentityArtifact from(
+                OfferIdentity identity,
+                List<ResultProvenance> provenance
+        ) {
             OfferMerchantScope merchantScope = identity.merchantScope();
             return new AgentOfferIdentityArtifact(
                     identity.provider().value(),
@@ -202,9 +313,49 @@ public record AgentCanonicalProductArtifact(
                     AgentOfferMerchantScopeArtifact.from(merchantScope),
                     identity.externalProductIdentity(),
                     identity.externalVariantIdentity(),
-                    identity.components(),
-                    identity.sellingPlanIdentity()
+                    identity.components().stream()
+                            .map(component -> sanitizedComponent(component, provenance))
+                            .toList(),
+                    sanitizedSellingPlan(identity.sellingPlanIdentity(), provenance)
             );
+        }
+
+        private static OfferComponentIdentity sanitizedComponent(
+                OfferComponentIdentity component,
+                List<ResultProvenance> provenance
+        ) {
+            return new OfferComponentIdentity(
+                    component.externalProductIdentity(),
+                    component.externalVariantIdentity(),
+                    component.quantity(),
+                    component.selectedOptions().stream()
+                            .map(attribute -> sanitizedAttribute(attribute, provenance))
+                            .toList()
+            );
+        }
+
+        private static SellingPlanIdentity sanitizedSellingPlan(
+                SellingPlanIdentity sellingPlan,
+                List<ResultProvenance> provenance
+        ) {
+            return sellingPlan == null
+                    ? null
+                    : new SellingPlanIdentity(
+                            sellingPlan.groupReference(),
+                            sellingPlan.planReference(),
+                            sellingPlan.options().stream()
+                                    .map(option -> new SellingPlanOption(
+                                            CatalogBuyerPresentation.text(
+                                                    option.name(),
+                                                    provenance
+                                            ),
+                                            CatalogBuyerPresentation.text(
+                                                    option.value(),
+                                                    provenance
+                                            )
+                                    ))
+                                    .toList()
+                    );
         }
     }
 
@@ -229,11 +380,10 @@ public record AgentCanonicalProductArtifact(
             AgentDiscoverySourceIdentityArtifact discoverySource,
             LocalMerchantRouting localRouting,
             ExternalIdentifier externalMerchantReference,
-            String externalMerchantDomain,
             ExternalIdentifier externalProductReference,
             ExternalIdentifier externalVariantReference,
             ResultFreshness freshness,
-            ResultSourceReference sourceReference
+            AgentResultSourceReferenceArtifact sourceReference
     ) {
 
         private static AgentResultProvenanceArtifact from(ResultProvenance provenance) {
@@ -245,11 +395,60 @@ public record AgentCanonicalProductArtifact(
                     AgentDiscoverySourceIdentityArtifact.from(provenance.discoverySource()),
                     provenance.localRouting(),
                     provenance.externalMerchantReference(),
-                    provenance.externalMerchantDomain(),
                     provenance.externalProductReference(),
                     provenance.externalVariantReference(),
                     provenance.freshness(),
-                    provenance.sourceReference()
+                    AgentResultSourceReferenceArtifact.from(provenance.sourceReference())
+            );
+        }
+    }
+
+    public record AgentProductAttributionArtifact(
+            String label,
+            URI url,
+            AgentResultSourceReferenceArtifact sourceReference
+    ) {
+
+        private static AgentProductAttributionArtifact from(
+                ProductAttribution attribution,
+                List<ResultProvenance> provenance
+        ) {
+            return new AgentProductAttributionArtifact(
+                    CatalogBuyerPresentation.text(attribution.label(), provenance),
+                    CatalogBuyerPresentation.safeUri(attribution.url(), provenance),
+                    AgentResultSourceReferenceArtifact.from(attribution.sourceReference())
+            );
+        }
+    }
+
+    public record AgentProductIdentityEvidenceArtifact(
+            ProductIdentityEvidenceKind kind,
+            IdentityEvidenceStrength strength,
+            int confidenceBasisPoints,
+            List<ExternalIdentifier> identifiers,
+            AgentResultSourceReferenceArtifact sourceReference
+    ) {
+
+        private static AgentProductIdentityEvidenceArtifact from(ProductIdentityEvidence evidence) {
+            return new AgentProductIdentityEvidenceArtifact(
+                    evidence.kind(),
+                    evidence.strength(),
+                    evidence.confidenceBasisPoints(),
+                    evidence.identifiers(),
+                    AgentResultSourceReferenceArtifact.from(evidence.sourceReference())
+            );
+        }
+    }
+
+    public record AgentResultSourceReferenceArtifact(
+            ResultSourceType type,
+            String reference
+    ) {
+
+        private static AgentResultSourceReferenceArtifact from(ResultSourceReference sourceReference) {
+            return new AgentResultSourceReferenceArtifact(
+                    sourceReference.type(),
+                    sourceReference.reference()
             );
         }
     }

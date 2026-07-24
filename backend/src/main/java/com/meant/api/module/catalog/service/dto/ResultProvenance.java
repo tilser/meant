@@ -10,7 +10,8 @@ public record ResultProvenance(
         ExternalIdentifier externalProductReference,
         ExternalIdentifier externalVariantReference,
         ResultFreshness freshness,
-        ResultSourceReference sourceReference
+        ResultSourceReference sourceReference,
+        String merchantOrigin
 ) {
 
     public ResultProvenance {
@@ -31,6 +32,32 @@ public record ResultProvenance(
         requireProviderIdentifier(externalProductReference, ExternalIdentifierType.PRODUCT, provider, true);
         requireProviderIdentifier(externalVariantReference, ExternalIdentifierType.VARIANT, provider, false);
         externalMerchantDomain = normalizeDomain(externalMerchantDomain);
+        merchantOrigin = normalizeDomain(merchantOrigin);
+    }
+
+    public ResultProvenance(
+            ProviderIdentity provider,
+            DiscoverySourceIdentity discoverySource,
+            LocalMerchantRouting localRouting,
+            ExternalIdentifier externalMerchantReference,
+            String externalMerchantDomain,
+            ExternalIdentifier externalProductReference,
+            ExternalIdentifier externalVariantReference,
+            ResultFreshness freshness,
+            ResultSourceReference sourceReference
+    ) {
+        this(
+                provider,
+                discoverySource,
+                localRouting,
+                externalMerchantReference,
+                externalMerchantDomain,
+                externalProductReference,
+                externalVariantReference,
+                freshness,
+                sourceReference,
+                null
+        );
     }
 
     public ResultProvenance(
@@ -44,7 +71,22 @@ public record ResultProvenance(
             ResultSourceReference sourceReference
     ) {
         this(provider, discoverySource, localRouting, externalMerchantReference, null,
-                externalProductReference, externalVariantReference, freshness, sourceReference);
+                externalProductReference, externalVariantReference, freshness, sourceReference, null);
+    }
+
+    public ResultProvenance withMerchantOrigin(String verifiedMerchantOrigin) {
+        return new ResultProvenance(
+                provider,
+                discoverySource,
+                localRouting,
+                externalMerchantReference,
+                externalMerchantDomain,
+                externalProductReference,
+                externalVariantReference,
+                freshness,
+                sourceReference,
+                verifiedMerchantOrigin
+        );
     }
 
     private static String normalizeDomain(String domain) {

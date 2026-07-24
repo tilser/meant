@@ -10,6 +10,7 @@ import com.meant.api.module.agent.service.dto.AgentConversationSummaryResult;
 import com.meant.api.module.agent.service.dto.AgentMessageResult;
 import com.meant.api.module.agent.service.dto.AgentRunEventResult;
 import com.meant.api.module.agent.service.dto.AgentRunResult;
+import com.meant.api.module.merchant.service.MerchantBuyerTextSanitizer;
 
 public final class AgentResultMapper {
 
@@ -19,7 +20,7 @@ public final class AgentResultMapper {
     static AgentConversationSummaryResult conversation(AgentConversation source) {
         return new AgentConversationSummaryResult(
                 source.getId(),
-                source.getTitle(),
+                MerchantBuyerTextSanitizer.sanitize(source.getTitle()),
                 source.getStatus(),
                 source.getMerchantId(),
                 source.getActiveMissionId(),
@@ -36,8 +37,8 @@ public final class AgentResultMapper {
                 source.getSequenceNumber(),
                 source.getRole(),
                 source.getContentKind(),
-                source.getTextContent(),
-                source.getContentJson(),
+                MerchantBuyerTextSanitizer.sanitize(source.getTextContent()),
+                AgentBuyerPayloadSanitizer.sanitize(source.getContentJson()),
                 source.getCorrelationId(),
                 source.getCreatedAt()
         );
@@ -51,14 +52,14 @@ public final class AgentResultMapper {
                 source.getArtifactType(),
                 source.getOrdinal(),
                 source.getStableKey(),
-                source.getLabel(),
+                MerchantBuyerTextSanitizer.sanitize(source.getLabel()),
                 source.getCanonicalProductKey(),
                 source.getOfferKey(),
                 source.getInventoryItemId(),
                 source.getCartId(),
                 source.getCartLineId(),
                 source.getCheckoutAttemptId(),
-                source.getPayloadJson(),
+                AgentBuyerPayloadSanitizer.sanitize(source.getPayloadJson()),
                 source.getCreatedAt()
         );
     }
@@ -75,7 +76,7 @@ public final class AgentResultMapper {
                 source.getInputTokens(),
                 source.getOutputTokens(),
                 source.getFailureCode(),
-                source.getSafeMessage(),
+                MerchantBuyerTextSanitizer.sanitize(source.getSafeMessage()),
                 source.isCancellationRequested(),
                 source.getLastEventCursor(),
                 source.getCreatedAt(),
@@ -92,7 +93,7 @@ public final class AgentResultMapper {
                 source.getRunId(),
                 source.getEventType().wireValue(),
                 source.getOccurredAt(),
-                source.getPayloadJson()
+                AgentBuyerPayloadSanitizer.sanitize(source.getPayloadJson())
         );
     }
 }

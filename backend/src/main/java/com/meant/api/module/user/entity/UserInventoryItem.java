@@ -107,6 +107,8 @@ public class UserInventoryItem extends AssignedIdEntity<UUID> {
 
     private String externalMerchantDomain;
 
+    private String merchantOrigin;
+
     private String canonicalProductKey;
 
     private String offerKey;
@@ -168,6 +170,7 @@ public class UserInventoryItem extends AssignedIdEntity<UUID> {
         this.merchantIntegrationId = snapshot.merchantIntegrationId();
         this.externalMerchantId = snapshot.externalMerchantId();
         this.externalMerchantDomain = snapshot.externalMerchantDomain();
+        this.merchantOrigin = snapshot.merchantOrigin();
         this.canonicalProductKey = snapshot.canonicalProductKey();
         this.offerKey = snapshot.offerKey();
         this.sourceType = snapshot.sourceType();
@@ -210,6 +213,7 @@ public class UserInventoryItem extends AssignedIdEntity<UUID> {
             UUID merchantIntegrationId,
             String externalMerchantId,
             String externalMerchantDomain,
+            String merchantOrigin,
             String canonicalProductKey,
             String offerKey,
             String sourceType,

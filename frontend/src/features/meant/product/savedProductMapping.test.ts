@@ -130,7 +130,6 @@ function groupedProduct(): Product {
     provider: 'shopify',
     discoverySource: { provider: 'shopify', type: 'PROVIDER_CATALOG', value: 'global-catalog' },
     externalMerchantReference: { type: 'MERCHANT', value: 'merchant-external' },
-    externalMerchantDomain: 'merchant.example',
     externalProductReference: { type: 'PRODUCT', value: 'product-external' },
     externalVariantReference: { type: 'VARIANT', value: 'variant-external' },
     freshness: { observedAt: '2026-07-11T00:00:00Z' },
@@ -214,7 +213,7 @@ describe('savedProductFromProfile', () => {
           priceCurrency: 'USD',
           delivery: null,
           merchantId: '11111111-1111-1111-1111-111111111111',
-          merchantDomain: 'merchant.test',
+          merchantOrigin: 'merchant.test',
           productVariantId: 'variant-m',
           variantTitle: 'Medium',
           available: true,
@@ -234,7 +233,7 @@ describe('savedProductFromProfile', () => {
     expect(product.selectedVariantAvailable).toBe(true)
     expect(product.materials).toEqual(['Organic cotton'])
     expect(product.certifications).toEqual(['GOTS'])
-    expect(product.rehydratedDetails).toEqual({ endpoint: null, ...details })
+    expect(product.rehydratedDetails).toEqual(details)
     expect(product.rehydratedDetails?.variants[0]?.sku).toBe('SHIRT-M')
     expect(product.rehydratedDetails?.tags).toEqual(['organic', 'heavyweight'])
     expect(product.rehydratedDetails?.messages[0]?.content).toBe('Machine wash cold')
@@ -245,6 +244,8 @@ describe('savedProductFromProfile', () => {
     })
     expect(product.merchantId).toBe('11111111-1111-1111-1111-111111111111')
     expect(product.merchantDomain).toBe('merchant.test')
+    expect(product.offers[0]?.merchant).toBe('merchant.test')
+    expect(product.offers[0]?.merchantDomain).toBe('merchant.test')
     expect(product.merchantProductId).toBe('provider-product-1')
     expect(product.remote).toBe(true)
   })
@@ -308,7 +309,6 @@ describe('savedProductFromProfile', () => {
           priceCurrency: 'EUR',
           delivery: null,
           merchantId: null,
-          merchantDomain: null,
           productVariantId: 'variant-1',
           variantTitle: null,
           available: true,
@@ -349,7 +349,6 @@ describe('savedProductFromProfile', () => {
           priceCurrency: null,
           delivery: null,
           merchantId: null,
-          merchantDomain: 'merchant.example',
           productVariantId: 'variant-1',
           variantTitle: null,
           available: true,
@@ -365,7 +364,7 @@ describe('savedProductFromProfile', () => {
     )
   })
 
-  test('uses the current detail merchant name instead of an internal storefront reference', () => {
+  test('uses the current detail merchant name instead of an internal routing identity', () => {
     const product = savedProductFromProfile({
       ...unavailable,
       commercialFactsAuthoritative: true,
@@ -379,7 +378,6 @@ describe('savedProductFromProfile', () => {
           priceCurrency: 'USD',
           delivery: null,
           merchantId: '2dec9bf6-f8f2-4747-a058-7bb7fa086730',
-          merchantDomain: 'merchant.example',
           productVariantId: 'variant-m',
           variantTitle: 'Medium',
           available: true,
@@ -392,7 +390,7 @@ describe('savedProductFromProfile', () => {
     expect(product.offers[0]?.merchant).not.toContain('LOCAL_STOREFRONT')
   })
 
-  test('falls back to the merchant domain when other names are technical references', () => {
+  test('uses a neutral merchant label when all current names are technical references', () => {
     const product = savedProductFromProfile({
       ...unavailable,
       commercialFactsAuthoritative: true,
@@ -406,7 +404,6 @@ describe('savedProductFromProfile', () => {
           priceCurrency: null,
           delivery: null,
           merchantId: '2dec9bf6-f8f2-4747-a058-7bb7fa086730',
-          merchantDomain: 'shop.example',
           productVariantId: 'variant-m',
           variantTitle: 'Medium',
           available: true,
@@ -414,7 +411,7 @@ describe('savedProductFromProfile', () => {
       ],
     })
 
-    expect(product.offers[0]?.merchant).toBe('shop.example')
+    expect(product.offers[0]?.merchant).toBe('Merchant')
   })
 
   test('uses a neutral merchant label instead of exposing an identity value', () => {
@@ -431,7 +428,6 @@ describe('savedProductFromProfile', () => {
           priceCurrency: null,
           delivery: null,
           merchantId: '2dec9bf6-f8f2-4747-a058-7bb7fa086730',
-          merchantDomain: null,
           productVariantId: 'variant-m',
           variantTitle: 'Medium',
           available: true,
@@ -442,7 +438,7 @@ describe('savedProductFromProfile', () => {
     expect(product.offers[0]?.merchant).toBe('Merchant')
   })
 
-  test('preserves an ordinary merchant name that merely uses storefront words', () => {
+  test('keeps an ordinary current merchant name', () => {
     const product = savedProductFromProfile({
       ...unavailable,
       commercialFactsAuthoritative: true,
@@ -455,7 +451,6 @@ describe('savedProductFromProfile', () => {
           priceCurrency: null,
           delivery: null,
           merchantId: null,
-          merchantDomain: 'shop.example',
           productVariantId: 'variant-m',
           variantTitle: 'Medium',
           available: true,
@@ -464,6 +459,59 @@ describe('savedProductFromProfile', () => {
     })
 
     expect(product.offers[0]?.merchant).toBe('Local Storefront Goods')
+  })
+
+  test('never exposes a Shopify transport seller label without an official origin', () => {
+    const product = savedProductFromProfile({
+      ...unavailable,
+      commercialFactsAuthoritative: true,
+      details: {
+        ...fullSavedDetails(),
+        merchantName: 'https://sollys-online-grocery.myshopify.com/mcp',
+      },
+      offers: [
+        {
+          offerKey: 'saved_offer_poisoned_transport_label',
+          merchant: 'sollys-online-grocery.myshopify.com',
+          price: 11,
+          priceMinorUnits: 1100,
+          priceCurrency: 'USD',
+          delivery: null,
+          merchantId: '2dec9bf6-f8f2-4747-a058-7bb7fa086730',
+          productVariantId: 'variant-m',
+          variantTitle: 'Medium',
+          available: true,
+        },
+      ],
+    })
+
+    expect(product.offers[0]?.merchant).toBe('Merchant')
+    expect(JSON.stringify(product.offers)).not.toContain('sollys-online-grocery.myshopify.com')
+  })
+
+  test('shows a verified myshopify storefront origin when it is the official origin', () => {
+    const product = savedProductFromProfile({
+      ...unavailable,
+      commercialFactsAuthoritative: true,
+      offers: [
+        {
+          offerKey: 'saved_offer_verified_shopify_origin',
+          merchant: 'Internal seller label',
+          merchantOrigin: 'official-store.myshopify.com',
+          price: 11,
+          priceMinorUnits: 1100,
+          priceCurrency: 'USD',
+          delivery: null,
+          merchantId: null,
+          productVariantId: 'variant-m',
+          variantTitle: 'Medium',
+          available: true,
+        },
+      ],
+    })
+
+    expect(product.merchantDomain).toBe('official-store.myshopify.com')
+    expect(product.offers[0]?.merchant).toBe('official-store.myshopify.com')
   })
 
   test('keeps an exact server offer when its merchant display name is null', () => {
@@ -479,7 +527,6 @@ describe('savedProductFromProfile', () => {
           priceCurrency: null,
           delivery: null,
           merchantId: '2dec9bf6-f8f2-4747-a058-7bb7fa086730',
-          merchantDomain: null,
           productVariantId: 'variant-m',
           variantTitle: 'Medium',
           available: true,
@@ -520,7 +567,6 @@ describe('savedProductInput grouped catalog reference', () => {
       sourceType: 'PROVIDER_CATALOG',
       sourceIdentity: 'global-catalog',
       externalMerchantId: 'merchant-external',
-      externalMerchantDomain: 'merchant.example',
       externalProductId: 'product-external',
       externalVariantId: 'variant-external',
       selectedOptions: [{ name: 'Size', value: 'Large' }],
@@ -561,7 +607,6 @@ describe('savedProductInput grouped catalog reference', () => {
       sourceType: 'PROVIDER_CATALOG',
       sourceIdentity: 'global-catalog',
       merchantIntegrationId: '11111111-1111-1111-1111-111111111111',
-      externalMerchantDomain: 'merchant.example',
       externalProductId: 'product-external',
       externalVariantId: 'variant-external',
       selectedOptions: [{ name: 'Size', value: 'Large' }],

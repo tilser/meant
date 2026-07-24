@@ -21,23 +21,38 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.stream.IntStream;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /** Rehydrates any number of canonical products in one provider-neutral batch without persisting remote facts. */
 @Service
-@RequiredArgsConstructor
 public class UserCanonicalProductRehydrationService {
 
     private final CatalogProductRehydrationService rehydrationService;
+    private final UserCatalogMerchantOriginEnrichmentService merchantOriginEnrichmentService;
+
+    @Autowired
+    public UserCanonicalProductRehydrationService(
+            CatalogProductRehydrationService rehydrationService,
+            UserCatalogMerchantOriginEnrichmentService merchantOriginEnrichmentService
+    ) {
+        this.rehydrationService = rehydrationService;
+        this.merchantOriginEnrichmentService = merchantOriginEnrichmentService;
+    }
+
+    public UserCanonicalProductRehydrationService(CatalogProductRehydrationService rehydrationService) {
+        this(rehydrationService, new UserCatalogMerchantOriginEnrichmentService(null));
+    }
 
     public List<UserCanonicalProductRehydrationResult> rehydrate(
             List<CanonicalProduct> products,
             CatalogRehydrationContext context
     ) {
-        List<CanonicalProduct> requestedProducts = products == null
-                ? List.of()
-                : products.stream().filter(Objects::nonNull).toList();
+        List<CanonicalProduct> requestedProducts = merchantOriginEnrichmentService.enrichProducts(
+                products == null
+                        ? List.of()
+                        : products.stream().filter(Objects::nonNull).toList()
+        );
         List<OfferReference> references = requestedProducts.stream()
                 .flatMap(product -> references(product).stream())
                 .toList();

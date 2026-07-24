@@ -58,7 +58,24 @@ const browserRuntime: CheckoutKitRuntime = {
 function validCheckoutUrl(value: string): string | null {
   try {
     const url = new URL(value)
-    return url.protocol === 'https:' && url.hostname ? url.toString() : null
+    const host = url.hostname.toLocaleLowerCase()
+    const path = url.pathname.toLocaleLowerCase().replace(/\/+$/, '') || '/'
+    const protocolPath = [
+      '/.well-known/ucp.json',
+      '/.well-known/ucp',
+      '/api/ucp/mcp',
+      '/api/mcp',
+      '/mcp',
+    ].some((candidate) => path === candidate || path.startsWith(`${candidate}/`))
+    return url.protocol === 'https:' &&
+      url.hostname &&
+      !url.username &&
+      !url.password &&
+      !host.startsWith('mcp.') &&
+      !host.includes('.mcp.') &&
+      !protocolPath
+      ? url.toString()
+      : null
   } catch {
     return null
   }

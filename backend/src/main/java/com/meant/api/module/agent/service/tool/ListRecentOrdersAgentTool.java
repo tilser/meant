@@ -4,13 +4,13 @@ import com.meant.api.module.agent.constant.AgentArtifactType;
 import com.meant.api.module.agent.constant.AgentToolRisk;
 import com.meant.api.module.agent.service.AgentJsonSupport;
 import com.meant.api.module.agent.service.dto.AgentArtifact;
+import com.meant.api.module.agent.service.dto.AgentOrderListResult;
 import com.meant.api.module.agent.service.dto.AgentToolDescriptor;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionResult;
 import com.meant.api.module.agent.service.dto.ListRecentOrdersAgentToolInput;
 import com.meant.api.module.order.service.OrderService;
 import com.meant.api.module.order.service.dto.OrderListResult;
-import com.meant.api.module.order.service.dto.OrderSummaryResult;
 import com.meant.api.module.order.service.query.ListOrdersQuery;
 import java.util.List;
 import java.util.stream.IntStream;
@@ -47,17 +47,18 @@ public class ListRecentOrdersAgentTool implements AgentTool {
             throw AgentProductReadToolException.invalid("Limit must be between 1 and 20.");
         }
         OrderListResult result = orderService.list(new ListOrdersQuery(context.userId(), 0, limit));
-        List<AgentArtifact> artifacts = IntStream.range(0, result.orders().size())
-                .mapToObj(index -> artifact(result.orders().get(index), index + 1))
+        AgentOrderListResult payload = AgentOrderListResult.from(result);
+        List<AgentArtifact> artifacts = IntStream.range(0, payload.orders().size())
+                .mapToObj(index -> artifact(payload.orders().get(index), index + 1))
                 .toList();
         return AgentToolExecutionResult.read(
-                json.write(result),
+                json.write(payload),
                 "Loaded " + result.orders().size() + " recent order(s).",
                 artifacts
         );
     }
 
-    private AgentArtifact artifact(OrderSummaryResult order, int ordinal) {
+    private AgentArtifact artifact(AgentOrderListResult.Order order, int ordinal) {
         return new AgentArtifact(
                 AgentArtifactType.ORDER, ordinal, "order:" + order.id(), order.displayId(),
                 null, null, null, null, null, null, json.writeArtifact(order));

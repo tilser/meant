@@ -56,7 +56,13 @@ public class AgentInventoryProductAnchorService {
         String canonicalProductKey = text(
                 inventory.commerceReference().canonicalProductKey(),
                 "inventory-product:" + inventory.inventoryItemId());
-        CanonicalProduct product = product(canonicalProductKey, inventory.fallbackName(), reference, facts);
+        CanonicalProduct product = product(
+                canonicalProductKey,
+                inventory.fallbackName(),
+                reference,
+                facts,
+                inventory.commerceReference().merchantOrigin()
+        );
         referencePersistenceService.replace(userId, List.of(product));
         return new AgentInventoryProductAnchor(canonicalProductKey, product.title());
     }
@@ -65,7 +71,8 @@ public class AgentInventoryProductAnchorService {
             String canonicalProductKey,
             String fallbackName,
             CatalogProductReference reference,
-            RehydratedCommercialFacts facts
+            RehydratedCommercialFacts facts,
+            String merchantOrigin
     ) {
         ResultFreshness freshness = facts == null ? new ResultFreshness(Instant.now(), null) : facts.freshness();
         ResultSourceReference sourceReference = new ResultSourceReference(
@@ -79,7 +86,8 @@ public class AgentInventoryProductAnchorService {
                 reference.externalProductReference(),
                 reference.externalVariantReference(),
                 freshness,
-                sourceReference
+                sourceReference,
+                merchantOrigin
         );
         List<ProductAttribute> selectedOptions = facts == null
                 ? reference.selectedOptions() : facts.selectedOptions();

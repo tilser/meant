@@ -1,5 +1,6 @@
 package com.meant.api.module.agent.controller.response;
 
+import com.meant.api.module.agent.service.AgentBuyerPayloadSanitizer;
 import com.meant.api.module.agent.service.dto.AgentUserActionResult;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
@@ -14,7 +15,7 @@ public record AgentUserActionResponse(
     public static AgentUserActionResponse from(AgentUserActionResult result) {
         return new AgentUserActionResponse(
                 AgentMessageResponse.from(result.message()),
-                result.resultJson(),
+                AgentBuyerPayloadSanitizer.sanitize(result.resultJson()),
                 result.artifacts().stream().map(AgentArtifactResponse::from).toList()
         );
     }

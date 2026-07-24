@@ -112,10 +112,12 @@ public class UserCanonicalProductCandidateMapper {
                 ),
                 new LocalMerchantRouting(integration.id()),
                 merchantIdentity,
+                product.merchantDomain(),
                 provenanceProductIdentity,
                 variantIdentity,
                 new ResultFreshness(observedAt, null),
-                sourceReference
+                sourceReference,
+                product.merchantDomain()
         );
         OfferIdentity offerIdentity = new OfferIdentity(
                 provider,
@@ -351,6 +353,7 @@ public class UserCanonicalProductCandidateMapper {
             String selectedVariantPriceAmount,
             String selectedVariantPriceCurrency,
             Boolean selectedVariantAvailable,
+            String merchantDomain,
             String merchantName,
             int retrievalIntentFitBasisPoints
     ) {
@@ -380,6 +383,7 @@ public class UserCanonicalProductCandidateMapper {
                     product.selectedVariantPriceAmount(),
                     product.selectedVariantPriceCurrency(),
                     product.selectedVariantAvailable(),
+                    product.merchantDomain(),
                     product.merchantName(),
                     calibratedRetrievalScore(product.productRerankScore(), product.rank())
             );
@@ -410,6 +414,7 @@ public class UserCanonicalProductCandidateMapper {
                     product.selectedVariantPriceAmount(),
                     product.selectedVariantPriceCurrency(),
                     product.selectedVariantAvailable(),
+                    product.merchantDomain(),
                     product.merchantName(),
                     calibratedRetrievalScore(product.productRerankScore(), product.rank())
             );

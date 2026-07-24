@@ -30,6 +30,7 @@ import com.meant.api.module.agent.service.dto.AgentShelfContext;
 import com.meant.api.module.agent.service.dto.AgentShelfItem;
 import com.meant.api.module.agent.service.dto.AgentVisibleProductContext;
 import com.meant.api.module.agent.service.dto.AgentVisibleProductReference;
+import com.meant.api.module.cart.service.BuyerSafeRoutingScopeKey;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -49,6 +50,7 @@ class AgentContextAssemblerTest {
     private static final UUID OLD_CART_MESSAGE_ID = UUID.fromString("00000000-0000-0000-0000-000000000012");
     private static final UUID TRIGGER_MESSAGE_ID = UUID.fromString("00000000-0000-0000-0000-000000000015");
     private static final String ROUTING_SCOPE = "SHOPIFY:merchant-jackets";
+    private static final String PROJECTED_ROUTING_SCOPE = BuyerSafeRoutingScopeKey.project(ROUTING_SCOPE);
     private static final Instant BASE = Instant.parse("2026-07-19T10:00:00Z");
 
     private final AgentConversationRepository conversations = mock(AgentConversationRepository.class);
@@ -301,7 +303,7 @@ class AgentContextAssemblerTest {
         String grounding = assembler.assemble(RUN_ID).messages().get(1).text();
 
         assertThat(grounding)
-                .contains("cartId=" + currentCartId + " routingScopeKey=" + ROUTING_SCOPE)
+                .contains("cartId=" + currentCartId + " routingScopeKey=" + PROJECTED_ROUTING_SCOPE)
                 .contains("label=Cart at jackets.example lines=none")
                 .doesNotContain("cartId=" + staleCartId)
                 .doesNotContain("cartLineId=" + staleLineId)
@@ -347,12 +349,37 @@ class AgentContextAssemblerTest {
             String grounding = assembler.assemble(RUN_ID).messages().get(1).text();
 
             assertThat(grounding)
-                    .contains("cartId=" + selectedCartId + " routingScopeKey=" + ROUTING_SCOPE)
+                    .contains("cartId=" + selectedCartId + " routingScopeKey=" + PROJECTED_ROUTING_SCOPE)
                     .contains("lines=none")
                     .doesNotContain("cartId=" + staleCartId)
                     .doesNotContain("cartLineId=" + staleLineId)
                     .doesNotContain("priorCartLineId=" + staleLineId);
         }
+    }
+
+    @Test
+    void technicalRoutingScopeFromLegacyArtifactsIsOpaqueInModelContext() {
+        String technicalScope =
+                "SHOPIFY:merchant:gid://shopify/Shop/1:domain:jackets.myshopify.com";
+        UUID cartId = UUID.fromString("00000000-0000-0000-0000-000000000321");
+        givenRunAndMessages();
+        when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(any(), any()))
+                .thenReturn(List.of(cart(
+                        CART_MESSAGE_ID,
+                        1,
+                        cartId,
+                        BASE.plusSeconds(3),
+                        technicalScope,
+                        List.of()
+                )));
+
+        String grounding = assembler.assemble(RUN_ID).messages().get(1).text();
+
+        assertThat(grounding)
+                .contains("cartId=" + cartId
+                        + " routingScopeKey=" + BuyerSafeRoutingScopeKey.project(technicalScope))
+                .doesNotContain(technicalScope)
+                .doesNotContain(":domain:", "myshopify.com");
     }
 
     @Test
@@ -426,7 +453,7 @@ class AgentContextAssemblerTest {
         String grounding = assembler.assemble(RUN_ID).messages().get(1).text();
 
         assertThat(grounding)
-                .contains("cartId=" + cartId + " routingScopeKey=" + ROUTING_SCOPE)
+                .contains("cartId=" + cartId + " routingScopeKey=" + PROJECTED_ROUTING_SCOPE)
                 .contains("lines=none")
                 .doesNotContain("cartLineId=" + staleLineId)
                 .contains("priorCartLineId=" + staleLineId)

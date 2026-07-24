@@ -39,6 +39,7 @@ import java.lang.reflect.Proxy;
 import java.net.URI;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 
@@ -173,6 +174,44 @@ class CartPersistenceOfferBindingTest {
     }
 
     @Test
+    void persistsCanonicalMerchantDomainSeparatelyFromTechnicalRoutingAuthority() {
+        CartPersistenceService service = new CartPersistenceService(savingRepository(), new ObjectMapper());
+        String routingDomain = "weareallbirds.myshopify.com";
+        CartRoutingTarget target = new CartRoutingTarget(
+                "SHOPIFY:merchant:shop-1",
+                MerchantIntegrationProvider.SHOPIFY,
+                null,
+                "shop-1",
+                new MerchantCartProvider(
+                        null,
+                        "allbirds.com",
+                        routingDomain,
+                        "https://" + routingDomain + "/api/ucp/mcp",
+                        "https://" + routingDomain + "/.well-known/ucp",
+                        List.of(),
+                        MerchantExecutionPolicy.unavailable(),
+                        Instant.now(),
+                        Set.of("dev.ucp.shopping.cart")
+                )
+        );
+
+        Cart cart = service.saveSnapshot(
+                null,
+                java.util.UUID.randomUUID(),
+                target,
+                cartResult("line-1"),
+                List.of(),
+                List.of(selectedOffer()),
+                CartSnapshotPurpose.CART_MUTATION
+        );
+        var result = new CartResultMapper(new ObjectMapper()).from(cart, cartResult("line-1").response());
+
+        assertThat(cart.getMerchantDomain()).isEqualTo("allbirds.com");
+        assertThat(cart.getRoutingDomain()).isEqualTo(routingDomain);
+        assertThat(result.merchantDomain()).isEqualTo("allbirds.com");
+    }
+
+    @Test
     void persistsVerifiedProductPageUrlInsteadOfCatalogSourceEndpoint() {
         CartPersistenceService service = new CartPersistenceService(savingRepository(), new ObjectMapper());
         ResolvedSelectedOffer base = selectedOffer();
@@ -255,6 +294,36 @@ class CartPersistenceOfferBindingTest {
     }
 
     @Test
+    void idempotentCreateRetryRefreshesOfficialOriginWhenRoutingIdentityIsStable() {
+        CartPersistenceService service = new CartPersistenceService(savingRepository(), new ObjectMapper());
+        java.util.UUID userId = java.util.UUID.randomUUID();
+        String routingDomain = "weareallbirds.myshopify.com";
+        Cart existing = service.saveSnapshot(
+                null,
+                userId,
+                target("allbirds.com", routingDomain),
+                cartResult("line-1"),
+                List.of(),
+                List.of(selectedOffer()),
+                CartSnapshotPurpose.CART_MUTATION
+        );
+
+        Cart reconciled = service.saveCreatedSnapshot(
+                userId,
+                target("allbirds.ca", routingDomain),
+                cartResult("line-1"),
+                List.of(),
+                List.of(selectedOffer()),
+                CartSnapshotPurpose.CART_MUTATION,
+                java.util.UUID.randomUUID()
+        );
+
+        assertThat(reconciled).isSameAs(existing);
+        assertThat(reconciled.getMerchantDomain()).isEqualTo("allbirds.ca");
+        assertThat(reconciled.getRoutingDomain()).isEqualTo(routingDomain);
+    }
+
+    @Test
     void idempotentCreateRetryNeverReconcilesAnotherUsersRemoteCart() {
         CartPersistenceService service = new CartPersistenceService(savingRepository(), new ObjectMapper());
         service.saveSnapshot(
@@ -314,6 +383,29 @@ class CartPersistenceOfferBindingTest {
 
         assertThatThrownBy(() -> cart.assignRoutingScope(
                 "GENERIC_UCP", null, "shop-2", "SHOPIFY:merchant:shop-1", null, "attacker.test"))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void externalCartCanRefreshCanonicalDomainOnlyWhileRoutingIdentityIsStable() {
+        Cart cart = Cart.builder().build();
+        String routingDomain = "weareallbirds.myshopify.com";
+        cart.assignRoutingScope(
+                "SHOPIFY", null, "shop-1", "SHOPIFY:merchant:shop-1",
+                null, null, routingDomain);
+
+        cart.assignRoutingScope(
+                "SHOPIFY", null, "shop-1", "SHOPIFY:merchant:shop-1",
+                null, "allbirds.com", routingDomain);
+        cart.assignRoutingScope(
+                "SHOPIFY", null, "shop-1", "SHOPIFY:merchant:shop-1",
+                null, "allbirds.ca", routingDomain);
+
+        assertThat(cart.getMerchantDomain()).isEqualTo("allbirds.ca");
+        assertThat(cart.getRoutingDomain()).isEqualTo(routingDomain);
+        assertThatThrownBy(() -> cart.assignRoutingScope(
+                "SHOPIFY", null, "shop-1", "SHOPIFY:merchant:shop-1",
+                null, "allbirds.ca", "attacker.myshopify.com"))
                 .isInstanceOf(IllegalStateException.class);
     }
 
@@ -404,6 +496,26 @@ class CartPersistenceOfferBindingTest {
                 "SHOPIFY:merchant:shop-1", MerchantIntegrationProvider.SHOPIFY, null, "shop-1",
                 new MerchantCartProvider(null, "seller.test", "https://seller.test/api/ucp/mcp", null,
                         List.of(), MerchantExecutionPolicy.unavailable()));
+    }
+
+    private CartRoutingTarget target(String merchantDomain, String routingDomain) {
+        return new CartRoutingTarget(
+                "SHOPIFY:merchant:shop-1",
+                MerchantIntegrationProvider.SHOPIFY,
+                null,
+                "shop-1",
+                new MerchantCartProvider(
+                        null,
+                        merchantDomain,
+                        routingDomain,
+                        "https://" + routingDomain + "/api/ucp/mcp",
+                        null,
+                        List.of(),
+                        MerchantExecutionPolicy.unavailable(),
+                        Instant.now(),
+                        Set.of("dev.ucp.shopping.cart")
+                )
+        );
     }
 
     private UcpCartToolResult cartResult(String lineId) {

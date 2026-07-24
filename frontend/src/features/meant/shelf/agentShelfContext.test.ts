@@ -60,4 +60,28 @@ describe('agentShelfContext', () => {
       ],
     })
   })
+
+  test('does not put a historical technical seller label into agent context', () => {
+    const technicalSeller = 'mcp.shop.example'
+    const item: ShelfItem = {
+      uid: 'poisoned-shelf-product',
+      kind: 'product',
+      productId: 'product-trail-shoe',
+      collapsed: false,
+      snapshot: {
+        productId: 'product-trail-shoe',
+        name: 'Trail shoe',
+        brand: technicalSeller,
+        category: 'Running shoes',
+        tone: '#fff',
+        priceFrom: 119,
+        merchants: 1,
+      },
+    }
+
+    const context = agentShelfContext([item])
+
+    expect(context?.items[0]?.text).toBe('Merchant · Running shoes')
+    expect(JSON.stringify(context)).not.toContain(technicalSeller)
+  })
 })

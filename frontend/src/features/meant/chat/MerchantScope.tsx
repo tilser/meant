@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { MerchantProfile } from '../../../lib/apiClient'
+import { merchantDisplayOrigin } from '../cart/merchantOrigin'
 import { MerchantIcon } from '../shared/icons'
 
 export function MerchantScope({
@@ -26,13 +27,7 @@ export function MerchantScope({
     () =>
       merchants.filter((merchant) => {
         if (!normalizedSearch) return true
-        return [
-          merchant.name,
-          merchant.domain,
-          merchant.description,
-          merchant.advertisedMcpEndpoint,
-          merchant.profileMcpEndpoint,
-        ]
+        return [merchant.name, merchant.domain, merchant.description]
           .filter((value): value is string => Boolean(value))
           .join(' ')
           .toLocaleLowerCase()
@@ -99,7 +94,9 @@ export function MerchantScope({
           onClick={() => setOpen((current) => !current)}
         >
           {selectedMerchant ? <span className="mt-scope-dot" aria-hidden /> : <MerchantIcon />}
-          <span>{selectedMerchant?.name ?? 'All merchants'}</span>
+          <span>
+            {selectedMerchant ? merchantDisplayOrigin(selectedMerchant.domain) : 'All merchants'}
+          </span>
           <span className={`mt-caret ${open ? 'up' : ''}`} aria-hidden>
             v
           </span>
@@ -154,7 +151,9 @@ export function MerchantScope({
                   }}
                 >
                   <span className="mt-scope-opt-main">
-                    <span className="mt-scope-opt-name">{merchant.name}</span>
+                    <span className="mt-scope-opt-name">
+                      {merchantDisplayOrigin(merchant.domain)}
+                    </span>
                     <span className="mt-mono mt-scope-opt-domain">{merchant.domain}</span>
                   </span>
                 </button>

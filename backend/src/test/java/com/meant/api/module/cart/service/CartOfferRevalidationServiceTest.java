@@ -100,6 +100,19 @@ class CartOfferRevalidationServiceTest {
     }
 
     @Test
+    void revalidatesAgainstTechnicalRoutingDomainInsteadOfBuyerFacingOrigin() {
+        provider.mode = Mode.FRESH;
+        Cart cart = cart(line("offer-1", "variant-1"));
+        cart.assignProvider(null, "allbirds.com", "weareallbirds.myshopify.com");
+
+        service.revalidate(cart, null);
+
+        assertThat(provider.lastBatch).singleElement().satisfies(reference ->
+                assertThat(reference.externalMerchantDomain())
+                        .isEqualTo("weareallbirds.myshopify.com"));
+    }
+
+    @Test
     void blocksUnknownCurrentAvailability() {
         provider.mode = Mode.UNKNOWN;
 

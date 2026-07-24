@@ -32,6 +32,7 @@ import type {
   MerchantCartSnapshot,
   RemoveCartCodeInput,
 } from './types'
+import { merchantAdjacentDisplayLabel, merchantDisplayOrigin } from './merchantOrigin'
 import {
   appliedCodeDisplay,
   cartMoney,
@@ -48,7 +49,7 @@ import {
 
 function MerchantDeliveryPanel({
   merchantKey,
-  merchant,
+  merchantDisplay,
   cartId,
   deliveryGroups,
   currency,
@@ -60,7 +61,7 @@ function MerchantDeliveryPanel({
   onSelectOption,
 }: Readonly<{
   merchantKey: string
-  merchant: string
+  merchantDisplay: string
   cartId?: string | null
   deliveryGroups: readonly CartDeliveryGroup[]
   currency?: string | null
@@ -205,7 +206,9 @@ function MerchantDeliveryPanel({
         </div>
       ) : (
         <div className="mt-mono mt-delivery-empty">
-          {cartId ? `No delivery options loaded for ${merchant}.` : 'Merchant cart is syncing.'}
+          {cartId
+            ? `No delivery options loaded for ${merchantDisplay}.`
+            : 'Merchant cart is syncing.'}
         </div>
       )}
     </div>
@@ -495,8 +498,8 @@ export function CartView({
                   <div className="mt-alert-body">
                     <div className="mt-alert-title">Does not ship to selected destinations</div>
                     <div className="mt-alert-text">
-                      {line.merchant} cannot deliver {line.product.name} to{' '}
-                      {deliveryLocationSummary(deliveryLocations)}.
+                      {merchantDisplayOrigin(line.merchantOrigin)} cannot deliver{' '}
+                      {line.product.name} to {deliveryLocationSummary(deliveryLocations)}.
                     </div>
                   </div>
                   <button
@@ -538,6 +541,9 @@ export function CartView({
           {groupSummaries.map(
             ({ group, merchantKey, snapshot, subtotal, savings, total, currency }) => {
               const cartId = snapshot?.cartId ?? group.items.find((item) => item.cartId)?.cartId
+              const merchantDisplay = merchantDisplayOrigin(
+                group.merchantOrigin ?? snapshot?.merchantOrigin,
+              )
               const groupCurrency =
                 currency ?? group.items.find((item) => item.cartCurrency)?.cartCurrency
               const groupDraft = addressDraft(merchantKey)
@@ -593,7 +599,7 @@ export function CartView({
                   <div className="mt-mgroup-head">
                     <div className="mt-mgroup-name">
                       <span className="mt-mgroup-dot" />
-                      {group.merchant}
+                      {merchantDisplay}
                       <span className="mt-mono mt-mgroup-count">
                         {group.items.length} item{group.items.length > 1 ? 's' : ''}
                       </span>
@@ -609,7 +615,9 @@ export function CartView({
                         />
                       </div>
                       <div className="mt-citem-info">
-                        <div className="mt-mono mt-citem-brand">{line.product.brand}</div>
+                        <div className="mt-mono mt-citem-brand">
+                          {merchantAdjacentDisplayLabel(line.product.brand, line.merchantOrigin)}
+                        </div>
                         <div className="mt-citem-name">{line.product.name}</div>
                         {line.variantTitle ? (
                           <div className="mt-mono mt-citem-variant">{line.variantTitle}</div>
@@ -662,7 +670,7 @@ export function CartView({
                   ))}
                   <MerchantDeliveryPanel
                     merchantKey={merchantKey}
-                    merchant={group.merchant}
+                    merchantDisplay={merchantDisplay}
                     cartId={cartId}
                     deliveryGroups={group.deliveryGroups}
                     currency={groupCurrency}
@@ -768,7 +776,7 @@ export function CartView({
                         </div>
                       ) : (
                         <div className="mt-found mt-found-none mt-mono">
-                          No applied codes for {group.merchant}
+                          No applied codes for {merchantDisplay}
                         </div>
                       )}
                       {codeError ? <div className="mt-cart-inline-error">{codeError}</div> : null}
@@ -815,7 +823,7 @@ export function CartView({
                         })
                       }
                     >
-                      {checkoutBusy ? 'Starting checkout...' : `Checkout with ${group.merchant}`}
+                      {checkoutBusy ? 'Starting checkout...' : `Checkout with ${merchantDisplay}`}
                     </button>
                   </div>
                 </div>

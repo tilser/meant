@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="001-separate-cart-merchant-domain-routing-authority" author="codex">
+        <addColumn tableName="cart">
+            <column name="routing_domain" type="text"/>
+        </addColumn>
+
+        <sql dbms="postgresql" splitStatements="false"><![CDATA[
+            -- The legacy cart merchant_domain was also used as the outbound routing trust anchor.
+            -- Preserve that authority before replacing presentation identity with the verified storefront.
+            UPDATE cart
+            SET routing_domain = merchant_domain
+            WHERE merchant_domain IS NOT NULL;
+
+            WITH integration_authority AS (
+                SELECT
+                    integration.id,
+                    integration.provider,
+                    nullif(lower(btrim(integration.verified_domain)), '') AS verified_domain,
+                    lower(split_part(
+                        split_part(substring(integration.endpoint FROM 9), '/', 1),
+                        ':',
+                        1
+                    )) AS endpoint_host
+                FROM merchant_integration integration
+                WHERE integration.endpoint ~* '^https://[a-z0-9][a-z0-9.-]*($|:[0-9]{1,5}$|/[^[:space:]]*$|:[0-9]{1,5}/[^[:space:]]*$)'
+                  AND integration.endpoint !~ '@'
+            )
+            UPDATE cart
+            SET routing_domain = CASE
+                    WHEN authority.verified_domain IS NOT NULL
+                         AND (
+                             authority.endpoint_host = authority.verified_domain
+                             OR authority.endpoint_host LIKE '%.' || authority.verified_domain
+                         )
+                        THEN authority.verified_domain
+                    ELSE authority.endpoint_host
+                END
+            FROM integration_authority authority
+            WHERE cart.merchant_integration_id = authority.id
+              AND cart.provider = authority.provider;
+
+            WITH verified_shopify_storefront AS (
+                SELECT
+                    identity.normalized_value AS shop_identity,
+                    merchant.domain AS merchant_domain
+                FROM merchant_identity identity
+                JOIN merchant ON merchant.id = identity.merchant_id
+                WHERE identity.namespace = 'SHOPIFY_SHOP'
+                  AND identity.role = 'PROVIDER_ID'
+            )
+            UPDATE cart
+            SET merchant_domain = storefront.merchant_domain
+            FROM verified_shopify_storefront storefront
+            WHERE cart.provider = 'SHOPIFY'
+              AND cart.merchant_integration_id IS NULL
+              AND cart.merchant_id IS NULL
+              AND lower(btrim(cart.external_merchant_id)) = storefront.shop_identity;
+
+            -- A technical Shopify source host is not a safe presentation fallback. Old carts without
+            -- a verified storefront claim remain executable through routing_domain but display no domain.
+            UPDATE cart
+            SET merchant_domain = NULL
+            WHERE provider = 'SHOPIFY'
+              AND merchant_integration_id IS NULL
+              AND merchant_id IS NULL
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM merchant_identity identity
+                  WHERE identity.namespace = 'SHOPIFY_SHOP'
+                    AND identity.role = 'PROVIDER_ID'
+                    AND identity.normalized_value = lower(btrim(cart.external_merchant_id))
+              );
+        ]]></sql>
+
+        <sql>
+            ALTER TABLE cart
+            DROP CONSTRAINT ck_cart_legacy_or_bound_scope
+        </sql>
+        <sql>
+            ALTER TABLE cart
+            ADD CONSTRAINT ck_cart_legacy_or_bound_scope
+            CHECK (
+                (
+                    provider IS NULL AND routing_scope_key IS NULL
+                    AND merchant_integration_id IS NULL AND external_merchant_id IS NULL
+                    AND merchant_id IS NOT NULL AND merchant_domain IS NOT NULL
+                ) OR (
+                    provider IS NOT NULL AND routing_scope_key IS NOT NULL
+                    AND merchant_integration_id IS NOT NULL
+                    AND merchant_id IS NOT NULL AND merchant_domain IS NOT NULL
+                    AND coalesce(routing_domain, merchant_domain) IS NOT NULL
+                ) OR (
+                    provider IS NOT NULL AND routing_scope_key IS NOT NULL
+                    AND merchant_integration_id IS NULL AND merchant_id IS NULL
+                    AND external_merchant_id IS NOT NULL AND routing_domain IS NOT NULL
+                )
+            )
+        </sql>
+    </changeSet>
+
+    <changeSet id="002-rewrite-cart-agent-artifact-storefront-domain" author="codex">
+        <sql dbms="postgresql" splitStatements="false"><![CDATA[
+            UPDATE agent_artifact_reference artifact
+            SET payload_json = jsonb_set(
+                        artifact.payload_json::jsonb - 'merchantDomain',
+                        '{merchantOrigin}',
+                        to_jsonb(cart.merchant_domain),
+                        true
+                    )::text,
+                label = 'Cart at ' || cart.merchant_domain
+            FROM cart
+            WHERE artifact.artifact_type = 'CART'
+              AND artifact.cart_id = cart.id
+              AND cart.merchant_domain IS NOT NULL;
+
+            UPDATE agent_artifact_reference artifact
+            SET payload_json = (
+                        artifact.payload_json::jsonb
+                        - 'merchantDomain'
+                        - 'merchantOrigin'
+                    )::text,
+                label = CASE
+                    WHEN artifact.label LIKE 'Cart at %' THEN 'Cart'
+                    ELSE artifact.label
+                END
+            FROM cart
+            WHERE artifact.artifact_type = 'CART'
+              AND artifact.cart_id = cart.id
+              AND cart.merchant_domain IS NULL;
+        ]]></sql>
+    </changeSet>
+
+    <changeSet id="003-separate-inventory-merchant-origin-routing-authority" author="codex">
+        <addColumn tableName="user_inventory_items">
+            <column name="merchant_origin" type="text"/>
+        </addColumn>
+
+        <sql dbms="postgresql" splitStatements="false"><![CDATA[
+            -- Checkout attribution gives us both authorities without trusting the legacy inventory field.
+            UPDATE user_inventory_items inventory
+            SET external_merchant_domain = cart.routing_domain,
+                merchant_origin = cart.merchant_domain
+            FROM cart
+            WHERE inventory.source_checkout_attempt_id = cart.checkout_attempt_id
+              AND cart.checkout_attempt_id IS NOT NULL;
+
+            UPDATE user_inventory_items inventory
+            SET merchant_origin = merchant.domain
+            FROM merchant_integration integration
+            JOIN merchant ON merchant.id = integration.merchant_id
+            WHERE inventory.merchant_origin IS NULL
+              AND inventory.merchant_integration_id = integration.id;
+
+            WITH verified_shopify_storefront AS (
+                SELECT
+                    identity.normalized_value AS shop_identity,
+                    merchant.domain AS merchant_origin
+                FROM merchant_identity identity
+                JOIN merchant ON merchant.id = identity.merchant_id
+                WHERE identity.namespace = 'SHOPIFY_SHOP'
+                  AND identity.role = 'PROVIDER_ID'
+            )
+            UPDATE user_inventory_items inventory
+            SET merchant_origin = storefront.merchant_origin
+            FROM verified_shopify_storefront storefront
+            WHERE inventory.merchant_origin IS NULL
+              AND inventory.provider = 'SHOPIFY'
+              AND lower(btrim(inventory.external_merchant_id)) = storefront.shop_identity;
+
+            -- A legacy domain becomes presentation data only when it matches a verified storefront claim.
+            WITH verified_domain AS (
+                SELECT
+                    identity.normalized_value AS domain,
+                    merchant.domain AS merchant_origin
+                FROM merchant_identity identity
+                JOIN merchant ON merchant.id = identity.merchant_id
+                WHERE identity.namespace = 'DOMAIN'
+                  AND identity.role = 'STOREFRONT_DOMAIN'
+            )
+            UPDATE user_inventory_items inventory
+            SET merchant_origin = verified.merchant_origin
+            FROM verified_domain verified
+            WHERE inventory.merchant_origin IS NULL
+              AND lower(btrim(inventory.external_merchant_domain)) = verified.domain;
+        ]]></sql>
+    </changeSet>
+</databaseChangeLog>

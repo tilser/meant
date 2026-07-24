@@ -3,8 +3,9 @@ package com.meant.api.module.merchant.controller.response;
 import static com.meant.api.common.util.CollectionUtils.safeList;
 import static com.meant.api.module.merchant.controller.mapper.ProductDetailsJsonValueMapper.toJsonNode;
 
-import com.meant.api.plugin.catalog.common.dto.ProductDetailsResponse;
+import com.meant.api.module.merchant.service.MerchantProductMessageSanitizer;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResult;
+import com.meant.api.plugin.catalog.common.dto.ProductDetailsResponse;
 import com.meant.api.plugin.support.UcpDecimal;
 import com.meant.api.plugin.support.UcpMoney;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -17,8 +18,6 @@ import java.util.Objects;
 import tools.jackson.databind.JsonNode;
 
 public record MerchantProductDetailsResponse(
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
-        String endpoint,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String productId,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
@@ -98,10 +97,11 @@ public record MerchantProductDetailsResponse(
     private static final int MAX_METADATA_DEPTH = 32;
 
     public static MerchantProductDetailsResponse from(ProductDetailsResult result) {
+        MerchantProductMessageSanitizer.TransportContext buyerContext =
+                MerchantProductMessageSanitizer.context(result);
         ProductDetailsResponse.Product product = result.product();
         if (product == null) {
             return new MerchantProductDetailsResponse(
-                    result.endpoint(),
                     null,
                     null,
                     null,
@@ -138,7 +138,7 @@ public record MerchantProductDetailsResponse(
                     List.of(),
                     List.of(),
                     List.of(),
-                    messageResponses(result.messages())
+                    messageResponses(result)
             );
         }
         ProductDetailsResponse.PriceRange priceRange = product.priceRange();
@@ -152,33 +152,32 @@ public record MerchantProductDetailsResponse(
                 ? null
                 : UcpMoney.value(selectedVariant.listPrice(), selectedVariant.currency());
         return new MerchantProductDetailsResponse(
-                result.endpoint(),
                 product.productId(),
                 product.handle(),
-                product.title(),
-                product.description(),
-                product.url(),
-                product.imageUrl(),
+                buyerText(product.title(), buyerContext),
+                buyerText(product.description(), buyerContext),
+                buyerUrl(product.url(), buyerContext),
+                buyerUrl(product.imageUrl(), buyerContext),
                 safeList(product.images()).stream()
                         .filter(Objects::nonNull)
-                        .map(ProductImageResponse::from)
+                        .map(image -> ProductImageResponse.from(image, buyerContext))
                         .toList(),
                 safeList(product.media()).stream()
                         .filter(Objects::nonNull)
-                        .map(ProductMediaResponse::from)
+                        .map(media -> ProductMediaResponse.from(media, buyerContext))
                         .toList(),
                 safeList(product.categories()).stream()
                         .filter(Objects::nonNull)
-                        .map(ProductCategoryResponse::from)
+                        .map(category -> ProductCategoryResponse.from(category, buyerContext))
                         .toList(),
-                distinctStrings(product.tags()),
+                buyerTextValues(product.tags(), buyerContext),
                 safeList(product.options()).stream()
                         .filter(Objects::nonNull)
-                        .map(ProductOptionResponse::from)
+                        .map(option -> ProductOptionResponse.from(option, buyerContext))
                         .toList(),
                 safeList(product.variants()).stream()
                         .filter(Objects::nonNull)
-                        .map(ProductVariantResponse::from)
+                        .map(variant -> ProductVariantResponse.from(variant, buyerContext))
                         .toList(),
                 product.totalVariants(),
                 priceRange == null ? null : priceRange.min(),
@@ -189,31 +188,31 @@ public record MerchantProductDetailsResponse(
                 listPriceRange == null ? productListPrice == null ? null : productListPrice.currency() : listPriceRange.currency(),
                 product.requiresSellingPlan(),
                 selectedVariant == null ? null : selectedVariant.variantId(),
-                selectedVariant == null ? null : selectedVariant.title(),
+                selectedVariant == null ? null : buyerText(selectedVariant.title(), buyerContext),
                 selectedVariant == null ? null : selectedVariant.price(),
                 selectedVariant == null ? null : selectedVariant.currency(),
-                selectedVariant == null ? null : selectedVariant.sku(),
+                selectedVariant == null ? null : buyerText(selectedVariant.sku(), buyerContext),
                 moneyText(selectedListPrice),
                 selectedListPrice == null ? null : selectedListPrice.currency(),
-                selectedVariant == null ? null : selectedVariant.imageUrl(),
-                selectedVariant == null ? null : selectedVariant.imageAltText(),
+                selectedVariant == null ? null : buyerUrl(selectedVariant.imageUrl(), buyerContext),
+                selectedVariant == null ? null : buyerText(selectedVariant.imageAltText(), buyerContext),
                 selectedVariant == null ? null : selectedVariant.available(),
                 selectedVariant == null
                         ? List.of()
                         : safeList(selectedVariant.selectedOptions()).stream()
                                 .filter(Objects::nonNull)
-                                .map(ProductSelectedOptionResponse::from)
+                                .map(option -> ProductSelectedOptionResponse.from(option, buyerContext))
                                 .toList(),
-                stringValues(toJsonNode(product.skus())),
-                stringValues(toJsonNode(product.certifications())),
-                stringValues(toJsonNode(product.materials())),
-                stringValues(toJsonNode(product.collections())),
-                attributes(
+                buyerTextValues(stringValues(toJsonNode(product.skus())), buyerContext),
+                buyerTextValues(stringValues(toJsonNode(product.certifications())), buyerContext),
+                buyerTextValues(stringValues(toJsonNode(product.materials())), buyerContext),
+                buyerTextValues(stringValues(toJsonNode(product.collections())), buyerContext),
+                buyerAttributes(attributes(
                         toJsonNode(product.metadata()),
                         toJsonNode(product.metafields()),
                         toJsonNode(product.techSpecs())
-                ),
-                messageResponses(result.messages())
+                ), buyerContext),
+                messageResponses(result)
         );
     }
 
@@ -224,8 +223,14 @@ public record MerchantProductDetailsResponse(
             String altText
     ) {
 
-        static ProductImageResponse from(ProductDetailsResponse.Image image) {
-            return new ProductImageResponse(image.url(), image.altText());
+        static ProductImageResponse from(
+                ProductDetailsResponse.Image image,
+                MerchantProductMessageSanitizer.TransportContext context
+        ) {
+            return new ProductImageResponse(
+                    buyerUrl(image.url(), context),
+                    buyerText(image.altText(), context)
+            );
         }
     }
 
@@ -240,8 +245,16 @@ public record MerchantProductDetailsResponse(
             String previewImageUrl
     ) {
 
-        static ProductMediaResponse from(ProductDetailsResponse.Media media) {
-            return new ProductMediaResponse(media.type(), media.url(), media.altText(), media.previewImageUrl());
+        static ProductMediaResponse from(
+                ProductDetailsResponse.Media media,
+                MerchantProductMessageSanitizer.TransportContext context
+        ) {
+            return new ProductMediaResponse(
+                    MerchantProductMessageSanitizer.buyerSafeMediaType(media.type(), context),
+                    buyerUrl(media.url(), context),
+                    buyerText(media.altText(), context),
+                    buyerUrl(media.previewImageUrl(), context)
+            );
         }
     }
 
@@ -252,8 +265,14 @@ public record MerchantProductDetailsResponse(
             String taxonomy
     ) {
 
-        static ProductCategoryResponse from(ProductDetailsResponse.Category category) {
-            return new ProductCategoryResponse(category.value(), category.taxonomy());
+        static ProductCategoryResponse from(
+                ProductDetailsResponse.Category category,
+                MerchantProductMessageSanitizer.TransportContext context
+        ) {
+            return new ProductCategoryResponse(
+                    buyerText(category.value(), context),
+                    buyerText(category.taxonomy(), context)
+            );
         }
     }
 
@@ -264,8 +283,14 @@ public record MerchantProductDetailsResponse(
             List<String> values
     ) {
 
-        static ProductOptionResponse from(ProductDetailsResponse.Option option) {
-            return new ProductOptionResponse(option.name(), distinctStrings(option.values()));
+        static ProductOptionResponse from(
+                ProductDetailsResponse.Option option,
+                MerchantProductMessageSanitizer.TransportContext context
+        ) {
+            return new ProductOptionResponse(
+                    buyerText(option.name(), context),
+                    buyerTextValues(option.values(), context)
+            );
         }
     }
 
@@ -276,8 +301,14 @@ public record MerchantProductDetailsResponse(
             String value
     ) {
 
-        static ProductSelectedOptionResponse from(ProductDetailsResponse.SelectedOption selectedOption) {
-            return new ProductSelectedOptionResponse(selectedOption.name(), selectedOption.value());
+        static ProductSelectedOptionResponse from(
+                ProductDetailsResponse.SelectedOption selectedOption,
+                MerchantProductMessageSanitizer.TransportContext context
+        ) {
+            return new ProductSelectedOptionResponse(
+                    buyerText(selectedOption.name(), context),
+                    buyerText(selectedOption.value(), context)
+            );
         }
     }
 
@@ -320,38 +351,44 @@ public record MerchantProductDetailsResponse(
             List<ProductAttributeResponse> attributes
     ) {
 
-        static ProductVariantResponse from(ProductDetailsResponse.Variant variant) {
+        static ProductVariantResponse from(
+                ProductDetailsResponse.Variant variant,
+                MerchantProductMessageSanitizer.TransportContext context
+        ) {
             UcpMoney listPrice = variant.listPrice() == null
                     ? null
                     : UcpMoney.value(variant.listPrice(), variant.currency());
             return new ProductVariantResponse(
                     variant.variantId(),
                     variant.handle(),
-                    variant.title(),
-                    variant.description(),
-                    variant.url(),
+                    buyerText(variant.title(), context),
+                    buyerText(variant.description(), context),
+                    buyerUrl(variant.url(), context),
                     variant.price(),
                     variant.currency(),
                     moneyText(listPrice),
                     listPrice == null ? null : listPrice.currency(),
-                    variant.sku(),
-                    variant.imageUrl(),
-                    variant.imageAltText(),
+                    buyerText(variant.sku(), context),
+                    buyerUrl(variant.imageUrl(), context),
+                    buyerText(variant.imageAltText(), context),
                     safeList(variant.media()).stream()
                             .filter(Objects::nonNull)
-                            .map(ProductMediaResponse::from)
+                            .map(media -> ProductMediaResponse.from(media, context))
                             .toList(),
                     variant.available(),
                     safeList(variant.selectedOptions()).stream()
                             .filter(Objects::nonNull)
-                            .map(ProductSelectedOptionResponse::from)
+                            .map(option -> ProductSelectedOptionResponse.from(option, context))
                             .toList(),
                     safeList(variant.categories()).stream()
                             .filter(Objects::nonNull)
-                            .map(ProductCategoryResponse::from)
+                            .map(category -> ProductCategoryResponse.from(category, context))
                             .toList(),
-                    distinctStrings(variant.tags()),
-                    MerchantProductDetailsResponse.attributes(toJsonNode(variant.metadata()))
+                    buyerTextValues(variant.tags(), context),
+                    buyerAttributes(
+                            MerchantProductDetailsResponse.attributes(toJsonNode(variant.metadata())),
+                            context
+                    )
             );
         }
     }
@@ -385,17 +422,22 @@ public record MerchantProductDetailsResponse(
             String url
     ) {
 
-        static ProductMessageResponse from(ProductDetailsResponse.Message message) {
+        static ProductMessageResponse from(
+                ProductDetailsResponse.Message message,
+                ProductDetailsResult result
+        ) {
+            MerchantProductMessageSanitizer.SanitizedMessage sanitized =
+                    MerchantProductMessageSanitizer.sanitize(message, result);
             return new ProductMessageResponse(
-                    message.type(),
-                    message.code(),
-                    message.path(),
-                    message.contentType(),
-                    message.content(),
-                    message.severity(),
-                    message.presentation(),
-                    message.imageUrl(),
-                    message.url()
+                    sanitized.type(),
+                    sanitized.code(),
+                    sanitized.path(),
+                    sanitized.contentType(),
+                    sanitized.content(),
+                    sanitized.severity(),
+                    sanitized.presentation(),
+                    sanitized.imageUrl(),
+                    sanitized.url()
             );
         }
     }
@@ -415,10 +457,47 @@ public record MerchantProductDetailsResponse(
         return List.copyOf(seen.values());
     }
 
-    private static List<ProductMessageResponse> messageResponses(List<ProductDetailsResponse.Message> messages) {
-        return safeList(messages).stream()
+    private static String buyerText(
+            String value,
+            MerchantProductMessageSanitizer.TransportContext context
+    ) {
+        return MerchantProductMessageSanitizer.sanitizeBuyerText(value, context);
+    }
+
+    private static String buyerUrl(
+            String value,
+            MerchantProductMessageSanitizer.TransportContext context
+    ) {
+        return MerchantProductMessageSanitizer.buyerSafeUrl(value, context);
+    }
+
+    private static List<String> buyerTextValues(
+            List<String> values,
+            MerchantProductMessageSanitizer.TransportContext context
+    ) {
+        return distinctStrings(safeList(values).stream()
+                .map(value -> buyerText(value, context))
+                .toList());
+    }
+
+    private static List<ProductAttributeResponse> buyerAttributes(
+            List<ProductAttributeResponse> attributes,
+            MerchantProductMessageSanitizer.TransportContext context
+    ) {
+        return safeList(attributes).stream()
                 .filter(Objects::nonNull)
-                .map(ProductMessageResponse::from)
+                .map(attribute -> new ProductAttributeResponse(
+                        buyerText(attribute.name(), context),
+                        buyerText(attribute.value(), context)))
+                .filter(attribute -> blankToNull(attribute.name()) != null
+                        && blankToNull(attribute.value()) != null)
+                .toList();
+    }
+
+    private static List<ProductMessageResponse> messageResponses(ProductDetailsResult result) {
+        return safeList(result.messages()).stream()
+                .filter(Objects::nonNull)
+                .map(message -> ProductMessageResponse.from(message, result))
                 .toList();
     }
 

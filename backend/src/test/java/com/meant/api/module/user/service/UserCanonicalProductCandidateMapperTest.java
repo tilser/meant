@@ -62,6 +62,8 @@ class UserCanonicalProductCandidateMapperTest {
         );
 
         assertThat(source.value()).isEqualTo("merchant-1");
+        assertThat(candidate.offer().provenance().getFirst().externalMerchantDomain())
+                .isEqualTo("merchant.example");
         assertThat(policy.supports(source)).isTrue();
         assertThat(policy.decide(source, CatalogPayloadClass.SAVED_INTERACTION).mode())
                 .isEqualTo(CatalogRetentionMode.DURABLE_IDENTIFIERS_ONLY);

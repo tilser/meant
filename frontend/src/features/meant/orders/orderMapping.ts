@@ -1,30 +1,75 @@
 import type { OrderProfile } from '../../../lib/apiClient'
+import { sanitizeBuyerVisibleText } from '../agent/buyerVisibleText'
+import { merchantDisplayOrigin } from '../cart/merchantOrigin'
 import type { CartItem, Order, OrderStatus, Product } from '../types'
 import { cartItemUnitPrice } from '../utils'
 
 export function orderFromProfile(profile: OrderProfile): Order {
+  const merchantOrigin = profile.merchantDomain?.trim() || null
   return {
     id: profile.displayId || profile.remoteOrderId || profile.id,
     date: profile.date,
     status: profile.status as OrderStatus,
-    statusNote: profile.statusNote,
+    statusNote: sanitizeBuyerVisibleText(profile.statusNote, merchantOrigin),
     items: (profile.lines ?? []).map((line) => ({
       id: line.productKey || line.productId || line.id,
-      merchant: line.merchantName || profile.merchantName || profile.merchantDomain,
+      merchant: merchantDisplayOrigin(merchantOrigin),
+      merchantOrigin,
       qty: line.quantity ?? 0,
       merchantId: profile.merchantId,
       merchantDomain: profile.merchantDomain,
       productVariantId: line.productVariantId,
-      variantTitle: line.variantTitle,
-      productTitle: line.productTitle,
-      imageUrl: line.imageUrl,
-      productUrl: line.productUrl,
+      variantTitle: line.variantTitle
+        ? sanitizeBuyerVisibleText(line.variantTitle, merchantOrigin)
+        : line.variantTitle,
+      productTitle: line.productTitle
+        ? sanitizeBuyerVisibleText(line.productTitle, merchantOrigin)
+        : line.productTitle,
+      imageUrl: safeOrderProductUrl(line.imageUrl, merchantOrigin),
+      productUrl: safeOrderProductUrl(line.productUrl, merchantOrigin),
       unitPriceAmount: line.unitAmount,
       lineTotalAmount: line.totalAmount,
       orderCurrency: line.currency ?? profile.currency,
     })),
     saved: 0,
     savedNote: '',
+  }
+}
+
+function safeOrderProductUrl(
+  value?: string | null,
+  merchantOrigin?: string | null,
+): string | null {
+  if (!value) return null
+  try {
+    const url = new URL(value)
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+      return null
+    }
+    const host = url.hostname.toLocaleLowerCase()
+    const officialHost = merchantOrigin?.trim().toLocaleLowerCase() || null
+    if (
+      host.startsWith('mcp.') ||
+      host.includes('.mcp.') ||
+      ((host === 'myshopify.com' || host.endsWith('.myshopify.com')) && host !== officialHost)
+    ) {
+      return null
+    }
+    const path = url.pathname.toLocaleLowerCase().replace(/\/+$/, '') || '/'
+    if (
+      [
+        '/.well-known/ucp.json',
+        '/.well-known/ucp',
+        '/api/ucp/mcp',
+        '/api/mcp',
+        '/mcp',
+      ].some((protocolPath) => path === protocolPath || path.startsWith(`${protocolPath}/`))
+    ) {
+      return null
+    }
+    return url.toString()
+  } catch {
+    return null
   }
 }
 

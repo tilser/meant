@@ -9,6 +9,7 @@ import {
   type MerchantIdentityLinkProfile,
   type MerchantProfile,
 } from '../../../lib/apiClient'
+import { merchantDisplayOrigin } from '../cart/merchantOrigin'
 import { ViewHead } from '../shared/ui'
 import type { UserAccount } from '../types'
 import { Avatar } from './Avatar'
@@ -389,7 +390,9 @@ export function AccountView({
               return (
                 <div className="mt-acct-store" key={merchant.id}>
                   <div>
-                    <div className="mt-acct-store-name">{merchant.name}</div>
+                    <div className="mt-acct-store-name">
+                      {merchantDisplayOrigin(merchant.domain)}
+                    </div>
                     <div className="mt-mono mt-acct-store-meta">
                       {merchant.domain} ·{' '}
                       {connected

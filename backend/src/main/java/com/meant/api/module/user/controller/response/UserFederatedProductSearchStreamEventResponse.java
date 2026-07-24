@@ -7,6 +7,7 @@ import com.meant.api.module.catalog.service.dto.CatalogDiscoveryEventType;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryTerminalStatus;
 import com.meant.api.module.catalog.service.dto.CatalogSourceFailure;
 import com.meant.api.module.catalog.service.dto.CatalogSourceFailureKind;
+import com.meant.api.module.merchant.service.MerchantBuyerTextSanitizer;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Duration;
 import java.util.List;
@@ -73,7 +74,7 @@ public record UserFederatedProductSearchStreamEventResponse(
         static CatalogSourceFailureResponse from(CatalogSourceFailure failure) {
             return failure == null ? null : new CatalogSourceFailureResponse(
                     failure.kind(),
-                    failure.message(),
+                    MerchantBuyerTextSanitizer.sanitize(failure.message()),
                     failure.retryAfter(),
                     failure.upstreamStatus()
             );

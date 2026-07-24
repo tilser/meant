@@ -2,6 +2,7 @@ package com.meant.api.module.cart.controller.response;
 
 import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
 
+import com.meant.api.module.cart.service.BuyerSafeRoutingScopeKey;
 import com.meant.api.module.cart.service.dto.CartResult;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
@@ -23,11 +24,9 @@ public record CartResponse(
         @Schema(description = "Provider-scoped external seller identity",
                 requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         String externalMerchantId,
-        @Schema(description = "Opaque immutable remote-cart seller/provider scope",
+        @Schema(description = "Opaque buyer-safe remote-cart seller/provider scope",
                 requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         String routingScopeKey,
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
-        String endpoint,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String remoteCartId,
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
@@ -76,8 +75,7 @@ public record CartResponse(
                 result.provider(),
                 result.merchantIntegrationId(),
                 result.externalMerchantId(),
-                result.routingScopeKey(),
-                result.endpoint(),
+                BuyerSafeRoutingScopeKey.project(result.routingScopeKey()),
                 result.remoteCartId(),
                 result.checkoutUrl(),
                 result.continueUrl(),

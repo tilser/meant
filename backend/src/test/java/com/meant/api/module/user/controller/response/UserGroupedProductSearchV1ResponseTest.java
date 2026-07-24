@@ -30,6 +30,7 @@ import com.meant.api.module.catalog.service.dto.ResultSourceReference;
 import com.meant.api.module.catalog.service.dto.ResultSourceType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.lang.reflect.RecordComponent;
+import java.net.URI;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -47,16 +48,21 @@ class UserGroupedProductSearchV1ResponseTest {
         ExternalIdentifier product = new ExternalIdentifier(
                 ExternalIdentifierType.PRODUCT, provider.value(), "Product-1");
         ResultSourceReference source = new ResultSourceReference(
-                ResultSourceType.PROVIDER_CATALOG, "fixture", null);
+                ResultSourceType.PROVIDER_CATALOG,
+                "fixture",
+                URI.create("https://catalog.future.example/custom-mcp")
+        );
         ResultProvenance provenance = new ResultProvenance(
                 provider,
                 new DiscoverySourceIdentity(provider, ResultSourceType.PROVIDER_CATALOG, "GLOBAL_CATALOG"),
                 new LocalMerchantRouting(integrationId),
                 merchant,
+                "catalog.future.example",
                 product,
                 null,
                 new ResultFreshness(Instant.parse("2026-07-10T10:00:00Z"), null),
-                source
+                source,
+                "future-shop.example"
         );
         Offer offer = new Offer(
                 new OfferIdentity(
@@ -71,18 +77,18 @@ class UserGroupedProductSearchV1ResponseTest {
                         List.of(),
                         null
                 ),
-                "Future merchant",
+                "catalog.future.example",
                 null,
                 new Money(1234, "eur"),
                 null,
                 new OfferAvailability(OfferAvailabilityStatus.IN_STOCK, null, null),
                 List.of(),
-                null,
+                URI.create("https://catalog.future.example/custom-mcp/session/1"),
                 List.of(provenance)
         );
         CanonicalProduct canonicalProduct = new CanonicalProduct(
                 "product_v1_fixture",
-                "Future-provider product",
+                "Product from catalog.future.example",
                 null,
                 List.of(),
                 List.of(),
@@ -127,7 +133,7 @@ class UserGroupedProductSearchV1ResponseTest {
                                 ))
                         )),
                         Map.of(canonicalProduct.key(), new UserCanonicalProductPersonalizationResult(
-                                "Product details list organic, matching your saved preference.",
+                                "Product details from catalog.future.example match your saved preference.",
                                 List.of("organic"),
                                 List.of()
                         )),
@@ -149,14 +155,18 @@ class UserGroupedProductSearchV1ResponseTest {
 
         assertThat(response.products()).singleElement().satisfies(mappedProduct -> {
             assertThat(mappedProduct.key()).isEqualTo("product_v1_fixture");
+            assertThat(mappedProduct.title()).isEqualTo("Product from future-shop.example");
             assertThat(mappedProduct.recommendedOfferKey()).isEqualTo(offer.key());
             assertThat(mappedProduct.rankingExplanation().rankingVersion()).isEqualTo("product-v1");
             assertThat(mappedProduct.personalization().whyMeantForYou())
-                    .isEqualTo("Product details list organic, matching your saved preference.");
+                    .isEqualTo("Product details from future-shop.example match your saved preference.");
             assertThat(mappedProduct.personalization().matchedFilterIds()).containsExactly("organic");
             assertThat(mappedProduct.personalization().missedFilterIds()).isEmpty();
             assertThat(mappedProduct.offers()).singleElement().satisfies(mappedOffer -> {
                 assertThat(mappedOffer.key()).isEqualTo(offer.key());
+                assertThat(mappedOffer.merchantName()).isEqualTo("future-shop.example");
+                assertThat(mappedOffer.merchantOrigin()).isEqualTo("future-shop.example");
+                assertThat(mappedOffer.checkoutUrl()).isNull();
                 assertThat(mappedOffer.price().minorUnits()).isEqualTo(1234);
                 assertThat(mappedOffer.price().currency()).isEqualTo("EUR");
                 assertThat(mappedOffer.selectedOptions()).extracting(

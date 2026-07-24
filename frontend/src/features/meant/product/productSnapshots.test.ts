@@ -141,7 +141,6 @@ describe('product image snapshots', () => {
       review: { score: null, count: 0, insight: '' },
       selectedVariantAvailable: true,
       rehydratedDetails: {
-        endpoint: null,
         productId: 'session-product',
         handle: 'perfect-shirt',
         title: 'Perfect T-Shirt',

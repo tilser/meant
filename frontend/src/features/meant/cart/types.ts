@@ -15,6 +15,7 @@ export interface AppliedCartCode {
 export interface MerchantCartSnapshot {
   merchantKey: string
   merchant: string
+  merchantOrigin?: string | null
   cartId: string | null
   remoteCartId: string | null
   checkoutUrl: string | null

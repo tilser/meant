@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react'
 import { CartIcon, CloseIcon, ProductArtwork, SparkMark } from '../shared/ui'
 import type { CartItem, Product, ProductId } from '../types'
 import { cartGroups, cartItemIdentity, cartLines, computeSmartAlerts, money } from '../utils'
+import { merchantDisplayOrigin } from './merchantOrigin'
 import type { MerchantCartSnapshot } from './types'
 import { cartSnapshotSavings, cartSnapshotSubtotal, cartSnapshotTotal } from './utils'
 
@@ -127,7 +128,7 @@ export function CartPopover({
             <div className="mt-cart-pop-info">
               <div className="mt-cart-pop-name">{line.product.name}</div>
               <div className="mt-mono mt-cart-pop-meta">
-                {line.qty} × {money(line.price)} · {line.merchant}
+                {line.qty} × {money(line.price)} · {merchantDisplayOrigin(line.merchantOrigin)}
               </div>
               {line.variantTitle ? (
                 <div className="mt-mono mt-cart-pop-meta">{line.variantTitle}</div>

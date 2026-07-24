@@ -1,4 +1,5 @@
 import type { AgentShelfContextInput } from '../../../lib/apiClient'
+import { merchantAdjacentDisplayLabel } from '../cart/merchantOrigin'
 import type { ShelfItem } from './types'
 
 export function agentShelfContext(items: readonly ShelfItem[]): AgentShelfContextInput | undefined {
@@ -6,7 +7,9 @@ export function agentShelfContext(items: readonly ShelfItem[]): AgentShelfContex
   return {
     items: items.map((item) => {
       if (item.kind === 'product') {
-        const detail = [item.snapshot.brand, item.snapshot.category].filter(Boolean).join(' · ')
+        const detail = [merchantAdjacentDisplayLabel(item.snapshot.brand), item.snapshot.category]
+          .filter(Boolean)
+          .join(' · ')
         return {
           kind: 'PRODUCT' as const,
           canonicalProductKey: item.snapshot.productId,

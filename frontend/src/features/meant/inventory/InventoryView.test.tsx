@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 
 import type { UserInventoryItemProfile } from '../../../lib/apiClient'
 import { InventoryView } from './InventoryView'
+import { inventoryFormFromItem } from './inventoryUtils'
 
 const purchasedItem: UserInventoryItemProfile = {
   id: 'inventory-1',
@@ -12,6 +13,7 @@ const purchasedItem: UserInventoryItemProfile = {
   sourceCheckoutAttemptId: 'attempt-1',
   commerceReference: {
     provider: 'SHOPIFY',
+    merchantOrigin: 'nycfactory.com',
     sourceType: 'PROVIDER_CATALOG',
     sourceIdentity: 'shopify-global-catalog',
     externalProductId: 'product-1',
@@ -101,6 +103,42 @@ describe('InventoryView commerce identity', () => {
 
     expect(markup).toContain('Old wool coat')
     expect(markup).not.toContain('aria-label="Purchased options"')
+  })
+
+  test('fails closed for a technical seller label retained by a historical purchase', () => {
+    const technicalSeller = 'sollys-online-grocery.myshopify.com'
+    const markup = renderInventory({
+      ...purchasedItem,
+      brand: technicalSeller,
+    })
+
+    expect(markup).toContain('class="mt-inv-brand">nycfactory.com</div>')
+    expect(markup).not.toContain(technicalSeller)
+  })
+
+  test('does not render stale MCP-host product or image URLs', () => {
+    const technicalHost = 'mcp.shop.example'
+    const markup = renderInventory({
+      ...purchasedItem,
+      imageUrl: `https://${technicalHost}/products/shoe.png`,
+      productUrl: `https://${technicalHost}/products/shoe`,
+    })
+
+    expect(markup).not.toContain(technicalHost)
+    expect(markup).not.toContain('class="mt-inv-product-link"')
+  })
+
+  test('clears only technical historical seller labels from edit state', () => {
+    expect(inventoryFormFromItem(purchasedItem).brand).toBe('Example')
+
+    for (const technicalSeller of ['sollys-online-grocery.myshopify.com', 'mcp.shop.example']) {
+      expect(
+        inventoryFormFromItem({
+          ...purchasedItem,
+          brand: technicalSeller,
+        }).brand,
+      ).toBe('')
+    }
   })
 
   test('does not render unsafe legacy product links', () => {

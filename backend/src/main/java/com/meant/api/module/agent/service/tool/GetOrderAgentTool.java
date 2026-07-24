@@ -5,6 +5,7 @@ import com.meant.api.module.agent.constant.AgentToolRisk;
 import com.meant.api.module.agent.service.AgentJsonSupport;
 import com.meant.api.module.agent.service.AgentProductReadReferenceService;
 import com.meant.api.module.agent.service.dto.AgentArtifact;
+import com.meant.api.module.agent.service.dto.AgentOrderResult;
 import com.meant.api.module.agent.service.dto.AgentToolDescriptor;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionResult;
@@ -45,10 +46,11 @@ public class GetOrderAgentTool implements AgentTool {
         referenceService.requireOrder(context, input.orderId());
         OrderResult order = orderService.get(new GetOrderQuery(
                 input.orderId(), context.userId(), Boolean.TRUE.equals(input.refresh())));
+        AgentOrderResult payload = AgentOrderResult.from(order);
         AgentArtifact artifact = new AgentArtifact(
                 AgentArtifactType.ORDER, 1, "order:" + order.id(), order.displayId(),
-                null, null, null, null, null, null, json.writeArtifact(order));
+                null, null, null, null, null, null, json.writeArtifact(payload));
         return AgentToolExecutionResult.read(
-                json.write(order), "Loaded order " + order.displayId() + ".", List.of(artifact));
+                json.write(payload), "Loaded order " + order.displayId() + ".", List.of(artifact));
     }
 }

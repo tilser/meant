@@ -73,7 +73,6 @@ describe('canonical product detail', () => {
         merchantId: 'merchant-1',
         merchantProductId: 'provider-product-1',
         rehydratedDetails: {
-          endpoint: null,
           productId: 'provider-product-1',
           handle: null,
           title: 'Complete saved detail',
@@ -314,7 +313,6 @@ describe('canonical product detail', () => {
           priceCurrency: 'USD',
           delivery: null,
           merchantId: '2dec9bf6-f8f2-4747-a058-7bb7fa086730',
-          merchantDomain: 'shop.example',
           productVariantId: 'variant-1',
           variantTitle: null,
           available: true,
@@ -348,7 +346,8 @@ describe('canonical product detail', () => {
       />,
     )
 
-    expect(markup).toContain('shop.example')
+    expect(markup).toContain('Merchant')
+    expect(markup).not.toContain('shop.example')
     expect(markup).not.toContain('LOCAL_STOREFRONT')
     expect(markup).not.toContain('2dec9bf6-f8f2-4747-a058-7bb7fa086730')
   })
@@ -454,7 +453,6 @@ describe('canonical product detail', () => {
         },
       ],
       rehydratedDetails: {
-        endpoint: null,
         productId: 'provider-product-1',
         handle: 'perfect-shirt',
         title: 'Perfect T-Shirt',

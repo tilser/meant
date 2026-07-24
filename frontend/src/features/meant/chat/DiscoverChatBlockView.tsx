@@ -13,6 +13,7 @@ import type {
   CheckoutAssistantHandler,
   CheckoutReleaseHandler,
 } from '../cart/checkoutTypes'
+import { merchantAdjacentDisplayLabel } from '../cart/merchantOrigin'
 import { bestOffer, formatOrderDate, money, productPriceFrom } from '../utils'
 import { productCuratedTake } from '../product/productCuration'
 import { ProductReviewsPanel } from '../product/ProductReviewsPanel'
@@ -32,15 +33,41 @@ import {
   productsWithFallback,
 } from './utils'
 
-function discountCodeSourceHost(sourceUrl: string | null | undefined): string | null {
+function safeDiscountCodeSourceUrl(sourceUrl: string | null | undefined): string | null {
   if (!sourceUrl) {
     return null
   }
   try {
-    return new URL(sourceUrl).hostname.replace(/^www\./, '')
+    const url = new URL(sourceUrl)
+    const host = url.hostname.toLocaleLowerCase()
+    const path = url.pathname.replace(/\/+$/, '') || '/'
+    const protocolPath = [
+      '/.well-known/ucp.json',
+      '/.well-known/ucp',
+      '/api/ucp/mcp',
+      '/api/mcp',
+      '/mcp',
+    ].some((value) => path === value || path.startsWith(`${value}/`))
+    if (
+      !['http:', 'https:'].includes(url.protocol) ||
+      url.username ||
+      url.password ||
+      host.startsWith('mcp.') ||
+      host.includes('.mcp.') ||
+      host === 'myshopify.com' ||
+      host.endsWith('.myshopify.com') ||
+      protocolPath
+    ) {
+      return null
+    }
+    return url.toString()
   } catch {
     return null
   }
+}
+
+function discountCodeSourceHost(sourceUrl: string): string {
+  return new URL(sourceUrl).hostname.replace(/^www\./, '')
 }
 
 function discountCodeEntries(block: Extract<DiscoverChatBlock, { type: 'code' }>) {
@@ -269,7 +296,7 @@ export function DiscoverChatBlockView({
     const offer = bestOffer(block.product, deliveryLocations)
     const codes = discountCodeEntries(block)
     const status = block.status ?? (codes.length > 0 ? 'found' : 'empty')
-    const merchant = block.merchant ?? offer?.merchant ?? 'merchant'
+    const merchant = merchantAdjacentDisplayLabel(block.merchant ?? offer?.merchant)
     const statusLabel =
       status === 'error'
         ? 'Search unavailable'
@@ -285,7 +312,8 @@ export function DiscoverChatBlockView({
         {codes.length > 0 ? (
           <div className="mt-ct-code-list">
             {codes.map((code) => {
-              const sourceHost = discountCodeSourceHost(code.sourceUrl)
+              const sourceUrl = safeDiscountCodeSourceUrl(code.sourceUrl)
+              const sourceHost = sourceUrl ? discountCodeSourceHost(sourceUrl) : null
               const detail =
                 code.description ||
                 code.title ||
@@ -314,8 +342,8 @@ export function DiscoverChatBlockView({
                     <div className="mt-ct-code-label">{detail}</div>
                     <div className="mt-ct-code-meta mt-mono">
                       {code.restrictions ? <span>{code.restrictions}</span> : null}
-                      {sourceHost && code.sourceUrl ? (
-                        <a href={code.sourceUrl} target="_blank" rel="noreferrer">
+                      {sourceHost && sourceUrl ? (
+                        <a href={sourceUrl} target="_blank" rel="noreferrer">
                           {sourceHost}
                         </a>
                       ) : null}
@@ -408,7 +436,9 @@ export function DiscoverChatBlockView({
             <ProductArtwork product={block.product} label={block.product.category.toLowerCase()} />
           </span>
           <span className="mt-ct-decision-info">
-            <span className="mt-mono mt-ct-decision-brand">{block.product.brand}</span>
+            <span className="mt-mono mt-ct-decision-brand">
+              {merchantAdjacentDisplayLabel(block.product.brand)}
+            </span>
             <span className="mt-ct-decision-name">{block.product.name}</span>
             <span className="mt-ct-decision-price">
               {money(productPriceFrom(block.product, deliveryLocations))}
@@ -446,7 +476,8 @@ export function DiscoverChatBlockView({
         <div className="mt-ct-watchalert-body">
           <div className="mt-mono mt-ct-watchalert-key">Price watch</div>
           <div className="mt-ct-watchalert-text">
-            The <b>{block.product.name}</b> dropped to {money(block.price)} at {block.merchant}.
+            The <b>{block.product.name}</b> dropped to {money(block.price)} at{' '}
+            {merchantAdjacentDisplayLabel(block.merchant)}.
           </div>
         </div>
         <button
@@ -523,7 +554,8 @@ export function DiscoverChatBlockView({
             Added <b>{block.product.name}</b> to your cart
           </span>
           <span className="mt-ct-added-meta">
-            {money(addedPrice)} · {block.merchant} · {addedCount} in cart
+            {money(addedPrice)} · {merchantAdjacentDisplayLabel(block.merchant)} · {addedCount} in
+            cart
           </span>
         </div>
         <div className="mt-ct-added-actions">

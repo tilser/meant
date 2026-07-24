@@ -14,12 +14,14 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import com.meant.api.module.cart.exception.CartException;
 import com.meant.api.module.cart.service.dto.CartRoutingTarget;
 import com.meant.api.module.merchant.constant.MerchantIntegrationProvider;
 import com.meant.api.module.merchant.exception.MerchantMcpToolException;
 import com.meant.api.module.merchant.service.MerchantMcpToolClient;
 import com.meant.api.module.merchant.service.MerchantOutboundUrlValidator;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
+import com.meant.api.module.merchant.service.dto.MerchantMcpToolCallResult;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutResponse;
 import com.meant.api.plugin.checkout.common.dto.UcpCheckoutToolResult;
 import com.meant.api.module.checkout.service.MerchantCheckoutPluginDispatchService;
@@ -30,9 +32,11 @@ import com.meant.api.plugin.checkout.get.dto.GetCheckoutRequest;
 import com.meant.api.plugin.checkout.update.UpdateCheckoutCapability;
 import com.meant.api.plugin.checkout.update.dto.UpdateCheckoutRequest;
 import com.meant.api.plugin.support.UcpSession;
+import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import com.meant.api.plugin.transport.registry.CapabilityRegistry;
 import java.net.InetAddress;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
@@ -157,6 +161,59 @@ class MerchantCheckoutPluginDispatchServiceTest {
                 .containsExactly("An extension interaction is required to complete the checkout.");
         assertThat(session.checkoutId()).isEqualTo("gid://shopify/Checkout/1");
         server.verify();
+    }
+
+    @Test
+    void sanitizesTechnicalEndpointInRejectedCheckoutError() {
+        String endpoint = "https://weareallbirds.myshopify.com/api/ucp/mcp";
+        MerchantMcpToolClient client = mock(MerchantMcpToolClient.class);
+        when(client.callToolReturningJsonToolErrors(
+                any(MerchantCartProvider.class),
+                eq("create_checkout"),
+                any()
+        )).thenReturn(new MerchantMcpToolCallResult(
+                endpoint,
+                """
+                        {
+                          "messages": [],
+                          "errors": [
+                            {
+                              "code": "checkout_rejected",
+                              "message": "Checkout rejected by %s"
+                            }
+                          ]
+                        }
+                        """.formatted(endpoint),
+                null,
+                NegotiatedCapabilities.none()
+        ));
+        MerchantCheckoutPluginDispatchService service = new MerchantCheckoutPluginDispatchService(
+                client,
+                registry(),
+                objectMapper,
+                List.of()
+        );
+        MerchantCartProvider provider = new MerchantCartProvider(
+                UUID.randomUUID(),
+                "allbirds.com",
+                "weareallbirds.myshopify.com",
+                endpoint,
+                null,
+                List.of(),
+                com.meant.api.module.merchant.service.dto.MerchantExecutionPolicy.unavailable(),
+                null,
+                Set.of("dev.ucp.shopping.checkout")
+        );
+
+        assertThatThrownBy(() -> service.createCheckout(
+                provider,
+                createCheckoutRequest(),
+                UcpSession.start()
+        ))
+                .isInstanceOf(CartException.class)
+                .hasMessage("Checkout rejected by allbirds.com")
+                .satisfies(exception -> assertThat(((CartException) exception).getSafeMessage())
+                        .doesNotContain("myshopify.com", "/api/ucp/mcp"));
     }
 
     @Test

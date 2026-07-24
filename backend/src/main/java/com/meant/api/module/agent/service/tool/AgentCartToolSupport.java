@@ -225,7 +225,7 @@ class AgentCartToolSupport {
                     AgentArtifactType.CART,
                     ordinal++,
                     "cart:" + cart.cartId(),
-                    cart.merchantDomain() == null ? "Cart" : "Cart at " + cart.merchantDomain(),
+                    cart.merchantOrigin() == null ? "Cart" : "Cart at " + cart.merchantOrigin(),
                     null,
                     null,
                     null,

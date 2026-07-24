@@ -54,6 +54,7 @@ function canonicalOffer(
   return {
     key,
     merchantName: `Merchant ${merchantId}`,
+    merchantOrigin: `${merchantId}.example`,
     selectedOptions: [{ name: 'Size', value: selectedValue }],
     identity: {
       provider,
@@ -156,6 +157,19 @@ describe('variant selection helpers', () => {
     ])
   })
 
+  test('uses the verified origin for a technical canonical merchant-choice label', () => {
+    const technical = {
+      ...canonicalOffer('technical', 'merchant-a'),
+      merchantName: 'sollys-online-grocery.myshopify.com',
+    } as CanonicalOfferProfile
+    const product = {
+      recommendedOfferKey: technical.key,
+      offers: [technical],
+    } as CanonicalProductProfile
+
+    expect(merchantOfferChoices(product)[0]?.label).toBe('merchant-a.example')
+  })
+
   test('keeps equal external and integration merchant values separate across providers', () => {
     const shopifyExternal = {
       ...canonicalOffer('shopify-external', 'unused'),
@@ -201,7 +215,7 @@ describe('variant selection helpers', () => {
     const anchor = canonicalOffer('anchor', 'merchant-a', 'S')
     const exact = {
       ...canonicalOffer('exact', 'merchant-a', 'M'),
-      provenance: [{ externalMerchantDomain: 'exact.example' }],
+      provenance: [],
     } as CanonicalOfferProfile
     const canonical = {
       key: 'product-a',

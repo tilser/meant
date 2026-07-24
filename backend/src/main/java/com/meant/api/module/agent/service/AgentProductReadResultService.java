@@ -3,6 +3,7 @@ package com.meant.api.module.agent.service;
 import com.meant.api.module.agent.constant.AgentArtifactType;
 import com.meant.api.module.agent.service.dto.AgentArtifact;
 import com.meant.api.module.agent.service.dto.AgentCanonicalProductArtifact;
+import com.meant.api.module.agent.service.dto.AgentCanonicalProductArtifact.AgentCanonicalOfferArtifact;
 import com.meant.api.module.agent.service.dto.AgentOfferReferenceResult;
 import com.meant.api.module.agent.service.dto.AgentProductReferenceResult;
 import com.meant.api.module.agent.service.dto.AgentSimilarityAnchorResult;
@@ -11,11 +12,15 @@ import com.meant.api.module.catalog.service.dto.CanonicalProduct;
 import com.meant.api.module.catalog.service.dto.Money;
 import com.meant.api.module.catalog.service.dto.Offer;
 import com.meant.api.module.catalog.service.dto.OfferRankingExplanation;
+import com.meant.api.module.catalog.service.dto.ProductAttribute;
 import com.meant.api.module.catalog.service.dto.ProductRankingExplanation;
+import com.meant.api.module.catalog.service.dto.ResultProvenance;
+import com.meant.api.module.catalog.service.support.CatalogBuyerPresentation;
 import com.meant.api.module.user.service.dto.UserCanonicalProductPersonalizationResult;
 import com.meant.api.module.user.service.dto.UserProductDetailResult;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -29,15 +34,26 @@ public class AgentProductReadResultService {
     }
 
     public AgentProductReferenceResult reference(CanonicalProduct product, int ordinal) {
-        String imageUrl = product.media().isEmpty() ? null : product.media().getFirst().url().toString();
+        List<ResultProvenance> provenance = Stream.concat(
+                        product.provenance().stream(),
+                        product.offers().stream().flatMap(offer -> offer.provenance().stream())
+                )
+                .distinct()
+                .toList();
+        String imageUrl = product.media().stream()
+                .map(media -> CatalogBuyerPresentation.safeUri(media.url(), provenance))
+                .filter(value -> value != null)
+                .map(Object::toString)
+                .findFirst()
+                .orElse(null);
         List<AgentOfferReferenceResult> offers = product.offers().stream()
                 .map(this::offer)
                 .toList();
         return new AgentProductReferenceResult(
                 ordinal,
                 product.key(),
-                product.title(),
-                bounded(product.description()),
+                CatalogBuyerPresentation.label(product.title(), provenance),
+                bounded(CatalogBuyerPresentation.text(product.description(), provenance)),
                 imageUrl,
                 product.offers().getFirst().key(),
                 offers
@@ -99,7 +115,7 @@ public class AgentProductReadResultService {
                 AgentArtifactType.PRODUCT,
                 ordinal,
                 product.key(),
-                product.title(),
+                payload.title(),
                 product.key(),
                 payload.recommendedOfferKey(),
                 null,
@@ -108,12 +124,12 @@ public class AgentProductReadResultService {
                 null,
                 json.writeArtifact(durablePayload)
         );
-        List<AgentArtifact> offerArtifacts = product.offers().stream()
+        List<AgentArtifact> offerArtifacts = payload.offers().stream()
                 .map(offer -> new AgentArtifact(
                         AgentArtifactType.OFFER,
                         ordinal,
                         offer.key(),
-                        offerLabel(product, offer),
+                        offerLabel(payload, offer),
                         product.key(),
                         offer.key(),
                         null,
@@ -130,20 +146,45 @@ public class AgentProductReadResultService {
 
     private AgentOfferReferenceResult offer(Offer offer) {
         Money price = offer.price();
+        String merchantOrigin =
+                CatalogBuyerPresentation.merchantOrigin(offer.provenance());
         return new AgentOfferReferenceResult(
                 offer.key(),
-                offer.merchantName(),
-                offer.variantTitle(),
+                merchantOrigin == null
+                        ? CatalogBuyerPresentation.label(
+                                offer.merchantName(),
+                                offer.provenance()
+                        )
+                        : merchantOrigin,
+                CatalogBuyerPresentation.text(offer.variantTitle(), offer.provenance()),
                 price == null ? null : price.minorUnits(),
                 price == null ? null : price.currency(),
                 offer.availability().status(),
-                offer.selectedOptions()
+                offer.selectedOptions().stream()
+                        .map(attribute -> sanitizedAttribute(attribute, offer.provenance()))
+                        .toList()
         );
     }
 
-    private String offerLabel(CanonicalProduct product, Offer offer) {
-        String merchant = offer.merchantName() == null ? "offer" : offer.merchantName();
+    private String offerLabel(
+            AgentCanonicalProductArtifact product,
+            AgentCanonicalOfferArtifact offer
+    ) {
+        String merchant = offer.merchantOrigin() == null
+                ? offer.merchantName() == null ? "offer" : offer.merchantName()
+                : offer.merchantOrigin();
         return (product.title() == null ? product.key() : product.title()) + " — " + merchant;
+    }
+
+    private ProductAttribute sanitizedAttribute(
+            ProductAttribute attribute,
+            List<ResultProvenance> provenance
+    ) {
+        return new ProductAttribute(
+                CatalogBuyerPresentation.label(attribute.group(), provenance),
+                CatalogBuyerPresentation.label(attribute.name(), provenance),
+                CatalogBuyerPresentation.label(attribute.value(), provenance)
+        );
     }
 
     private String bounded(String value) {

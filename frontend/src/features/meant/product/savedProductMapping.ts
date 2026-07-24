@@ -6,6 +6,7 @@ import type {
   UserSavedProductDetailsProfile,
   UserSavedProductProfile,
 } from '../../../lib/apiClient'
+import { merchantAdjacentDisplayLabel, merchantDisplayOrigin } from '../cart/merchantOrigin'
 import type {
   Preference,
   Product,
@@ -38,7 +39,6 @@ function catalogReferenceForRecommendedOffer(
   const externalProductId = provenance.externalProductReference.value.trim()
   const merchantIntegrationId = provenance.localRouting?.merchantIntegrationId.trim()
   const externalMerchantId = provenance.externalMerchantReference?.value.trim()
-  const externalMerchantDomain = provenance.externalMerchantDomain?.trim()
   const externalVariantId = provenance.externalVariantReference?.value.trim()
   const components = offer.identity.components.map((component) => ({
     externalProductId: component.externalProductIdentity.value.trim(),
@@ -62,7 +62,6 @@ function catalogReferenceForRecommendedOffer(
     sourceIdentity,
     ...(merchantIntegrationId ? { merchantIntegrationId } : {}),
     ...(externalMerchantId ? { externalMerchantId } : {}),
-    ...(externalMerchantDomain ? { externalMerchantDomain } : {}),
     externalProductId,
     ...(externalVariantId ? { externalVariantId } : {}),
     selectedOptions: offer.selectedOptions.map((option) => {
@@ -268,7 +267,7 @@ function savedDetailSelectedOptions(
 function savedMerchantDetails(
   details?: UserSavedProductDetailsProfile | null,
 ): MerchantProductDetailsProfile | null {
-  return details ? { endpoint: null, ...details } : null
+  return details ?? null
 }
 
 function normalizedSavedDetailRating(
@@ -326,11 +325,12 @@ function savedOfferMerchantLabel(
   details: UserSavedProductDetailsProfile | null | undefined,
   offer: UserSavedProductProfile['offers'][number],
 ): string {
-  return (
-    nonTechnicalMerchantLabel(details?.merchantName) ??
-    nonTechnicalMerchantLabel(offer.merchant) ??
-    nonTechnicalMerchantLabel(offer.merchantDomain) ??
-    'Merchant'
+  const merchantOrigin = offer.merchantOrigin?.trim() || details?.merchantOrigin?.trim() || null
+  if (merchantOrigin) {
+    return merchantDisplayOrigin(merchantOrigin)
+  }
+  return merchantAdjacentDisplayLabel(
+    nonTechnicalMerchantLabel(details?.merchantName) ?? nonTechnicalMerchantLabel(offer.merchant),
   )
 }
 
@@ -345,7 +345,8 @@ export function savedProductFromProfile(
     ? (product.offers.find((offer) => Boolean(offer.offerKey?.trim())) ?? product.offers[0])
     : undefined
   const currentMerchantId = currentOffer?.merchantId?.trim() || null
-  const currentMerchantDomain = currentOffer?.merchantDomain?.trim() || null
+  const currentMerchantOrigin =
+    currentOffer?.merchantOrigin?.trim() || details?.merchantOrigin?.trim() || null
   const currentMerchantProductId = currentMerchantId ? details?.productId?.trim() || null : null
   const storedReview = product.review
     ? {
@@ -366,10 +367,10 @@ export function savedProductFromProfile(
     id: product.id,
     productHash: product.productHash,
     merchantId: currentMerchantId,
-    merchantDomain: currentMerchantDomain,
+    merchantDomain: currentMerchantOrigin,
     merchantProductId: currentMerchantProductId,
     name: product.name ?? details?.title ?? 'Saved product unavailable',
-    brand: product.brand ?? 'Unavailable',
+    brand: merchantAdjacentDisplayLabel(product.brand ?? 'Unavailable'),
     category: displayProductCategoryValue(product.category) ?? 'Product',
     tone: product.tone ?? '#e7ebef',
     imageUrl: product.imageUrl ?? detailImageUrl,
@@ -415,6 +416,7 @@ export function savedProductFromProfile(
             return {
               ...offer,
               merchant: savedOfferMerchantLabel(details, offer),
+              merchantDomain: offer.merchantOrigin?.trim() || details?.merchantOrigin?.trim() || null,
               price: price ?? Number.NaN,
               priceMinorUnits: price == null ? null : offer.priceMinorUnits,
               priceCurrency: price == null ? null : offer.priceCurrency,
@@ -466,7 +468,7 @@ export function savedProductInput(
       price: offer.price,
       delivery: offer.delivery,
       merchantId: offer.merchantId ?? null,
-      merchantDomain: offer.merchantDomain ?? null,
+      merchantDomain: null,
       productVariantId: offer.productVariantId ?? null,
       variantTitle: offer.variantTitle ?? null,
       available: offer.available ?? null,

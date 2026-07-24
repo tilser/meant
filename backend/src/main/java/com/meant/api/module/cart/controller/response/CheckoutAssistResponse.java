@@ -1,6 +1,7 @@
 package com.meant.api.module.cart.controller.response;
 
 import com.meant.api.module.cart.service.dto.CheckoutAssistResult;
+import com.meant.api.module.merchant.service.MerchantBuyerTextSanitizer;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 @Schema(description = "Checkout assistant reply, with the checkout session it acted on.")
@@ -18,7 +19,7 @@ public record CheckoutAssistResponse(
 
     public static CheckoutAssistResponse from(CheckoutAssistResult result) {
         return new CheckoutAssistResponse(
-                result.reply(),
+                MerchantBuyerTextSanitizer.sanitize(result.reply()),
                 result.checkoutUpdated(),
                 CheckoutResponse.from(result.checkout())
         );

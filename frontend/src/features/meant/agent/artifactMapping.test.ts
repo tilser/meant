@@ -16,6 +16,7 @@ import {
   latestCartSnapshotArtifacts,
   latestCartSnapshotArtifactsForRunSettlement,
   mergeAgentProductSnapshots,
+  plainAgentText,
   productFromAgentArtifact,
   productInteractionState,
   productsFromAgentArtifacts,
@@ -163,6 +164,19 @@ function artifact(
 }
 
 describe('agent artifact mapping', () => {
+  test('neutralizes transport coordinates inside agent prose without collapsing the sentence', () => {
+    expect(
+      plainAgentText(
+        'I need details from seller.myshopify.com. ' +
+          'Retry https://transport.example/api/ucp/mcp/session/1. ' +
+          'Browse https://official.example/products/shoe.',
+      ),
+    ).toBe(
+      'I need details from the merchant. Retry the merchant. ' +
+        'Browse https://official.example/products/shoe.',
+    )
+  })
+
   test('renders an unavailable review artifact for a catalog-only merchant', () => {
     const product = artifact({
       type: 'PRODUCT',
@@ -573,6 +587,63 @@ describe('agent artifact mapping', () => {
 
     expect(snapshot.map((item) => item.artifactId)).toEqual([emptyCart.artifactId])
     expect(cartItemsFromAgentArtifacts(snapshot, products)).toEqual([])
+  })
+
+  test('maps CART merchantOrigin to the trusted cart origin without trusting its label', () => {
+    const productArtifact = artifact({
+      type: 'PRODUCT',
+      stableKey: 'product-origin',
+      canonicalProductKey: 'product-origin',
+      offerKey: 'offer-origin',
+      payloadJson: JSON.stringify(canonicalProduct('product-origin', 'offer-origin')),
+    })
+    const cartArtifact = artifact({
+      type: 'CART',
+      stableKey: 'cart:origin',
+      messageId: 'cart-message-origin',
+      label: 'sollys-online-grocery.myshopify.com',
+      cartId: 'cart-origin',
+      payloadJson: JSON.stringify({
+        cartId: 'cart-origin',
+        merchantOrigin: 'nycfactory.com',
+      }),
+    })
+    const lineArtifact = artifact({
+      type: 'CART_LINE',
+      stableKey: 'cart-line:origin',
+      messageId: cartArtifact.messageId,
+      cartId: cartArtifact.cartId,
+      cartLineId: 'line-origin',
+      offerKey: 'offer-origin',
+      payloadJson: JSON.stringify({
+        productTitle: 'Grounded trail shoe',
+        quantity: 1,
+        offerKey: 'offer-origin',
+      }),
+    })
+    const products = [productFromAgentArtifact(productArtifact)!]
+    const artifacts = [cartArtifact, lineArtifact]
+
+    const lines = cartItemsFromAgentArtifacts(artifacts, products)
+    const replacements = cartStateReplacementsFromAgentArtifacts(artifacts, products)
+
+    expect(lines).toMatchObject([
+      {
+        merchant: 'nycfactory.com',
+        merchantDomain: 'nycfactory.com',
+        merchantOrigin: 'nycfactory.com',
+      },
+    ])
+    expect(replacements).toMatchObject([
+      {
+        snapshot: {
+          merchant: 'nycfactory.com',
+          merchantOrigin: 'nycfactory.com',
+        },
+        lines: [{ merchantOrigin: 'nycfactory.com' }],
+      },
+    ])
+    expect(JSON.stringify({ lines, replacements })).not.toContain('myshopify.com')
   })
 
   test('reconciles only cart snapshots written by the settled run', () => {
@@ -1037,7 +1108,7 @@ describe('agent artifact mapping', () => {
       cartId: 'cart-only',
       payloadJson: JSON.stringify({
         cartId: 'cart-only',
-        merchantDomain: 'cart-only.example',
+        merchantOrigin: 'cart-only.example',
         provider: 'SHOPIFY',
         routingScopeKey: 'shopify:external:merchant-cart-only',
         totalAmount: '258.00',
@@ -2276,6 +2347,58 @@ describe('agent artifact mapping', () => {
           state: 'PARTIAL',
           requiredQuantity: 4,
           coveredQuantity: 2,
+          optional: false,
+        },
+      ],
+    })
+  })
+
+  test('sanitizes buyer-visible strings in raw durable artifact blocks', () => {
+    const tool: AgentMessageProfile = {
+      messageId: 'message-technical-mission',
+      runId: 'run-technical-mission',
+      sequenceNumber: 1,
+      role: 'TOOL',
+      contentKind: 'TOOL_RESULT',
+      textContent: null,
+      contentJson: '{}',
+      correlationId: 'call-technical-mission:create_shopping_mission',
+      createdAt,
+    }
+    const mission = artifact({
+      type: 'MISSION',
+      stableKey: 'mission:technical',
+      messageId: tool.messageId,
+      runId: tool.runId,
+      label: 'Plan with seller.myshopify.com',
+      payloadJson: JSON.stringify({
+        goal: 'Plan with seller.myshopify.com and browse https://official.example/products/shoe.',
+        status: 'PLANNING',
+        assumptions: [{ key: 'source', value: 'Waiting for mcp.shop.example.' }],
+        requirements: [
+          {
+            id: 'shoe',
+            label: 'Check https://transport.example/api/ucp/mcp/session/1',
+            requiredQuantity: 1,
+            optional: false,
+          },
+        ],
+        coverage: [],
+      }),
+    })
+
+    expect(blocksForAgentMessage(tool, [mission], [mission], [])[0]).toEqual({
+      type: 'mission',
+      goal: 'Plan with the merchant and browse https://official.example/products/shoe.',
+      status: 'PLANNING',
+      assumptions: ['Waiting for the merchant.'],
+      requirements: [
+        {
+          id: 'shoe',
+          label: 'Check the merchant',
+          state: 'MISSING',
+          requiredQuantity: 1,
+          coveredQuantity: 0,
           optional: false,
         },
       ],

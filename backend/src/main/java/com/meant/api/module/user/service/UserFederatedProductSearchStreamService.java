@@ -25,6 +25,7 @@ public class UserFederatedProductSearchStreamService {
     private final UserProductSearchPreparationService preparationService;
     private final FederatedCatalogDiscoveryService federatedDiscoveryService;
     private final ExactProductGroupingService exactProductGroupingService;
+    private final UserCatalogMerchantOriginEnrichmentService merchantOriginEnrichmentService;
 
     public void stream(
             @NotNull @Valid EnsureUserProfileCommand profileCommand,
@@ -55,7 +56,9 @@ public class UserFederatedProductSearchStreamService {
     private UserFederatedProductSearchStreamEvent map(CatalogDiscoveryEvent event) {
         CanonicalProduct candidate = event.candidate() == null
                 ? null
-                : exactProductGroupingService.group(List.of(event.candidate())).getFirst();
+                : exactProductGroupingService.group(List.of(
+                        merchantOriginEnrichmentService.enrichCandidate(event.candidate())
+                )).getFirst();
         return new UserFederatedProductSearchStreamEvent(
                 event.type(),
                 event.source(),

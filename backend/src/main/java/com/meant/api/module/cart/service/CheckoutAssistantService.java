@@ -12,6 +12,7 @@ import com.meant.api.module.cart.service.command.UpdateCheckoutCommand;
 import com.meant.api.module.cart.service.dto.CheckoutAssistResult;
 import com.meant.api.module.cart.service.dto.CheckoutResult;
 import com.meant.api.module.cart.service.query.GetCheckoutQuery;
+import com.meant.api.module.merchant.service.MerchantBuyerTextSanitizer;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.util.List;
@@ -150,23 +151,35 @@ public class CheckoutAssistantService {
             turn = parseTurn(response);
         } catch (OpenRouterException | JacksonException exception) {
             log.warn("Checkout assistant completion failed ({})", exception.getClass().getSimpleName());
-            return new CheckoutAssistResult(FALLBACK_REPLY, false, checkout);
+            return result(FALLBACK_REPLY, false, checkout);
         }
 
         UpdateCheckoutCommand update = updateCommand(command, turn);
         if (update == null) {
-            return new CheckoutAssistResult(turn.reply(), false, checkout);
+            return result(turn.reply(), false, checkout);
         }
         try {
             CheckoutResult updated = cartService.updateCheckout(update);
-            return new CheckoutAssistResult(appliedReply(command, turn, updated), true, updated);
+            return result(appliedReply(command, turn, updated), true, updated);
         } catch (CartException exception) {
-            return new CheckoutAssistResult(
+            return result(
                     rejectedReply(command, turn, exception),
                     false,
                     checkout
             );
         }
+    }
+
+    private CheckoutAssistResult result(
+            String reply,
+            boolean checkoutUpdated,
+            CheckoutResult checkout
+    ) {
+        return new CheckoutAssistResult(
+                MerchantBuyerTextSanitizer.sanitize(reply),
+                checkoutUpdated,
+                checkout
+        );
     }
 
     private String appliedReply(AssistCheckoutCommand command, AssistantTurn turn, CheckoutResult updated) {

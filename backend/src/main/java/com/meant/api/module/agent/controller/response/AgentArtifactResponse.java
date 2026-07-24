@@ -1,7 +1,9 @@
 package com.meant.api.module.agent.controller.response;
 
 import com.meant.api.module.agent.constant.AgentArtifactType;
+import com.meant.api.module.agent.service.AgentBuyerPayloadSanitizer;
 import com.meant.api.module.agent.service.dto.AgentArtifactResult;
+import com.meant.api.module.merchant.service.MerchantBuyerTextSanitizer;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.util.UUID;
@@ -33,14 +35,14 @@ public record AgentArtifactResponse(
                 result.type(),
                 result.ordinal(),
                 result.stableKey(),
-                result.label(),
+                MerchantBuyerTextSanitizer.sanitize(result.label()),
                 result.canonicalProductKey(),
                 result.offerKey(),
                 result.inventoryItemId(),
                 result.cartId(),
                 result.cartLineId(),
                 result.checkoutAttemptId(),
-                result.payloadJson(),
+                AgentBuyerPayloadSanitizer.sanitize(result.payloadJson()),
                 result.createdAt()
         );
     }

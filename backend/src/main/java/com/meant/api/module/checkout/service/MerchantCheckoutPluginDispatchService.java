@@ -5,6 +5,7 @@ import static com.meant.api.common.util.CollectionUtils.safeNonNullList;
 import com.meant.api.module.cart.exception.CartException;
 import com.meant.api.module.cart.service.dto.CartRoutingTarget;
 import com.meant.api.module.merchant.constant.CommerceOperation;
+import com.meant.api.module.merchant.service.MerchantBuyerTextSanitizer;
 import com.meant.api.module.merchant.service.MerchantMcpToolClient;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.module.merchant.service.dto.MerchantMcpToolCallResult;
@@ -73,7 +74,7 @@ public class MerchantCheckoutPluginDispatchService {
                 capability.buildArguments(request, session.activeCapabilities())
         );
         UcpCheckoutResponse response = parseCheckoutResponse(capability, result, "create checkout");
-        rejectCheckoutProblems("Cart not found: " + request.cartId(), response);
+        rejectCheckoutProblems(provider, "Cart not found: " + request.cartId(), response);
         updateSession(session, result, response);
         return checkoutResult(result, response);
     }
@@ -86,11 +87,13 @@ public class MerchantCheckoutPluginDispatchService {
     public UcpCheckoutToolResult createCheckout(
             CartRoutingTarget target, CreateCheckoutRequest request, UcpSession session,
             CheckoutToolCallContext context) {
+        MerchantCartProvider provider =
+                target.merchantProvider().forOperation(CommerceOperation.CHECKOUT_SESSION);
         CreateCheckoutCapability capability = capability(CreateCheckoutCapability.TOOL_NAME, CreateCheckoutCapability.class);
         MerchantMcpToolCallResult result = call(target, CreateCheckoutCapability.TOOL_NAME,
                 capability.buildArguments(request, session.activeCapabilities()), context);
         UcpCheckoutResponse response = parseCheckoutResponse(capability, result, "create checkout");
-        rejectCheckoutProblems("Cart not found: " + request.cartId(), response);
+        rejectCheckoutProblems(provider, "Cart not found: " + request.cartId(), response);
         updateSession(session, result, response);
         return checkoutResult(result, response);
     }
@@ -118,7 +121,7 @@ public class MerchantCheckoutPluginDispatchService {
                 providerHeaders(provider, CommerceOperation.CHECKOUT_SESSION, Map.of(), context)
         );
         UcpCheckoutResponse response = parseCheckoutResponse(capability, result, "get checkout");
-        rejectCheckoutProblems("Checkout not found: " + request.checkoutId(), response);
+        rejectCheckoutProblems(provider, "Checkout not found: " + request.checkoutId(), response);
         updateSession(session, result, response);
         return checkoutResult(result, response);
     }
@@ -131,11 +134,13 @@ public class MerchantCheckoutPluginDispatchService {
     public UcpCheckoutToolResult getCheckout(
             CartRoutingTarget target, GetCheckoutRequest request, UcpSession session,
             CheckoutToolCallContext context) {
+        MerchantCartProvider provider =
+                target.merchantProvider().forOperation(CommerceOperation.CHECKOUT_SESSION);
         GetCheckoutCapability capability = capability(GetCheckoutCapability.TOOL_NAME, GetCheckoutCapability.class);
         MerchantMcpToolCallResult result = call(target, GetCheckoutCapability.TOOL_NAME,
                 capability.buildArguments(request, session.activeCapabilities()), context);
         UcpCheckoutResponse response = parseCheckoutResponse(capability, result, "get checkout");
-        rejectCheckoutProblems("Checkout not found: " + request.checkoutId(), response);
+        rejectCheckoutProblems(provider, "Checkout not found: " + request.checkoutId(), response);
         updateSession(session, result, response);
         return checkoutResult(result, response);
     }
@@ -156,7 +161,7 @@ public class MerchantCheckoutPluginDispatchService {
                 capability.buildArguments(request, session.activeCapabilities())
         );
         UcpCheckoutResponse response = parseCheckoutResponse(capability, result, "update checkout");
-        rejectCheckoutProblems("Checkout not found: " + request.checkoutId(), response);
+        rejectCheckoutProblems(provider, "Checkout not found: " + request.checkoutId(), response);
         updateSession(session, result, response);
         return checkoutResult(result, response);
     }
@@ -169,11 +174,13 @@ public class MerchantCheckoutPluginDispatchService {
     public UcpCheckoutToolResult updateCheckout(
             CartRoutingTarget target, UpdateCheckoutRequest request, UcpSession session,
             CheckoutToolCallContext context) {
+        MerchantCartProvider provider =
+                target.merchantProvider().forOperation(CommerceOperation.CHECKOUT_SESSION);
         UpdateCheckoutCapability capability = capability(UpdateCheckoutCapability.TOOL_NAME, UpdateCheckoutCapability.class);
         MerchantMcpToolCallResult result = call(target, UpdateCheckoutCapability.TOOL_NAME,
                 capability.buildArguments(request, session.activeCapabilities()), context);
         UcpCheckoutResponse response = parseCheckoutResponse(capability, result, "update checkout");
-        rejectCheckoutProblems("Checkout not found: " + request.checkoutId(), response);
+        rejectCheckoutProblems(provider, "Checkout not found: " + request.checkoutId(), response);
         updateSession(session, result, response);
         return checkoutResult(result, response);
     }
@@ -298,14 +305,18 @@ public class MerchantCheckoutPluginDispatchService {
         return response;
     }
 
-    private void rejectCheckoutProblems(String notFoundMessage, UcpCheckoutResponse response) {
+    private void rejectCheckoutProblems(
+            MerchantCartProvider provider,
+            String notFoundMessage,
+            UcpCheckoutResponse response
+    ) {
         UcpCheckoutResponse.CheckoutError error = firstError(response.errors());
         if (error != null) {
             if (error.isNotFound()) {
                 throw CartException.notFound(notFoundMessage);
             }
             if (response.resolvedCheckout() == null) {
-                throw CartException.rejected(safeCheckoutErrorMessage(error.message()));
+                throw CartException.rejected(safeCheckoutErrorMessage(provider, error.message()));
             }
         }
 
@@ -314,7 +325,7 @@ public class MerchantCheckoutPluginDispatchService {
             if (message.isNotFound()) {
                 throw CartException.notFound(notFoundMessage);
             }
-            throw CartException.rejected(safeCheckoutErrorMessage(message.message()));
+            throw CartException.rejected(safeCheckoutErrorMessage(provider, message.message()));
         }
 
         if (response.resolvedCheckout() == null) {
@@ -410,8 +421,9 @@ public class MerchantCheckoutPluginDispatchService {
         return checkout.checkoutUrl();
     }
 
-    private String safeCheckoutErrorMessage(String message) {
-        String trimmed = hasText(message) ? message.trim() : "The merchant rejected this checkout operation.";
+    private String safeCheckoutErrorMessage(MerchantCartProvider provider, String message) {
+        String buyerSafe = MerchantBuyerTextSanitizer.sanitize(message, provider);
+        String trimmed = hasText(buyerSafe) ? buyerSafe.trim() : "The merchant rejected this checkout operation.";
         return trimmed.length() <= MAX_CHECKOUT_ERROR_LENGTH
                 ? trimmed
                 : trimmed.substring(0, MAX_CHECKOUT_ERROR_LENGTH);

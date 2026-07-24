@@ -102,6 +102,7 @@ public class CheckoutPurchaseAttributionService {
                 line.getMerchantIntegrationId() == null
                         ? cart.getMerchantIntegrationId() : line.getMerchantIntegrationId(),
                 firstText(line.getExternalMerchantId(), cart.getExternalMerchantId()),
+                cart.getRoutingDomain(),
                 cart.getMerchantDomain(),
                 line.getCanonicalProductKey(),
                 line.getOfferKey(),

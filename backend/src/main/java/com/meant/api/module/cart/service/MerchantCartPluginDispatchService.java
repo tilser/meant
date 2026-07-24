@@ -11,6 +11,7 @@ import com.meant.api.module.cart.service.port.CartToolTransport;
 import com.meant.api.module.merchant.constant.MerchantIntegrationProvider;
 import com.meant.api.module.merchant.constant.CommerceOperation;
 import com.meant.api.module.merchant.exception.MerchantMcpToolException;
+import com.meant.api.module.merchant.service.MerchantBuyerTextSanitizer;
 import com.meant.api.module.merchant.service.MerchantMcpToolClient;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.module.merchant.service.dto.MerchantMcpToolCallResult;
@@ -101,7 +102,7 @@ public class MerchantCartPluginDispatchService {
         }
         UcpCartResponse response = parseCartResponse(capability, result, "create cart");
         rejectCartProblems(
-                null, request.addItems(), request.discountCodes(), request.giftCardCodes(), response);
+                provider, null, request.addItems(), request.discountCodes(), request.giftCardCodes(), response);
         updateSession(session, result, response);
         return cartResult(result, response);
     }
@@ -150,7 +151,7 @@ public class MerchantCartPluginDispatchService {
             throw providerFailure("Cart provider get failed", exception);
         }
         UcpCartResponse response = parseCartResponse(capability, result, "get cart");
-        rejectCartProblems(request.cartId(), List.of(), List.of(), List.of(), response);
+        rejectCartProblems(provider, request.cartId(), List.of(), List.of(), List.of(), response);
         updateSession(session, result, response);
         return cartResult(result, response);
     }
@@ -197,7 +198,13 @@ public class MerchantCartPluginDispatchService {
         }
         UcpCartResponse response = parseCartResponse(capability, result, "update cart");
         rejectCartProblems(
-                request.cartId(), request.addItems(), request.discountCodes(), request.giftCardCodes(), response);
+                provider,
+                request.cartId(),
+                request.addItems(),
+                request.discountCodes(),
+                request.giftCardCodes(),
+                response
+        );
         updateSession(session, result, response);
         return cartResult(result, response);
     }
@@ -260,7 +267,7 @@ public class MerchantCartPluginDispatchService {
             throw providerFailure("Cart provider cancel failed", exception);
         }
         CancelCartResponse response = capability.parseResponse(toolResponse(result));
-        rejectCancelProblems(request.cartId(), response);
+        rejectCancelProblems(provider, request.cartId(), response);
         session.acceptNegotiatedCapabilities(result.negotiatedCapabilities());
         session.clearCartState();
         return response;
@@ -556,6 +563,7 @@ public class MerchantCartPluginDispatchService {
     }
 
     private void rejectCartProblems(
+            MerchantCartProvider provider,
             String cartId,
             Collection<CartAddItem> addedItems,
             Collection<String> discountCodes,
@@ -567,7 +575,7 @@ public class MerchantCartPluginDispatchService {
             if (error.isNotFound()) {
                 throw CartException.notFound("Cart not found: " + cartId);
             }
-            throw CartException.rejected(safeCartErrorMessage(error.message()));
+            throw CartException.rejected(safeCartErrorMessage(provider, error.message()));
         }
 
         UcpCartResponse.CartMessage message = firstErrorMessage(response);
@@ -575,7 +583,7 @@ public class MerchantCartPluginDispatchService {
             if (message.isNotFound()) {
                 throw CartException.notFound("Cart not found: " + cartId);
             }
-            throw CartException.rejected(safeCartErrorMessage(message.message()));
+            throw CartException.rejected(safeCartErrorMessage(provider, message.message()));
         }
 
         if (response.cart() == null) {
@@ -583,13 +591,17 @@ public class MerchantCartPluginDispatchService {
         }
         UcpCartResponse.CartMessage rejectedAddition = firstRejectedAddition(addedItems, response);
         if (rejectedAddition != null) {
-            throw CartException.rejected(safeCartErrorMessage(rejectedAddition.message()));
+            throw CartException.rejected(safeCartErrorMessage(provider, rejectedAddition.message()));
         }
         rejectInapplicableCodes("Discount code", discountCodes, response.cart().discountCodes(), false);
         rejectInapplicableCodes("Gift card code", giftCardCodes, response.cart().giftCardCodes(), true);
     }
 
-    private void rejectCancelProblems(String cartId, CancelCartResponse response) {
+    private void rejectCancelProblems(
+            MerchantCartProvider provider,
+            String cartId,
+            CancelCartResponse response
+    ) {
         if (response == null) {
             throw CartException.upstream("UCP cancel_cart response was empty");
         }
@@ -598,7 +610,7 @@ public class MerchantCartPluginDispatchService {
             if (error.isNotFound()) {
                 throw CartException.notFound("Cart not found: " + cartId);
             }
-            throw CartException.rejected(safeCartErrorMessage(error.message()));
+            throw CartException.rejected(safeCartErrorMessage(provider, error.message()));
         }
         UcpCartResponse.CartMessage message = safeNonNullList(response.messages()).stream()
                 .filter(UcpCartResponse.CartMessage::isError)
@@ -608,7 +620,7 @@ public class MerchantCartPluginDispatchService {
             if (message.isNotFound()) {
                 throw CartException.notFound("Cart not found: " + cartId);
             }
-            throw CartException.rejected(safeCartErrorMessage(message.message()));
+            throw CartException.rejected(safeCartErrorMessage(provider, message.message()));
         }
     }
 
@@ -739,8 +751,9 @@ public class MerchantCartPluginDispatchService {
                 .anyMatch(submittedCode -> submittedCode.endsWith(normalizedResponseCode));
     }
 
-    private String safeCartErrorMessage(String message) {
-        String trimmed = hasText(message) ? message.trim() : "The merchant rejected this cart operation.";
+    private String safeCartErrorMessage(MerchantCartProvider provider, String message) {
+        String buyerSafe = MerchantBuyerTextSanitizer.sanitize(message, provider);
+        String trimmed = hasText(buyerSafe) ? buyerSafe.trim() : "The merchant rejected this cart operation.";
         return trimmed.length() <= MAX_CART_ERROR_LENGTH
                 ? trimmed
                 : trimmed.substring(0, MAX_CART_ERROR_LENGTH);

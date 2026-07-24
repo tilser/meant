@@ -1,14 +1,18 @@
 package com.meant.api.module.user.controller.response;
 
+import com.meant.api.module.merchant.service.MerchantBuyerTextSanitizer;
+import com.meant.api.module.merchant.service.MerchantProductMessageSanitizer;
 import com.meant.api.module.user.constant.UserInventoryCategory;
 import com.meant.api.module.user.constant.UserInventorySource;
 import com.meant.api.module.user.service.dto.UserInventoryCommerceReference;
 import com.meant.api.module.user.service.dto.UserInventoryItemResult;
 import com.meant.api.module.user.service.dto.UserInventorySelectedOption;
 import io.swagger.v3.oas.annotations.media.Schema;
+import java.net.URI;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 @Schema(description = "An item owned by the authenticated user.")
@@ -74,37 +78,65 @@ public record UserInventoryItemResponse(
 ) {
 
     public static UserInventoryItemResponse from(UserInventoryItemResult result) {
+        MerchantProductMessageSanitizer.TransportContext buyerContext =
+                MerchantProductMessageSanitizer.context(
+                        result.commerceReference() == null
+                                ? null
+                                : result.commerceReference().merchantOrigin(),
+                        result.commerceReference() == null
+                                ? null
+                                : result.commerceReference().externalMerchantDomain(),
+                        result.commerceReference() == null
+                                ? null
+                                : result.commerceReference().externalMerchantDomain()
+                );
         return new UserInventoryItemResponse(
                 result.id(),
                 result.source(),
                 result.sourceProductKey(),
                 result.productHash(),
-                result.name(),
-                result.brand(),
+                buyerText(result.name(), buyerContext),
+                buyerText(result.brand(), buyerContext),
                 result.category(),
-                result.description(),
-                result.imageUrl(),
-                result.productUrl(),
+                buyerText(result.description(), buyerContext),
+                buyerSafeUrl(result.imageUrl(), buyerContext),
+                buyerSafeUrl(result.productUrl(), buyerContext),
                 result.photoUrl(),
                 result.photoPath(),
                 result.quantity(),
-                result.unit(),
-                result.location(),
-                result.notes(),
-                result.size(),
-                result.color(),
-                result.material(),
-                result.attributes(),
+                buyerText(result.unit(), buyerContext),
+                buyerText(result.location(), buyerContext),
+                buyerText(result.notes(), buyerContext),
+                buyerText(result.size(), buyerContext),
+                buyerText(result.color(), buyerContext),
+                buyerText(result.material(), buyerContext),
+                result.attributes().stream()
+                        .map(value -> buyerText(value, buyerContext))
+                        .toList(),
                 result.consumable(),
                 result.restockEnabled(),
                 result.restockThreshold(),
                 result.purchasedAt(),
                 result.purchasedOn(),
-                CommerceReference.from(result.commerceReference()),
+                CommerceReference.from(result.commerceReference(), buyerContext),
                 result.sourceCheckoutAttemptId(),
                 result.createdAt(),
                 result.updatedAt()
         );
+    }
+
+    private static String buyerText(
+            String value,
+            MerchantProductMessageSanitizer.TransportContext context
+    ) {
+        return MerchantProductMessageSanitizer.sanitizeBuyerText(value, context);
+    }
+
+    private static String buyerSafeUrl(
+            String value,
+            MerchantProductMessageSanitizer.TransportContext context
+    ) {
+        return MerchantProductMessageSanitizer.buyerSafeUrl(value, context);
     }
 
     @Schema(
@@ -118,8 +150,11 @@ public record UserInventoryItemResponse(
             UUID merchantIntegrationId,
             @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
             String externalMerchantId,
-            @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
-            String externalMerchantDomain,
+            @Schema(
+                    description = "Verified official storefront origin for buyer display",
+                    requiredMode = Schema.RequiredMode.NOT_REQUIRED
+            )
+            String merchantOrigin,
             @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
             String canonicalProductKey,
             @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
@@ -135,7 +170,10 @@ public record UserInventoryItemResponse(
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             List<SelectedOption> selectedOptions
     ) {
-        static CommerceReference from(UserInventoryCommerceReference reference) {
+        static CommerceReference from(
+                UserInventoryCommerceReference reference,
+                MerchantProductMessageSanitizer.TransportContext context
+        ) {
             if (reference == null) {
                 return null;
             }
@@ -143,14 +181,18 @@ public record UserInventoryItemResponse(
                     reference.provider(),
                     reference.merchantIntegrationId(),
                     reference.externalMerchantId(),
-                    reference.externalMerchantDomain(),
+                    MerchantBuyerTextSanitizer.buyerSafeMerchantOrigin(
+                            reference.merchantOrigin()
+                    ),
                     reference.canonicalProductKey(),
                     reference.offerKey(),
                     reference.sourceType(),
-                    reference.sourceIdentity(),
-                    reference.externalProductId(),
-                    reference.externalVariantId(),
-                    reference.selectedOptions().stream().map(SelectedOption::from).toList()
+                    buyerText(reference.sourceIdentity(), context),
+                    buyerText(reference.externalProductId(), context),
+                    buyerText(reference.externalVariantId(), context),
+                    reference.selectedOptions().stream()
+                            .map(option -> SelectedOption.from(option, context))
+                            .toList()
             );
         }
     }
@@ -167,8 +209,15 @@ public record UserInventoryItemResponse(
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
             String value
     ) {
-        static SelectedOption from(UserInventorySelectedOption option) {
-            return new SelectedOption(option.group(), option.name(), option.value());
+        static SelectedOption from(
+                UserInventorySelectedOption option,
+                MerchantProductMessageSanitizer.TransportContext context
+        ) {
+            return new SelectedOption(
+                    buyerText(option.group(), context),
+                    buyerText(option.name(), context),
+                    buyerText(option.value(), context)
+            );
         }
     }
 }

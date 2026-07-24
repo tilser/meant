@@ -7,6 +7,7 @@ import type {
   ProductSelectedOptionProfile,
   ProductVariantSelectionProfile,
 } from '../../../lib/apiClient'
+import { merchantAdjacentDisplayLabel, merchantDisplayOrigin } from '../cart/merchantOrigin'
 import type { Offer, Product } from '../types'
 import { canonicalMerchantScopeKey, minorUnitsToMajor } from '../utils'
 
@@ -194,7 +195,9 @@ export function merchantOfferChoices(product: CanonicalProductProfile): Merchant
   })
   return Array.from(byMerchant.entries()).map(([key, anchor]) => ({
     key,
-    label: anchor.merchantName?.trim() || 'Merchant',
+    label: anchor.merchantOrigin
+      ? merchantDisplayOrigin(anchor.merchantOrigin)
+      : merchantAdjacentDisplayLabel(anchor.merchantName),
     anchor,
   }))
 }
@@ -253,7 +256,9 @@ export function productWithVariantSelection(
         ? [
             {
               offerKey: selection.selectedOfferKey,
-              merchant: exactOffer.merchantName?.trim() || 'Merchant',
+              merchant: exactOffer.merchantOrigin
+                ? merchantDisplayOrigin(exactOffer.merchantOrigin)
+                : merchantAdjacentDisplayLabel(exactOffer.merchantName),
               price: variant?.priceAmount
                 ? Number(variant.priceAmount)
                 : (minorUnitsToMajor(exactOffer.price?.minorUnits, exactOffer.price?.currency) ??
@@ -262,9 +267,7 @@ export function productWithVariantSelection(
               priceCurrency: variant?.priceCurrency ?? exactOffer.price?.currency ?? null,
               delivery: 'Delivery calculated by merchant',
               merchantId: null,
-              merchantDomain:
-                exactOffer.provenance.find((item) => item.externalMerchantDomain)
-                  ?.externalMerchantDomain ?? null,
+              merchantDomain: exactOffer.merchantOrigin ?? null,
               provider: exactOffer.identity.provider,
               merchantIntegrationId:
                 exactLocalRouting?.merchantIntegrationId ??

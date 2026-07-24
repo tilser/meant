@@ -35,8 +35,10 @@ import com.meant.api.module.cart.service.command.CreateCartCommand;
 import com.meant.api.module.cart.service.command.UpdateCartCommand;
 import com.meant.api.module.cart.service.command.UpdateCheckoutCommand;
 import com.meant.api.module.cart.service.dto.CartResult;
+import com.meant.api.module.cart.service.dto.CartRoutingTarget;
 import com.meant.api.module.cart.service.dto.CartToolCallContext;
 import com.meant.api.module.cart.service.dto.CartDeliveryOptionSelectionInput;
+import com.meant.api.module.cart.service.dto.CheckoutCompletionResult;
 import com.meant.api.module.cart.service.dto.CheckoutResult;
 import com.meant.api.module.cart.service.query.GetCartQuery;
 import com.meant.api.module.cart.service.query.GetCheckoutQuery;
@@ -69,6 +71,8 @@ import com.meant.api.module.checkout.service.command.RecordCheckoutOpenedCommand
 import com.meant.api.module.checkout.service.dto.NativeCheckoutResult;
 import com.meant.api.module.checkout.service.dto.NativeCheckoutStatus;
 import com.meant.api.module.checkout.service.dto.CheckoutToolCallContext;
+import com.meant.api.module.merchant.constant.MerchantIntegrationProvider;
+import com.meant.api.module.merchant.service.dto.MerchantExecutionPolicy;
 import com.meant.api.plugin.checkout.create.dto.CreateCheckoutRequest;
 import com.meant.api.plugin.checkout.get.dto.GetCheckoutRequest;
 import com.meant.api.plugin.checkout.update.dto.UpdateCheckoutRequest;
@@ -84,6 +88,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -547,6 +552,53 @@ class CartServiceTest {
         assertThat(result.checkoutUrl()).isEqualTo("https://merchant.example/checkout");
         assertThat(cartDispatchService.getCount).isZero();
         assertThat(merchantRepository.findByIdCount).isZero();
+    }
+
+    @Test
+    void getWithoutRefreshResolvesProviderAliasesOnlyWhenStoredBuyerTextNeedsSanitizing() {
+        String profileEndpoint =
+                "https://profile.merchant-transport.example/.well-known/ucp";
+        Instant now = Instant.parse("2026-06-16T11:05:00Z");
+        merchant.updateProfileMetadata(
+                null,
+                merchant.getDomain(),
+                merchant.getUcpUrl(),
+                merchant.getUcpVersion(),
+                merchant.getAdvertisedMcpEndpoint(),
+                profileEndpoint,
+                true,
+                now,
+                now
+        );
+        merchantRepository.save(merchant);
+        UUID cartId = UUID.randomUUID();
+        cartRepository.save(cart(
+                cartId,
+                "https://merchant.example/checkout",
+                UUID.randomUUID(),
+                """
+                        {
+                          "messages": [
+                            {
+                              "type": "warning",
+                              "severity": "warning",
+                              "code": "stored_notice",
+                              "message": "Profile: profile.merchant-transport.example."
+                            }
+                          ],
+                          "errors": []
+                        }
+                        """
+        ));
+
+        CartResult result = cartService.get(new GetCartQuery(cartId, USER_ID, false));
+
+        assertThat(result.messages()).singleElement().satisfies(message ->
+                assertThat(message.message())
+                        .isEqualTo("Profile: merchant.example.")
+                        .doesNotContain("profile.merchant-transport.example"));
+        assertThat(merchantRepository.findByIdCount).isEqualTo(1);
+        assertThat(cartDispatchService.getCount).isZero();
     }
 
     @Test
@@ -1230,6 +1282,110 @@ class CartServiceTest {
             assertThat(command.trigger().name()).isEqualTo("VERIFIED_COMPLETION");
             assertThat(command.embeddedSessionId()).isNull();
         });
+    }
+
+    @Test
+    void externalCompletionUsesStoredTechnicalRouteWithOfficialOriginKeptForPresentation() {
+        UUID cartId = UUID.randomUUID();
+        String checkoutId = "gid://shopify/Checkout/1";
+        String merchantDomain = "allbirds.com";
+        String routingDomain = "weareallbirds.myshopify.com";
+        String profileEndpoint =
+                "https://profile.shopify-transport.example/.well-known/ucp";
+        Instant now = Instant.parse("2026-06-16T11:05:00Z");
+        CartLine line = CartLine.builder()
+                .remoteCartLineId("gid://shopify/CartLine/1")
+                .productVariantId("gid://shopify/ProductVariant/1")
+                .quantity(1)
+                .rawLineResponse("{}")
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        Cart cart = Cart.builder()
+                .id(cartId)
+                .userId(USER_ID)
+                .merchantDomain(merchantDomain)
+                .routingDomain(routingDomain)
+                .provider(MerchantIntegrationProvider.SHOPIFY.name())
+                .externalMerchantId("gid://shopify/Shop/1")
+                .routingScopeKey("SHOPIFY:merchant:gid://shopify/Shop/1:domain:" + routingDomain)
+                .endpoint("https://" + routingDomain + "/api/ucp/mcp")
+                .remoteCartId("gid://shopify/Cart/1")
+                .remoteCartIdHash("external-cart-hash")
+                .rawCartResponse("{}")
+                .totalQuantity(1)
+                .active(true)
+                .createdAt(now)
+                .updatedAt(now)
+                .refreshedAt(now)
+                .lines(new ArrayList<>(List.of(line)))
+                .build();
+        cart.replaceCheckoutSession(
+                checkoutId,
+                "incomplete",
+                null,
+                null,
+                null,
+                now
+        );
+        cartRepository.save(cart);
+        MerchantCartProvider exactProvider = new MerchantCartProvider(
+                null,
+                merchantDomain,
+                routingDomain,
+                "https://" + routingDomain + "/api/ucp/mcp",
+                profileEndpoint,
+                List.of(),
+                MerchantExecutionPolicy.unavailable(),
+                now,
+                Set.of("dev.ucp.shopping.checkout")
+        );
+        when(routing.resolvePersistedExternalForCheckout(any())).thenReturn(new CartRoutingTarget(
+                cart.getRoutingScopeKey(),
+                MerchantIntegrationProvider.SHOPIFY,
+                null,
+                cart.getExternalMerchantId(),
+                exactProvider
+        ));
+        when(nativeCheckoutCompletionService.complete(any(), any(), any())).thenReturn(
+                new NativeCheckoutResult(
+                        NativeCheckoutStatus.HANDOFF_FALLBACK,
+                        checkoutId,
+                        null,
+                        "https://allbirds.com/checkout",
+                        List.of("Retry through " + profileEndpoint),
+                        false
+                ));
+
+        CheckoutCompletionResult completion = cartService.completeCheckout(new CompleteCheckoutCommand(
+                cartId,
+                USER_ID,
+                UUID.randomUUID(),
+                checkoutId,
+                List.of(mock(com.meant.api.plugin.payment.common.dto.PaymentInstrument.class)),
+                "external-completion-key",
+                false,
+                null,
+                null
+        ));
+
+        ArgumentCaptor<MerchantCartProvider> providerCaptor =
+                ArgumentCaptor.forClass(MerchantCartProvider.class);
+        verify(nativeCheckoutCompletionService).complete(providerCaptor.capture(), any(), any());
+        assertThat(providerCaptor.getValue().merchantDomain()).isEqualTo(merchantDomain);
+        assertThat(providerCaptor.getValue().routingDomain()).isEqualTo(routingDomain);
+        assertThat(providerCaptor.getValue().advertisedMcpEndpoint())
+                .isEqualTo("https://" + routingDomain + "/api/ucp/mcp");
+        assertThat(completion.messages())
+                .containsExactly("Retry through " + merchantDomain)
+                .allSatisfy(message -> assertThat(message)
+                        .doesNotContain(
+                                routingDomain,
+                                "profile.shopify-transport.example",
+                                "/.well-known/ucp"
+                        ));
+        assertThat(checkoutDispatchService.createCount).isEqualTo(1);
+        verify(routing).resolvePersistedExternalForCheckout(any());
     }
 
     @Test

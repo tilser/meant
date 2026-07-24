@@ -10,6 +10,7 @@ import {
   type ProductSelectedOptionProfile,
   type ProductVariantSelectionProfile,
 } from '../../../lib/apiClient'
+import { merchantAdjacentDisplayLabel } from '../cart/merchantOrigin'
 import type { Product } from '../types'
 import { minorUnitsToMajor, money } from '../utils'
 import { loadCanonicalProductDetailWithRecovery } from './canonicalProductSessionRecovery'
@@ -79,7 +80,7 @@ function savedMerchantChoices(product: Product): MerchantChoice[] {
     return [
       {
         key: merchantKey,
-        label: offer.merchant.trim() || 'Merchant',
+        label: merchantAdjacentDisplayLabel(offer.merchant, offer.merchantDomain),
         anchorOfferKey: offerKey,
         selectedOptions: detailsOptions,
         price: savedOfferPrice(product, offerKey),
@@ -103,7 +104,7 @@ function canonicalMerchantChoices(product: CanonicalProductProfile): MerchantCho
 }
 
 function merchantDetails(selection: ProductVariantSelectionProfile): MerchantProductDetailsProfile {
-  return { endpoint: null, ...selection.details }
+  return selection.details
 }
 
 function optionValues(option: MerchantProductDetailsProfile['options'][number]): string[] {

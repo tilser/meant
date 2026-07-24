@@ -4,10 +4,13 @@ import com.meant.api.module.discount.service.dto.DiscountCodeCandidateSource;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
 
 @Service
 public class DiscountCodeCandidateNormalizationService {
+
+    private static final Pattern SAFE_CODE = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]{0,63}");
 
     public List<DiscountCodeCandidateSource> normalize(
             List<DiscountCodeCandidateSource> candidates,
@@ -44,7 +47,7 @@ public class DiscountCodeCandidateNormalizationService {
             return null;
         }
         String normalized = code.trim();
-        return normalized.isBlank() ? null : normalized;
+        return SAFE_CODE.matcher(normalized).matches() ? normalized : null;
     }
 
     private boolean shouldPrefer(String candidateCode, String existingCode) {

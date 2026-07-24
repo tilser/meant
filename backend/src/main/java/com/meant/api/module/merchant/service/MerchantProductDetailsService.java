@@ -3,6 +3,7 @@ package com.meant.api.module.merchant.service;
 import com.meant.api.module.merchant.service.dto.CatalogLookupResult;
 import com.meant.api.plugin.catalog.common.dto.CatalogSearchContext;
 import com.meant.api.plugin.catalog.common.dto.ProductDetailsResponse;
+import com.meant.api.module.merchant.service.dto.MerchantProductDetailsLookupContext;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticSearchResult;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResult;
 import com.meant.api.module.merchant.service.query.GetMerchantProductDetailsQuery;
@@ -23,7 +24,9 @@ public class MerchantProductDetailsService {
     private final MerchantCatalogPluginDispatchService merchantCatalogPluginDispatchService;
 
     public ProductDetailsResult get(@NotNull @Valid GetMerchantProductDetailsQuery query) {
-        MerchantSemanticSearchResult merchant = merchantLookupService.activeSearchResult(query.merchantId());
+        MerchantProductDetailsLookupContext merchantContext =
+                merchantLookupService.activeProductDetailsContext(query.merchantId());
+        MerchantSemanticSearchResult merchant = merchantContext.routingMerchant();
         CatalogSearchContext context = new CatalogSearchContext(
                 query.addressCountry(),
                 null,
@@ -40,7 +43,7 @@ public class MerchantProductDetailsService {
         );
         NegotiatedCapabilities capabilities = activeCapabilities(
                 lookupResult.negotiatedCapabilities(), NegotiatedCapabilities.none());
-        return query.selectionRequest()
+        ProductDetailsResult details = query.selectionRequest()
                 ? merchantCatalogPluginDispatchService.getProduct(
                         merchant,
                         lookupResult.productId(),
@@ -55,6 +58,10 @@ public class MerchantProductDetailsService {
                         lookupResult.productId(),
                         context,
                         capabilities);
+        return details.withBuyerContext(
+                merchant.domain(),
+                merchantContext.technicalEndpointAliases()
+        );
     }
 
     private NegotiatedCapabilities activeCapabilities(

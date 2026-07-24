@@ -12,17 +12,23 @@ import static org.mockito.Mockito.when;
 import com.meant.api.module.cart.service.dto.CartRoutingTarget;
 import com.meant.api.module.merchant.constant.CommerceOperation;
 import com.meant.api.module.merchant.constant.MerchantIntegrationProvider;
+import com.meant.api.module.merchant.constant.MerchantIntegrationRole;
+import com.meant.api.module.merchant.constant.MerchantIntegrationStatus;
 import com.meant.api.module.merchant.service.MerchantOutboundUrlValidator;
 import com.meant.api.module.merchant.service.dto.MerchantCartProvider;
 import com.meant.api.module.merchant.service.dto.MerchantExecutionPolicy;
+import com.meant.api.module.merchant.service.dto.MerchantIntegrationRouting;
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import com.meant.api.plugin.spi.UcpToolResponse;
 import com.meant.api.provider.shopify.cart.ShopifyCartProperties;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.net.InetAddress;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class ShopifyMerchantUcpTransportTest {
@@ -60,6 +66,57 @@ class ShopifyMerchantUcpTransportTest {
                 CommerceOperation.CHECKOUT_SESSION, "create_checkout", Map.of()))
                 .isInstanceOf(RuntimeException.class);
         verifyNoInteractions(client);
+    }
+
+    @Test
+    void managedMerchantUsesTechnicalIntegrationAuthorityWithoutExposingItAsMerchantDomain() throws Exception {
+        ShopifyUcpClient client = mock(ShopifyUcpClient.class);
+        when(client.callTool(any(), eq("create_cart"), any(), any())).thenReturn(
+                new UcpToolResponse("{}", null, NegotiatedCapabilities.none()));
+        ShopifyMerchantUcpTransport transport = transport(client, new SimpleMeterRegistry());
+        UUID integrationId = UUID.randomUUID();
+        String routingDomain = "weareallbirds.myshopify.com";
+        String endpoint = "https://" + routingDomain + "/api/ucp/mcp";
+        MerchantIntegrationRouting integration = new MerchantIntegrationRouting(
+                integrationId,
+                MerchantIntegrationProvider.SHOPIFY,
+                Set.of(MerchantIntegrationRole.CART),
+                MerchantIntegrationStatus.ACTIVE,
+                "gid://shopify/Shop/1",
+                "allbirds.com",
+                "gid://shopify/Shop/1",
+                endpoint
+        );
+        MerchantCartProvider provider = new MerchantCartProvider(
+                UUID.randomUUID(),
+                "allbirds.com",
+                "allbirds.com",
+                "https://allbirds.com/not-the-shopify-route",
+                null,
+                List.of(integration),
+                MerchantExecutionPolicy.unavailable(),
+                Instant.now(),
+                Set.of("dev.ucp.shopping.cart")
+        );
+        CartRoutingTarget target = new CartRoutingTarget(
+                "SHOPIFY:integration:" + integrationId,
+                MerchantIntegrationProvider.SHOPIFY,
+                integrationId,
+                "gid://shopify/Shop/1",
+                provider
+        );
+
+        transport.call(target, CommerceOperation.CART, "create_cart", Map.of());
+
+        assertThat(target.merchantProvider().merchantDomain()).isEqualTo("allbirds.com");
+        verify(client).callTool(
+                org.mockito.ArgumentMatchers.argThat(options ->
+                        options.endpoint().toString().equals(endpoint)
+                                && options.allowedHosts().equals(Set.of(routingDomain))),
+                eq("create_cart"),
+                any(),
+                eq(Map.of())
+        );
     }
 
     private ShopifyMerchantUcpTransport transport(ShopifyUcpClient client, SimpleMeterRegistry registry)

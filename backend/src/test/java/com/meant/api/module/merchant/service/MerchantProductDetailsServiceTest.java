@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.meant.api.module.merchant.service.dto.CatalogLookupResult;
 import com.meant.api.module.catalog.service.dto.ProductAttribute;
 import com.meant.api.plugin.catalog.common.dto.CatalogSearchContext;
+import com.meant.api.module.merchant.service.dto.MerchantProductDetailsLookupContext;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticSearchResult;
 import com.meant.api.plugin.catalog.common.dto.ProductDetailsResponse;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResult;
@@ -49,6 +50,18 @@ class MerchantProductDetailsServiceTest {
         assertThat(merchantCatalogPluginDispatchService.requestedGetProductContext.intent()).isEqualTo("Product detail");
         assertThat(result.product().title()).isEqualTo("Blue Shirt");
         assertThat(result.product().options()).extracting("name").containsExactly("Size");
+        assertThat(result.merchantDomain()).isEqualTo("merchant.example");
+        assertThat(result.technicalEndpointAliases()).containsExactly(
+                "https://profile-source.transport.test/custom-ucp.json",
+                "https://advertised.transport.test/custom-mcp",
+                "https://profile-mcp.transport.test/legacy-mcp",
+                "https://fetched-profile.transport.test/redirected-ucp.json",
+                "https://integration.transport.test/catalog-mcp"
+        );
+        assertThat(result.endpoint()).isEqualTo("https://runtime.transport.test/api/ucp/mcp");
+        assertThat(merchantCatalogPluginDispatchService.requestedLookupMerchant.advertisedMcpEndpoint())
+                .isEqualTo("https://integration.transport.test/catalog-mcp");
+        assertThat(merchantCatalogPluginDispatchService.requestedLookupMerchant.profileMcpEndpoint()).isNull();
     }
 
     @Test
@@ -75,11 +88,18 @@ class MerchantProductDetailsServiceTest {
 
     private static class FakeMerchantLookupService extends MerchantLookupService {
 
+        private final List<String> technicalEndpointAliases = List.of(
+                "https://profile-source.transport.test/custom-ucp.json",
+                "https://advertised.transport.test/custom-mcp",
+                "https://profile-mcp.transport.test/legacy-mcp",
+                "https://fetched-profile.transport.test/redirected-ucp.json",
+                "https://integration.transport.test/catalog-mcp"
+        );
         private final MerchantSemanticSearchResult merchant = new MerchantSemanticSearchResult(
                 UUID.randomUUID(),
                 "merchant.example",
                 "Merchant",
-                "https://merchant.example/api/mcp",
+                "https://integration.transport.test/catalog-mcp",
                 null,
                 "Merchant",
                 1.0d,
@@ -93,9 +113,9 @@ class MerchantProductDetailsServiceTest {
         }
 
         @Override
-        public MerchantSemanticSearchResult activeSearchResult(UUID merchantId) {
+        public MerchantProductDetailsLookupContext activeProductDetailsContext(UUID merchantId) {
             requestedMerchantId = merchantId;
-            return merchant;
+            return new MerchantProductDetailsLookupContext(merchant, technicalEndpointAliases);
         }
     }
 
@@ -136,7 +156,7 @@ class MerchantProductDetailsServiceTest {
             requestedGetProductId = productId;
             requestedGetProductContext = context;
             return new ProductDetailsResult(
-                    merchant.advertisedMcpEndpoint(),
+                    "https://runtime.transport.test/api/ucp/mcp",
                     "{}",
                     new ProductDetailsResponse.Product(
                             productId,

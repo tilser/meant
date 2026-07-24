@@ -69,7 +69,9 @@ test('offers the same saved-details prompt in cart and chat checkout surfaces', 
   const items: CartItem[] = [
     {
       id: product.id,
-      merchant: 'Example Shop',
+      merchant: 'sollys-online-grocery.myshopify.com',
+      merchantOrigin: 'nycfactory.com',
+      merchantDomain: 'nycfactory.com',
       qty: 1,
       cartId: 'cart-1',
       productVariantId: 'variant-1',
@@ -97,7 +99,8 @@ test('offers the same saved-details prompt in cart and chat checkout surfaces', 
   const session: ActiveCheckoutSession = {
     ownerId: 'user-a',
     cartId: 'cart-1',
-    merchant: 'Example Shop',
+    merchant: 'sollys-online-grocery.myshopify.com',
+    merchantOrigin: 'nycfactory.com',
     source: 'cart',
     items,
     saved: 0,
@@ -132,6 +135,8 @@ test('offers the same saved-details prompt in cart and chat checkout surfaces', 
   )
 
   for (const markup of [cartMarkup, chatMarkup]) {
+    expect(markup).toContain('nycfactory.com')
+    expect(markup).not.toContain('sollys-online-grocery.myshopify.com')
     expect(markup).toContain('Use your saved contact and delivery details for this checkout?')
     expect(markup).toContain('Use saved details')
     expect(markup).toContain('Enter different details')

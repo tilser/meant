@@ -123,6 +123,7 @@ public class UserInventoryProductRehydrationService {
                     item.getMerchantIntegrationId(),
                     item.getExternalMerchantId(),
                     item.getExternalMerchantDomain(),
+                    item.getMerchantOrigin(),
                     item.getCanonicalProductKey(),
                     item.getOfferKey(),
                     item.getSourceType(),

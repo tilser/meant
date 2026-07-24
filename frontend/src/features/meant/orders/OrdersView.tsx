@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { PrefChip } from '../shared/icons'
 import { CartIcon, EmptyState, ProductArtwork, ViewHead } from '../shared/ui'
+import { merchantAdjacentDisplayLabel, merchantDisplayOrigin } from '../cart/merchantOrigin'
 import type { Order, Preference, Product } from '../types'
 import { formatOrderDate, money, prefLabel } from '../utils'
 import { orderLineTotal, orderLineUnitPrice } from './orderMapping'
@@ -169,7 +170,8 @@ function OrderCard({
           const unitPrice = orderLineUnitPrice(item, product)
           const lineTotal = orderLineTotal(item, product)
           const productName = product?.name ?? item.productTitle ?? item.productVariantId ?? item.id
-          const productBrand = product?.brand ?? item.merchant
+          const merchantDisplay = merchantDisplayOrigin(item.merchantOrigin)
+          const productBrand = merchantAdjacentDisplayLabel(product?.brand, item.merchantOrigin)
           return (
             <button
               className="mt-order-item"
@@ -193,7 +195,7 @@ function OrderCard({
                 <div className="mt-mono mt-order-item-brand">{productBrand}</div>
                 <div className="mt-order-item-name">{productName}</div>
                 <div className="mt-mono mt-order-item-meta">
-                  {item.qty} × {money(unitPrice)} · {item.merchant}
+                  {item.qty} × {money(unitPrice)} · {merchantDisplay}
                 </div>
               </div>
               <div className="mt-order-item-price">{money(lineTotal)}</div>

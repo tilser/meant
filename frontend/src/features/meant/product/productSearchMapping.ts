@@ -1,4 +1,5 @@
 import type { UserProductSearchProductProfile } from '../../../lib/apiClient'
+import { merchantDisplayOrigin } from '../cart/merchantOrigin'
 import { searchProductReviewInsight } from '../chat/utils'
 import type {
   Preference,
@@ -235,7 +236,7 @@ export function productFromSearchResult(
   const skus = searchProductStringValues(product.skus)
   const collections = searchProductStringValues(product.collections)
   const catalogAttributes = searchProductAttributes(product)
-  const brand = product.merchantName || product.merchantDomain
+  const merchantDisplay = merchantDisplayOrigin(product.merchantDomain)
   const detail = stripHtml(product.detailDescription || product.descriptionHtml)
   const ratingScore = normalizeRatingScore(product.ratingScore)
   const reviewCount = Math.max(0, product.reviewCount ?? 0)
@@ -249,7 +250,7 @@ export function productFromSearchResult(
     merchantDomain: product.merchantDomain,
     merchantProductId: product.productId,
     name: product.title,
-    brand,
+    brand: merchantDisplay,
     category: searchProductCategory(product, preferences),
     tone: toneForSearchProduct(product),
     imageUrl:
@@ -284,7 +285,7 @@ export function productFromSearchResult(
     detailDescription: detail || null,
     offers: [
       {
-        merchant: brand,
+        merchant: merchantDisplay,
         price,
         delivery:
           product.available === false || product.selectedVariantAvailable === false

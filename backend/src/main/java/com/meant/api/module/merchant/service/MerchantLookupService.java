@@ -8,7 +8,9 @@ import com.meant.api.module.merchant.constant.MerchantIntegrationStatus;
 import com.meant.api.module.merchant.exception.MerchantCatalogSearchException;
 import com.meant.api.module.merchant.repository.MerchantIntegrationRepository;
 import com.meant.api.module.merchant.repository.MerchantRepository;
+import com.meant.api.module.merchant.service.dto.MerchantProductDetailsLookupContext;
 import com.meant.api.module.merchant.service.dto.MerchantSemanticSearchResult;
+import java.util.Arrays;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -21,11 +23,34 @@ public class MerchantLookupService {
     private final MerchantIntegrationRepository merchantIntegrationRepository;
 
     public MerchantSemanticSearchResult activeSearchResult(UUID merchantId) {
-        Merchant merchant = merchantRepository.findByIdAndActiveTrue(merchantId)
+        Merchant merchant = activeMerchant(merchantId);
+        String endpoint = catalogEndpoint(merchant);
+        return searchResult(merchant, endpoint);
+    }
+
+    public MerchantProductDetailsLookupContext activeProductDetailsContext(UUID merchantId) {
+        Merchant merchant = activeMerchant(merchantId);
+        String endpoint = catalogEndpoint(merchant);
+        return new MerchantProductDetailsLookupContext(
+                searchResult(merchant, endpoint),
+                Arrays.asList(
+                        merchant.getUcpUrl(),
+                        merchant.getAdvertisedMcpEndpoint(),
+                        merchant.getProfileMcpEndpoint(),
+                        merchant.getProfileEndpoint(),
+                        endpoint
+                )
+        );
+    }
+
+    private Merchant activeMerchant(UUID merchantId) {
+        return merchantRepository.findByIdAndActiveTrue(merchantId)
                 .orElseThrow(() -> MerchantCatalogSearchException.notFound(
                         "Active merchant not found: " + merchantId
                 ));
-        String endpoint = catalogEndpoint(merchant);
+    }
+
+    private MerchantSemanticSearchResult searchResult(Merchant merchant, String endpoint) {
         return new MerchantSemanticSearchResult(
                 merchant.getId(),
                 merchant.getDomain(),

@@ -1,5 +1,6 @@
 import type { AgentConversationSummaryProfile } from '../../../lib/apiClient'
 import type { DiscoverChatMessage, DiscoverChatThread } from '../chat/types'
+import { sanitizeBuyerVisibleText } from './buyerVisibleText'
 
 export function threadFromAgentConversationSummary(
   summary: AgentConversationSummaryProfile,
@@ -8,7 +9,7 @@ export function threadFromAgentConversationSummary(
   const loadedMessages = messages ?? []
   return {
     id: summary.conversationId,
-    title: summary.title,
+    title: sanitizeBuyerVisibleText(summary.title),
     messages: loadedMessages,
     messageCount: messages === undefined ? summary.latestSequence : loadedMessages.length,
     archived: summary.status === 'ARCHIVED',

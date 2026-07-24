@@ -1,8 +1,12 @@
 package com.meant.api.module.user.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.meant.api.module.merchant.constant.MerchantCatalogSourceIdentity;
+import com.meant.api.module.merchant.service.MerchantPresentationOriginService;
 import com.meant.api.module.catalog.service.CatalogPurchaseReferencePolicyResolver;
 import com.meant.api.module.user.entity.UserSavedProduct;
 import com.meant.api.module.user.service.dto.UserSavedProductResult;
@@ -32,9 +36,12 @@ import tools.jackson.databind.ObjectMapper;
 
 class UserSavedProductResultMapperTest {
     private static final Instant NOW = Instant.parse("2026-07-11T00:00:00Z");
+    private final MerchantPresentationOriginService merchantOriginService =
+            mock(MerchantPresentationOriginService.class);
     private final UserSavedProductResultMapper mapper = new UserSavedProductResultMapper(
             new ObjectMapper(),
-            new CatalogPurchaseReferencePolicyResolver(List.of(new ShopifyCatalogPurchaseReferencePolicy()))
+            new CatalogPurchaseReferencePolicyResolver(List.of(new ShopifyCatalogPurchaseReferencePolicy())),
+            merchantOriginService
     );
 
     @Test
@@ -159,7 +166,9 @@ class UserSavedProductResultMapperTest {
     }
 
     @Test
-    void legacyGenericReferenceAcceptsVerifiedRoutingAndVariantOptionsEnrichment() {
+    void legacyGenericReferenceKeepsVerifiedRoutingWithoutUsingItsDomainAsAMerchantLabel() {
+        when(merchantOriginService.resolve(any(CatalogProductReference.class)))
+                .thenReturn("merchant.example");
         java.util.UUID integrationId = java.util.UUID.fromString("00000000-0000-0000-0000-000000000022");
         java.util.UUID merchantId = java.util.UUID.fromString("00000000-0000-0000-0000-000000000023");
         DiscoverySourceIdentity source = new DiscoverySourceIdentity(
@@ -199,9 +208,9 @@ class UserSavedProductResultMapperTest {
 
         assertThat(result.commercialFactsAuthoritative()).isTrue();
         assertThat(result.offers()).singleElement().satisfies(offer -> {
-            assertThat(offer.merchant()).isEqualTo("merchant.example");
+            assertThat(offer.merchant()).isEqualTo("Merchant");
             assertThat(offer.merchantId()).isEqualTo(merchantId.toString());
-            assertThat(offer.merchantDomain()).isEqualTo("merchant.example");
+            assertThat(offer.merchantOrigin()).isEqualTo("merchant.example");
             assertThat(SavedProductOfferKeyCodec.verify(
                     SavedProductOfferKeyCodec.decode(offer.offerKey()).orElseThrow(), entity)).isTrue();
         });

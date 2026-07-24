@@ -2,6 +2,7 @@ package com.meant.api.module.agent.controller.response;
 
 import com.meant.api.module.agent.constant.AgentRunStatus;
 import com.meant.api.module.agent.service.dto.AgentRunResult;
+import com.meant.api.module.merchant.service.MerchantBuyerTextSanitizer;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.util.UUID;
@@ -38,7 +39,7 @@ public record AgentRunResponse(
                 result.inputTokens(),
                 result.outputTokens(),
                 result.failureCode(),
-                result.safeMessage(),
+                MerchantBuyerTextSanitizer.sanitize(result.safeMessage()),
                 result.cancellationRequested(),
                 result.latestCursor(),
                 result.createdAt(),

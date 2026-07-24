@@ -18,7 +18,8 @@ function session(profile: Partial<CheckoutProfile>): ActiveCheckoutSession {
   return {
     ownerId: 'user-a',
     cartId: 'cart-1',
-    merchant: 'MyGiftStop',
+    merchant: 'sollys-online-grocery.myshopify.com',
+    merchantOrigin: 'nycfactory.com',
     source: 'cart',
     items: [],
     saved: 0,
@@ -29,6 +30,22 @@ function session(profile: Partial<CheckoutProfile>): ActiveCheckoutSession {
 }
 
 describe('checkout session UCP actions', () => {
+  test('uses only the trusted merchant origin in buyer-facing checkout copy', () => {
+    const checkout = session({
+      nextAction: 'UPDATE_CHECKOUT',
+      messages: [
+        {
+          code: 'delivery_address_required',
+          content: 'A destination address is required.',
+        },
+      ],
+    })
+    const copy = `${checkoutAssistantPrompt(checkout)} ${merchantHandoffReason(checkout)}`
+
+    expect(copy).toContain('nycfactory.com')
+    expect(copy).not.toContain('sollys-online-grocery.myshopify.com')
+  })
+
   test('resolves recoverable buyer details before handing off', () => {
     const checkout = session({
       status: 'requires_escalation',

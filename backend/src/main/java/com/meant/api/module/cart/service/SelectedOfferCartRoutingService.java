@@ -72,7 +72,13 @@ public class SelectedOfferCartRoutingService {
             throw failure(CartException.BindingFailure.IDENTITY_MISMATCH,
                     "Stored cart scope does not match its integration");
         }
-        return new CartRoutingTarget(scopeKey, expectedProvider, integration.id(), externalMerchantId, provider);
+        return new CartRoutingTarget(
+                scopeKey,
+                expectedProvider,
+                integration.id(),
+                externalMerchantId,
+                provider.forIntegration(integration.id())
+        );
     }
 
     public CartRoutingTarget resolvePersistedExternal(CartRoutingTarget persistedTarget) {
@@ -156,7 +162,7 @@ public class SelectedOfferCartRoutingService {
                 expectedProvider,
                 cartIntegration.id(),
                 externalMerchantId,
-                provider
+                provider.forIntegration(cartIntegration.id())
         );
     }
 

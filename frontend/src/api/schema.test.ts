@@ -215,10 +215,12 @@ test('saved products retain typed routing and return a durable exact offer key',
   const savedOfferFields: Array<keyof components['schemas']['UserSavedProductOffer']> = [
     'offerKey',
     'merchant',
+    'merchantOrigin',
     'productVariantId',
   ]
   expect(savedPaths).toHaveLength(1)
   expect(savedOfferFields).toContain('offerKey')
+  expect(savedOfferFields as string[]).not.toContain('merchantDomain')
 
   const savedProductFields: Array<keyof components['schemas']['UserSavedProductResponse']> = [
     'offers',
@@ -235,6 +237,7 @@ test('saved products retain typed routing and return a durable exact offer key',
     'ratingScaleMax',
     'reviewCount',
     'merchantName',
+    'merchantOrigin',
   ]
   expect(savedProductFields).toContain('details')
   expect(savedDetailFields).toContain('variants')
@@ -243,6 +246,7 @@ test('saved products retain typed routing and return a durable exact offer key',
   expect(savedDetailFields).toContain('ratingScaleMax')
   expect(savedDetailFields).toContain('reviewCount')
   expect(savedDetailFields).toContain('merchantName')
+  expect(savedDetailFields).toContain('merchantOrigin')
 
   const optionFields: Array<keyof components['schemas']['UserSavedProductDetailOption']> = [
     'name',
@@ -382,7 +386,6 @@ test('inventory exposes uploaded photo details without legacy browser photo inpu
     'provider',
     'merchantIntegrationId',
     'externalMerchantId',
-    'externalMerchantDomain',
     'canonicalProductKey',
     'offerKey',
     'sourceType',
@@ -391,6 +394,7 @@ test('inventory exposes uploaded photo details without legacy browser photo inpu
     'externalVariantId',
     'selectedOptions',
   ]
+  expect(commerceReferenceFields as string[]).not.toContain('externalMerchantDomain')
   const selectedOptionFields: Array<keyof SelectedOption> = ['group', 'name', 'value']
   const addHasNoCommerceReference: HasCommerceReference<AddInventory> = false
   const addHasNoCheckoutAttempt: HasCheckoutAttempt<AddInventory> = false

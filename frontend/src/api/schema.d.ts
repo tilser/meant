@@ -1384,6 +1384,8 @@ export interface components {
             identity: components["schemas"]["OfferIdentityResponse"];
             /** @description Merchant display name */
             merchantName?: string;
+            /** @description Verified official storefront origin for buyer display */
+            merchantOrigin?: string;
             /** @description Variant display title */
             variantTitle?: string;
             /** @description Current offer price in integer minor units */
@@ -1442,8 +1444,6 @@ export interface components {
             localRouting?: components["schemas"]["LocalMerchantRoutingResponse"];
             /** @description External merchant reference when supplied by the provider */
             externalMerchantReference?: components["schemas"]["ExternalIdentifierResponse"];
-            /** @description Verified external merchant domain when supplied by the provider */
-            externalMerchantDomain?: string;
             /** @description External product reference */
             externalProductReference: components["schemas"]["ExternalIdentifierResponse"];
             /** @description External variant reference */
@@ -1462,11 +1462,6 @@ export interface components {
             type: "MERCHANT_STOREFRONT" | "PROVIDER_CATALOG" | "DATASET_IMPORT" | "CACHED_OBSERVATION" | "MANUAL_ASSERTION";
             /** @description Source-local debugging reference */
             reference: string;
-            /**
-             * Format: uri
-             * @description Source endpoint or document URL
-             */
-            uri?: string;
         };
         /** @description Typed selling-plan references and identity-bearing option context */
         SellingPlanIdentityResponse: {
@@ -1628,6 +1623,8 @@ export interface components {
             /** Format: int64 */
             reviewCount?: number;
             merchantName?: string;
+            /** @description Verified official storefront origin for buyer display */
+            merchantOrigin?: string;
         };
         UserProductSearchRequest: {
             query: string;
@@ -2193,7 +2190,8 @@ export interface components {
             priceCurrency?: string;
             delivery?: string;
             merchantId?: string;
-            merchantDomain?: string;
+            /** @description Verified official storefront origin for buyer display */
+            merchantOrigin?: string;
             productVariantId?: string;
             variantTitle?: string;
             available?: boolean;
@@ -2266,7 +2264,6 @@ export interface components {
             merchantId: string;
             merchantDomain: string;
             merchantName: string;
-            endpoint: string;
             /** Format: int32 */
             merchantRank: number;
             /** Format: double */
@@ -2402,7 +2399,8 @@ export interface components {
             /** Format: uuid */
             merchantIntegrationId?: string;
             externalMerchantId?: string;
-            externalMerchantDomain?: string;
+            /** @description Verified official storefront origin for buyer display */
+            merchantOrigin?: string;
             canonicalProductKey?: string;
             offerKey?: string;
             /** @enum {string} */
@@ -2462,7 +2460,6 @@ export interface components {
             name: string;
             /** Format: int32 */
             merchantRank: number;
-            endpoint: string;
             /** Format: int32 */
             productCount: number;
             error: string;
@@ -2472,7 +2469,6 @@ export interface components {
             merchantId: string;
             merchantDomain: string;
             merchantName: string;
-            endpoint: string;
             /** Format: int32 */
             merchantRank: number;
             /** Format: double */
@@ -2994,7 +2990,6 @@ export interface components {
             externalMerchantId?: string;
             /** @description Opaque immutable remote-cart seller/provider scope */
             routingScopeKey?: string;
-            endpoint: string;
             remoteCartId: string;
             checkoutUrl?: string;
             continueUrl?: string;
@@ -3609,12 +3604,9 @@ export interface components {
             domain: string;
             name: string;
             description: string;
-            advertisedMcpEndpoint: string;
-            profileMcpEndpoint: string;
             supportsIdentityLinking: boolean;
         };
         MerchantProductDetailsResponse: {
-            endpoint: string;
             productId: string;
             handle: string;
             title: string;
