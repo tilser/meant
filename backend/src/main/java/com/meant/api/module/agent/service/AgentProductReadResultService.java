@@ -6,6 +6,7 @@ import com.meant.api.module.agent.service.dto.AgentCanonicalProductArtifact;
 import com.meant.api.module.agent.service.dto.AgentCanonicalProductArtifact.AgentCanonicalOfferArtifact;
 import com.meant.api.module.agent.service.dto.AgentOfferReferenceResult;
 import com.meant.api.module.agent.service.dto.AgentProductReferenceResult;
+import com.meant.api.module.agent.service.dto.AgentProductVariantDetailsResult;
 import com.meant.api.module.agent.service.dto.AgentSimilarityAnchorResult;
 import com.meant.api.module.agent.service.dto.AgentSimilarityProductArtifact;
 import com.meant.api.module.catalog.service.dto.CanonicalProduct;
@@ -14,6 +15,7 @@ import com.meant.api.module.catalog.service.dto.Offer;
 import com.meant.api.module.catalog.service.dto.OfferRankingExplanation;
 import com.meant.api.module.catalog.service.dto.ProductAttribute;
 import com.meant.api.module.catalog.service.dto.ProductRankingExplanation;
+import com.meant.api.module.catalog.service.dto.RehydratedProductDetails;
 import com.meant.api.module.catalog.service.dto.ResultProvenance;
 import com.meant.api.module.catalog.service.support.CatalogBuyerPresentation;
 import com.meant.api.module.user.service.dto.UserCanonicalProductPersonalizationResult;
@@ -34,6 +36,14 @@ public class AgentProductReadResultService {
     }
 
     public AgentProductReferenceResult reference(CanonicalProduct product, int ordinal) {
+        return reference(product, ordinal, null);
+    }
+
+    public AgentProductReferenceResult reference(
+            CanonicalProduct product,
+            int ordinal,
+            RehydratedProductDetails details
+    ) {
         List<ResultProvenance> provenance = Stream.concat(
                         product.provenance().stream(),
                         product.offers().stream().flatMap(offer -> offer.provenance().stream())
@@ -56,7 +66,8 @@ public class AgentProductReadResultService {
                 bounded(CatalogBuyerPresentation.text(product.description(), provenance)),
                 imageUrl,
                 product.offers().getFirst().key(),
-                offers
+                offers,
+                AgentProductVariantDetailsResult.from(details)
         );
     }
 
