@@ -242,6 +242,41 @@ class UserProductSearchCatalogInputBuilderTest {
         assertThat(input.discoveryFilters()).isSameAs(qualifiedFilters);
     }
 
+    @Test
+    void providerIntentDoesNotDiscloseUnrelatedFoodPreferencesForFootwear() {
+        UserSettingsResult base = settings(new UserLocationResult("United States", "US", "New York"));
+        UserSettingsResult settings = new UserSettingsResult(
+                base.budget(),
+                base.clothingFit(),
+                base.location(),
+                base.locations(),
+                List.of(
+                        new ShoppingFilterResult(
+                                "halal", "Halal", "Require products labeled halal.", "food", "require", 1),
+                        new ShoppingFilterResult(
+                                "natural-materials", "Natural materials", "Prefer natural materials.",
+                                "materials", "prefer", 2)
+                ),
+                base.availableFilters(),
+                base.parsedFilterIds(),
+                base.unmappedPreferences(),
+                base.createdAt(),
+                base.updatedAt()
+        );
+
+        UserProductSearchCatalogInput input = builder.build(
+                "football boots",
+                intent("football boots"),
+                settings
+        );
+
+        assertThat(input.context().intent())
+                .contains("Natural materials")
+                .doesNotContain("Halal", "halal");
+        assertThat(settings.filters()).extracting(ShoppingFilterResult::id)
+                .containsExactly("halal", "natural-materials");
+    }
+
     private UserProductSearchQueryIntentResult intent(String searchQuery) {
         return new UserProductSearchQueryIntentResult(
                 searchQuery,

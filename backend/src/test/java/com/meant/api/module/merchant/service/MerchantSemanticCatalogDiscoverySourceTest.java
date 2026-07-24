@@ -29,7 +29,11 @@ import com.meant.api.module.user.service.UserCanonicalProductCandidateMapper;
 import com.meant.api.module.user.service.UserProductSearchHashService;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryEvent;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryEventType;
+import com.meant.api.module.catalog.service.dto.CatalogDiscoveryAttributeFilter;
+import com.meant.api.module.catalog.service.dto.CatalogDiscoveryAttributeName;
+import com.meant.api.module.catalog.service.dto.CatalogDiscoveryFilters;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryRequest;
+import com.meant.api.module.catalog.service.dto.CatalogDiscoveryTerminalStatus;
 import com.meant.api.module.catalog.service.dto.CatalogSimilarityReference;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifier;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifierType;
@@ -157,6 +161,51 @@ class MerchantSemanticCatalogDiscoverySourceTest {
         assertThat(source.supports(new CatalogDiscoveryRequest(
                 "linen shirt", MERCHANT_ID, 1, null, null, null, similarityReference
         ))).isFalse();
+    }
+
+    @Test
+    void merchantScopedFederationFailsClosedForUnsupportedTypedExtensionConstraints() {
+        MerchantSemanticCatalogDiscoverySource source = source(mock(MerchantIntegrationLookupService.class));
+        CatalogDiscoveryFilters filters = new CatalogDiscoveryFilters(
+                true,
+                List.of(),
+                null,
+                List.of(),
+                null,
+                List.of(),
+                List.of(),
+                List.of(new CatalogDiscoveryAttributeFilter(
+                        CatalogDiscoveryAttributeName.SIZE, List.of("10"))),
+                null,
+                List.of()
+        );
+
+        FederatedCatalogDiscoveryResult result = federation(source).search(new CatalogDiscoveryRequest(
+                "football boots",
+                MERCHANT_ID,
+                10,
+                null,
+                null,
+                null,
+                filters,
+                null,
+                Set.of()
+        ));
+
+        assertThat(source.supports(new CatalogDiscoveryRequest(
+                "football boots",
+                MERCHANT_ID,
+                10,
+                null,
+                null,
+                null,
+                filters,
+                null,
+                Set.of()
+        ))).isFalse();
+        assertThat(result.status()).isEqualTo(CatalogDiscoveryTerminalStatus.FAILED);
+        assertThat(result.sources()).isEmpty();
+        assertThat(result.candidates()).isEmpty();
     }
 
     private MerchantSemanticCatalogDiscoverySource source(

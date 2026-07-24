@@ -62,6 +62,8 @@ public class UserProductSearchQualificationModelService {
             Use NONE with empty evidence when no value or explicit indifference is available. PROFILE and durable
             evidence must quote the supplied context. Explicit indifference may only use ORIGINAL_QUERY or
             CURRENT_USER_TURN. A generic yes is valid only when the prior question targeted exactly one filter.
+            An agent-proposed catalog query hint may help identify the product category or noun, but it is not user
+            evidence and must never supply a filter value, indifference decision, or provenance snippet.
             PROFILE may resolve only SHIPS_TO from saved locations and TARGET_GENDER from clothing fit. A stored
             DURABLE_PREFERENCE may resolve only SIZE and only when its scope clearly matches the current product noun.
             When PROFILE resolves SHIPS_TO, copy country, region, and postalCode exactly from one supplied saved
@@ -141,16 +143,20 @@ public class UserProductSearchQualificationModelService {
             UserProductSearchQualificationPlan repaired = completeCandidate(model, query, repairFeedback);
             UserProductSearchQualificationPlanResolver.Resolution repairedResolution =
                     planResolver.resolve(repaired, query);
-            return result(
-                    repairedResolution.valid()
-                            ? repairedResolution.plan()
-                            : planResolver.safeFallback(repairedResolution.plan()),
-                    model
-            );
+            if (repairedResolution.valid()) {
+                return result(repairedResolution.plan(), model);
+            }
+            if (!repairedResolution.plan().missingFilters().isEmpty()
+                    || !repairedResolution.plan().missingTargets().isEmpty()) {
+                return result(planResolver.safeFallback(repairedResolution.plan()), model);
+            }
+            return result(planResolver.safeFallback(query), model);
         } catch (RuntimeException exception) {
-            UserProductSearchQualificationPlan fallback = firstResolution == null
-                    ? planResolver.safeFallback(query)
-                    : planResolver.safeFallback(firstResolution.plan());
+            UserProductSearchQualificationPlan fallback = firstResolution != null
+                    && (!firstResolution.plan().missingFilters().isEmpty()
+                    || !firstResolution.plan().missingTargets().isEmpty())
+                    ? planResolver.safeFallback(firstResolution.plan())
+                    : planResolver.safeFallback(query);
             return result(fallback, model);
         }
     }
@@ -195,6 +201,9 @@ public class UserProductSearchQualificationModelService {
                     Latest user turn:
                     %s
 
+                    Agent-proposed catalog query hint (category/noun only; never provenance):
+                    %s
+
                     Previous verified qualification plan (null means first turn or legacy plan):
                     %s
 
@@ -206,6 +215,7 @@ public class UserProductSearchQualificationModelService {
                     """.formatted(
                     query.originalQuery().trim(),
                     query.message().trim(),
+                    query.catalogQueryHint() == null ? "null" : query.catalogQueryHint().trim(),
                     query.previousPlan() == null || !query.previousPlan().currentSchema()
                             ? "null"
                             : objectMapper.writeValueAsString(query.previousPlan()),

@@ -1,7 +1,9 @@
 package com.meant.api.module.user.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.meant.api.common.exception.OpenRouterException;
 import com.meant.api.common.properties.OpenRouterProperties;
 import com.meant.api.common.service.OpenRouterChatClient;
 import com.meant.api.common.service.dto.OpenRouterJsonSchemaDefinition;
@@ -153,17 +155,33 @@ class UserProductSearchQualificationModelServiceTest {
     }
 
     @Test
-    void modelFailureFallsBackToABroadReadySearchInsteadOfQuestioningEveryFilter() {
+    void modelFailureForAnUnclassifiedSearchFailsClosed() {
         FakeOpenRouterChatClient client = new FakeOpenRouterChatClient("not-json", "still-not-json");
 
-        var plan = service(client).generate(query("desk lamp", "desk lamp", null)).plan();
+        assertThatThrownBy(() -> service(client).generate(query("desk lamp", "desk lamp", null)))
+                .isInstanceOf(OpenRouterException.class)
+                .hasMessageContaining("no conservative category fallback");
 
         assertThat(client.calls).isEqualTo(2);
-        assertThat(plan.effectiveQuery()).isEqualTo("desk lamp");
-        assertThat(plan.missingFilters()).isEmpty();
-        assertThat(plan.missingTargets()).isEmpty();
-        assertThat(plan.questionTargets()).isEmpty();
-        assertThat(plan.assistantMessage()).contains("everything I need to search");
+    }
+
+    @Test
+    void modelFailureForFootballBootsConservativelyRequiresSizeAndDestination() {
+        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient("not-json", "still-not-json");
+        UserSettingsResult noLocation = new UserSettingsResult(
+                null, null, null, List.of(), List.of(), List.of(), List.of(), List.of(),
+                Instant.EPOCH, Instant.EPOCH);
+        GenerateUserProductSearchQualificationQuery query = new GenerateUserProductSearchQualificationQuery(
+                "football boots", "football boots", null, noLocation, List.of());
+
+        var plan = service(client).generate(query).plan();
+
+        assertThat(client.calls).isEqualTo(2);
+        assertThat(plan.missingTargets()).containsExactlyInAnyOrder(
+                UserProductSearchQuestionTarget.SIZE,
+                UserProductSearchQuestionTarget.SHIPS_TO
+        );
+        assertThat(plan.assistantMessage()).contains("boot size", "ship to");
     }
 
     @Test

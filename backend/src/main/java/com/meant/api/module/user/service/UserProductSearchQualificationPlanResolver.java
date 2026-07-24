@@ -1,6 +1,7 @@
 package com.meant.api.module.user.service;
 
 import com.meant.api.common.util.CountryCodeNormalizer;
+import com.meant.api.common.exception.OpenRouterException;
 import com.meant.api.module.user.constant.UserProductSearchAttributeName;
 import com.meant.api.module.user.constant.UserProductSearchDecisionSource;
 import com.meant.api.module.user.constant.UserProductSearchFilterState;
@@ -19,11 +20,23 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.function.Function;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /** Applies server-owned policy, provenance checks, and multi-turn accumulation to an LLM candidate plan. */
 @Component
 public class UserProductSearchQualificationPlanResolver {
+
+    private final UserProductSearchCategoryPolicy categoryPolicy;
+
+    public UserProductSearchQualificationPlanResolver() {
+        this(new UserProductSearchCategoryPolicy());
+    }
+
+    @Autowired
+    public UserProductSearchQualificationPlanResolver(UserProductSearchCategoryPolicy categoryPolicy) {
+        this.categoryPolicy = categoryPolicy;
+    }
 
     public Resolution resolve(
             UserProductSearchQualificationPlan candidate,
@@ -108,6 +121,7 @@ public class UserProductSearchQualificationPlanResolver {
                 priceTier,
                 durableAttributes(candidate.durableAttributes(), candidate.attributes(), attributes, query, violations)
         );
+        resolved = categoryPolicy.enforce(resolved, query);
         validateQuestionCoverage(resolved, violations);
         return new Resolution(resolved, List.copyOf(violations));
     }
@@ -116,6 +130,15 @@ public class UserProductSearchQualificationPlanResolver {
         List<UserProductSearchQuestionTarget> missing = plan.missingTargets();
         if (missing.isEmpty()) {
             return plan.withConversation("I have everything I need to search.", List.of(), List.of());
+        }
+        if (missing.size() == 2
+                && missing.contains(UserProductSearchQuestionTarget.SIZE)
+                && missing.contains(UserProductSearchQuestionTarget.SHIPS_TO)) {
+            return plan.withConversation(
+                    "What boot size do you need, and what country or postal code should they ship to?",
+                    List.of(),
+                    missing
+            );
         }
         String labels = missing.stream().map(this::label).reduce((left, right) -> left + ", " + right).orElse("");
         return plan.withConversation(
@@ -127,6 +150,10 @@ public class UserProductSearchQualificationPlanResolver {
     }
 
     public UserProductSearchQualificationPlan safeFallback(GenerateUserProductSearchQualificationQuery query) {
+        if (!categoryPolicy.permitsConservativeFallback(query)) {
+            throw new OpenRouterException(
+                    "Product-search qualification failed and no conservative category fallback was available");
+        }
         UserProductSearchQualificationPlan.Provenance none = UserProductSearchQualificationPlan.Provenance.none();
         List<UserProductSearchQualificationPlan.Attribute> attributes = java.util.Arrays.stream(
                         UserProductSearchAttributeName.values())
@@ -170,7 +197,7 @@ public class UserProductSearchQualificationPlanResolver {
                         UserProductSearchFilterState.NOT_APPLICABLE, List.of(), none),
                 List.of()
         );
-        return safeFallback(fallback);
+        return safeFallback(categoryPolicy.enforce(fallback, query));
     }
 
     private UserProductSearchQualificationPlan.ConditionFilter condition(

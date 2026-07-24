@@ -12,7 +12,8 @@ public record GenerateUserProductSearchQualificationQuery(
         @NotBlank String message,
         UserProductSearchQualificationPlan previousPlan,
         @NotNull UserSettingsResult settings,
-        @NotNull List<UserProductSearchPreferenceResult> durablePreferences
+        @NotNull List<UserProductSearchPreferenceResult> durablePreferences,
+        String catalogQueryHint
 ) {
 
     public GenerateUserProductSearchQualificationQuery {
@@ -24,8 +25,19 @@ public record GenerateUserProductSearchQualificationQuery(
             String originalQuery,
             String message,
             UserProductSearchQualificationPlan previousPlan,
+            UserSettingsResult settings,
+            List<UserProductSearchPreferenceResult> durablePreferences
+    ) {
+        this(originalQuery, message, previousPlan, settings, durablePreferences, null);
+    }
+
+    /** Backwards-compatible constructor for callers without durable preference context. */
+    public GenerateUserProductSearchQualificationQuery(
+            String originalQuery,
+            String message,
+            UserProductSearchQualificationPlan previousPlan,
             UserSettingsResult settings
     ) {
-        this(originalQuery, message, previousPlan, settings, List.of());
+        this(originalQuery, message, previousPlan, settings, List.of(), null);
     }
 }

@@ -21,6 +21,8 @@ import com.meant.api.module.catalog.service.dto.CatalogDiscoveryPrice;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryPriceTier;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryRating;
 import com.meant.api.module.user.constant.UserProductSearchPagination;
+import com.meant.api.module.user.constant.UserProductSearchQuestionTarget;
+import com.meant.api.module.user.service.UserProductSearchAgentQualificationService;
 import com.meant.api.module.user.service.UserGroupedProductSearchService;
 import com.meant.api.module.user.service.command.SearchUserProductsCommand;
 import com.meant.api.module.user.service.dto.UserGroupedProductSearchResult;
@@ -69,6 +71,7 @@ public class SearchCatalogAgentTool implements AgentTool {
     private final AgentJsonSupport json;
     private final AgentContextProfileService profileService;
     private final AgentProductReadResultService resultService;
+    private final UserProductSearchAgentQualificationService qualificationService;
     private final UserGroupedProductSearchService searchService;
 
     @Override
@@ -89,29 +92,36 @@ public class SearchCatalogAgentTool implements AgentTool {
             throw AgentProductReadToolException.invalid("Limit must be between 1 and 20.");
         }
         var profile = profileService.profile(context.userId());
+        CatalogDiscoveryFilters requestedFilters = filters(input);
+        String authoritativeUserText = context.triggeringUserText() == null
+                || context.triggeringUserText().isBlank()
+                ? query
+                : context.triggeringUserText().trim();
+        var qualification = qualificationService.qualify(profile, authoritativeUserText, query);
+        if (!qualification.ready()) {
+            return qualificationRequired(
+                    qualification.assistantMessage(),
+                    qualification.questionTargets()
+            );
+        }
+        CatalogDiscoveryFilters filters = qualification.filters();
+        requireRequestedFiltersAuthorized(requestedFilters, filters);
+        if (context.merchantId() != null && !merchantSupports(filters)) {
+            throw AgentProductReadToolException.invalid(
+                    "This merchant-scoped catalog cannot enforce one or more qualified hard constraints. "
+                            + "Remove the merchant scope or ask the user before broadening the request.");
+        }
         SearchUserProductsCommand command = new SearchUserProductsCommand(
                 context.userId(),
-                query,
+                qualification.effectiveQuery(),
                 context.merchantId(),
                 null,
                 null,
                 offset,
                 limit
         );
-        CatalogDiscoveryFilters filters = filters(input);
-        UserGroupedProductSearchResult result = filters == null
-                ? searchService.search(profile, command)
-                : searchService.search(profile, command, filters);
-        List<String> adjustments = List.of();
-        CatalogDiscoveryFilters relaxed = relaxedQualityFilters(filters);
-        if (offset == 0 && result.products().isEmpty() && relaxed != null) {
-            result = searchService.search(profile, command, relaxed);
-            adjustments = List.of(
-                    "No products matched the rating or relative price-tier thresholds, so those quality thresholds "
-                            + "were relaxed. Destination, price, condition, and product attributes were preserved."
-            );
-        }
-        return response(result, adjustments);
+        UserGroupedProductSearchResult result = searchService.search(profile, command, filters);
+        return response(result, List.of());
     }
 
     private AgentToolExecutionResult response(
@@ -196,22 +206,58 @@ public class SearchCatalogAgentTool implements AgentTool {
                 : null;
     }
 
-    private CatalogDiscoveryFilters relaxedQualityFilters(CatalogDiscoveryFilters filters) {
-        if (filters == null || filters.rating() == null && filters.priceTiers().isEmpty()) {
-            return null;
-        }
-        return new CatalogDiscoveryFilters(
-                filters.available(),
-                filters.conditions(),
-                filters.shipsTo(),
-                filters.shipsFrom(),
-                filters.price(),
-                filters.shopIds(),
-                filters.categoryIds(),
-                filters.attributes(),
+    private AgentToolExecutionResult qualificationRequired(
+            String question,
+            List<UserProductSearchQuestionTarget> targets
+    ) {
+        AgentProductListResult output = new AgentProductListResult(
+                List.of(),
                 null,
-                List.of()
+                false,
+                false,
+                List.of(),
+                null,
+                List.of(),
+                question,
+                targets
         );
+        return AgentToolExecutionResult.read(json.write(output), question, List.of());
+    }
+
+    private void requireRequestedFiltersAuthorized(
+            CatalogDiscoveryFilters requested,
+            CatalogDiscoveryFilters authorized
+    ) {
+        if (requested == null) {
+            return;
+        }
+        boolean authorizedRequest = authorized != null
+                && authorized.conditions().containsAll(requested.conditions())
+                && java.util.Objects.equals(authorized.shipsTo(), requested.shipsTo())
+                && authorized.shipsFrom().containsAll(requested.shipsFrom())
+                && java.util.Objects.equals(authorized.price(), requested.price())
+                && requested.attributes().stream().allMatch(requestedAttribute ->
+                        authorized.attributes().stream().anyMatch(authorizedAttribute ->
+                                authorizedAttribute.name() == requestedAttribute.name()
+                                        && authorizedAttribute.values().containsAll(requestedAttribute.values())))
+                && java.util.Objects.equals(authorized.rating(), requested.rating())
+                && authorized.priceTiers().containsAll(requested.priceTiers());
+        if (!authorizedRequest) {
+            throw AgentProductReadToolException.invalid(
+                    "One or more typed catalog constraints were not validated from the request or stored profile.");
+        }
+    }
+
+    private boolean merchantSupports(CatalogDiscoveryFilters filters) {
+        return filters != null
+                && !Boolean.FALSE.equals(filters.available())
+                && filters.conditions().isEmpty()
+                && filters.shipsTo() == null
+                && filters.shipsFrom().isEmpty()
+                && filters.shopIds().isEmpty()
+                && filters.attributes().isEmpty()
+                && filters.rating() == null
+                && filters.priceTiers().isEmpty();
     }
 
     private List<CatalogDiscoveryAttributeFilter> attributes(

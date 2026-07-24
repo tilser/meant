@@ -7,7 +7,6 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 import com.meant.api.module.agent.exception.AgentException;
@@ -20,9 +19,12 @@ import com.meant.api.module.catalog.service.dto.CatalogDiscoveryAttributeName;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryCondition;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryFilters;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryPriceTier;
+import com.meant.api.module.user.constant.UserProductSearchQuestionTarget;
 import com.meant.api.module.user.service.UserGroupedProductSearchService;
+import com.meant.api.module.user.service.UserProductSearchAgentQualificationService;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.command.SearchUserProductsCommand;
+import com.meant.api.module.user.service.dto.UserProductSearchAgentQualificationResult;
 import com.meant.api.module.user.service.dto.UserGroupedProductSearchResult;
 import java.math.BigDecimal;
 import java.util.List;
@@ -39,6 +41,8 @@ class SearchCatalogAgentToolTest {
         AgentJsonSupport json = mock(AgentJsonSupport.class);
         AgentContextProfileService profiles = mock(AgentContextProfileService.class);
         AgentProductReadResultService results = mock(AgentProductReadResultService.class);
+        UserProductSearchAgentQualificationService qualifications =
+                mock(UserProductSearchAgentQualificationService.class);
         UserGroupedProductSearchService searches = mock(UserGroupedProductSearchService.class);
         EnsureUserProfileCommand profile = new EnsureUserProfileCommand(
                 userId, "shopper@example.test", "Shopper", null);
@@ -46,16 +50,19 @@ class SearchCatalogAgentToolTest {
         when(json.readArguments("{}", SearchCatalogAgentToolInput.class))
                 .thenReturn(new SearchCatalogAgentToolInput("trail shoes", 0, 10));
         when(profiles.profile(userId)).thenReturn(profile);
+        when(qualifications.qualify(profile, "find shoes", "trail shoes"))
+                .thenReturn(ready("trail shoes", availableOnly()));
         when(result.products()).thenReturn(List.of());
-        when(searches.search(eq(profile), any())).thenReturn(result);
+        when(searches.search(eq(profile), any(), any(CatalogDiscoveryFilters.class))).thenReturn(result);
         when(json.write(any())).thenReturn("{}");
-        SearchCatalogAgentTool tool = new SearchCatalogAgentTool(json, profiles, results, searches);
+        SearchCatalogAgentTool tool = new SearchCatalogAgentTool(
+                json, profiles, results, qualifications, searches);
 
         tool.execute(context(userId).withMerchantId(merchantId), "{}");
 
         ArgumentCaptor<SearchUserProductsCommand> command =
                 ArgumentCaptor.forClass(SearchUserProductsCommand.class);
-        verify(searches).search(eq(profile), command.capture());
+        verify(searches).search(eq(profile), command.capture(), any(CatalogDiscoveryFilters.class));
         assertThat(command.getValue().merchantId()).isEqualTo(merchantId);
         assertThat(tool.descriptor().inputSchemaJson()).doesNotContain("merchantId");
     }
@@ -65,10 +72,13 @@ class SearchCatalogAgentToolTest {
         AgentJsonSupport json = mock(AgentJsonSupport.class);
         AgentContextProfileService profiles = mock(AgentContextProfileService.class);
         AgentProductReadResultService results = mock(AgentProductReadResultService.class);
+        UserProductSearchAgentQualificationService qualifications =
+                mock(UserProductSearchAgentQualificationService.class);
         UserGroupedProductSearchService searches = mock(UserGroupedProductSearchService.class);
         when(json.readArguments("{}", SearchCatalogAgentToolInput.class))
                 .thenReturn(new SearchCatalogAgentToolInput(" ", null, null));
-        SearchCatalogAgentTool tool = new SearchCatalogAgentTool(json, profiles, results, searches);
+        SearchCatalogAgentTool tool = new SearchCatalogAgentTool(
+                json, profiles, results, qualifications, searches);
 
         assertThat(tool.descriptor().name()).isEqualTo("search_catalog");
         assertThat(tool.descriptor().inputSchemaJson())
@@ -77,7 +87,7 @@ class SearchCatalogAgentToolTest {
         assertThatThrownBy(() -> tool.execute(context(), "{}"))
                 .isInstanceOf(AgentException.class)
                 .hasMessageContaining("query is required");
-        verifyNoInteractions(profiles, results, searches);
+        verifyNoInteractions(profiles, results, qualifications, searches);
     }
 
     @Test
@@ -86,6 +96,8 @@ class SearchCatalogAgentToolTest {
         AgentJsonSupport json = mock(AgentJsonSupport.class);
         AgentContextProfileService profiles = mock(AgentContextProfileService.class);
         AgentProductReadResultService results = mock(AgentProductReadResultService.class);
+        UserProductSearchAgentQualificationService qualifications =
+                mock(UserProductSearchAgentQualificationService.class);
         UserGroupedProductSearchService searches = mock(UserGroupedProductSearchService.class);
         EnsureUserProfileCommand profile = new EnsureUserProfileCommand(
                 userId, "shopper@example.test", "Shopper", null);
@@ -110,10 +122,32 @@ class SearchCatalogAgentToolTest {
                 )
         );
         when(profiles.profile(userId)).thenReturn(profile);
+        CatalogDiscoveryFilters authorized = new CatalogDiscoveryFilters(
+                true,
+                List.of(CatalogDiscoveryCondition.NEW),
+                new com.meant.api.module.catalog.service.dto.CatalogDiscoveryLocation("US", "NY", "10001"),
+                List.of(new com.meant.api.module.catalog.service.dto.CatalogDiscoveryLocation("CA", null, null)),
+                new com.meant.api.module.catalog.service.dto.CatalogDiscoveryPrice(5_000L, 18_025L),
+                List.of(),
+                List.of(),
+                List.of(
+                        new com.meant.api.module.catalog.service.dto.CatalogDiscoveryAttributeFilter(
+                                CatalogDiscoveryAttributeName.COLOR, List.of("Black")),
+                        new com.meant.api.module.catalog.service.dto.CatalogDiscoveryAttributeFilter(
+                                CatalogDiscoveryAttributeName.SIZE, List.of("10")),
+                        new com.meant.api.module.catalog.service.dto.CatalogDiscoveryAttributeFilter(
+                                CatalogDiscoveryAttributeName.TARGET_GENDER, List.of("Unisex"))
+                ),
+                null,
+                List.of()
+        );
+        when(qualifications.qualify(profile, "find shoes", "black football boots"))
+                .thenReturn(ready("black football boots", authorized));
         when(result.products()).thenReturn(List.of());
         when(searches.search(eq(profile), any(), any(CatalogDiscoveryFilters.class))).thenReturn(result);
         when(json.write(any())).thenReturn("{}");
-        SearchCatalogAgentTool tool = new SearchCatalogAgentTool(json, profiles, results, searches);
+        SearchCatalogAgentTool tool = new SearchCatalogAgentTool(
+                json, profiles, results, qualifications, searches);
 
         tool.execute(context(userId), "{}");
 
@@ -147,11 +181,13 @@ class SearchCatalogAgentToolTest {
     }
 
     @Test
-    void retriesEmptyFirstPageByRelaxingOnlyRatingAndPriceTier() {
+    void preservesExplicitRatingAndPriceTierWhenTheSearchIsEmpty() {
         UUID userId = UUID.randomUUID();
         AgentJsonSupport json = mock(AgentJsonSupport.class);
         AgentContextProfileService profiles = mock(AgentContextProfileService.class);
         AgentProductReadResultService results = mock(AgentProductReadResultService.class);
+        UserProductSearchAgentQualificationService qualifications =
+                mock(UserProductSearchAgentQualificationService.class);
         UserGroupedProductSearchService searches = mock(UserGroupedProductSearchService.class);
         EnsureUserProfileCommand profile = new EnsureUserProfileCommand(
                 userId, "shopper@example.test", "Shopper", null);
@@ -168,35 +204,132 @@ class SearchCatalogAgentToolTest {
                 10
         );
         UserGroupedProductSearchResult empty = mock(UserGroupedProductSearchResult.class);
-        UserGroupedProductSearchResult relaxedResult = mock(UserGroupedProductSearchResult.class);
         when(json.readArguments("{}", SearchCatalogAgentToolInput.class)).thenReturn(input);
         when(profiles.profile(userId)).thenReturn(profile);
+        CatalogDiscoveryFilters authorized = new CatalogDiscoveryFilters(
+                true,
+                List.of(CatalogDiscoveryCondition.NEW),
+                new com.meant.api.module.catalog.service.dto.CatalogDiscoveryLocation("US", null, null),
+                List.of(),
+                new com.meant.api.module.catalog.service.dto.CatalogDiscoveryPrice(null, 15_000L),
+                List.of(),
+                List.of(),
+                List.of(new com.meant.api.module.catalog.service.dto.CatalogDiscoveryAttributeFilter(
+                        CatalogDiscoveryAttributeName.SIZE, List.of("10"))),
+                new com.meant.api.module.catalog.service.dto.CatalogDiscoveryRating(new BigDecimal("4.8"), 100L),
+                List.of(CatalogDiscoveryPriceTier.LOW)
+        );
+        when(qualifications.qualify(profile, "find shoes", "size 10 football boots under $150"))
+                .thenReturn(ready("football boots", authorized));
         when(empty.products()).thenReturn(List.of());
-        when(relaxedResult.products()).thenReturn(List.of());
         when(searches.search(eq(profile), any(), any(CatalogDiscoveryFilters.class)))
-                .thenReturn(empty, relaxedResult);
+                .thenReturn(empty);
         when(json.write(any())).thenReturn("{}");
-        SearchCatalogAgentTool tool = new SearchCatalogAgentTool(json, profiles, results, searches);
+        SearchCatalogAgentTool tool = new SearchCatalogAgentTool(
+                json, profiles, results, qualifications, searches);
 
         var execution = tool.execute(context(userId), "{}");
 
         ArgumentCaptor<CatalogDiscoveryFilters> filters =
                 ArgumentCaptor.forClass(CatalogDiscoveryFilters.class);
-        verify(searches, times(2)).search(eq(profile), any(SearchUserProductsCommand.class), filters.capture());
-        CatalogDiscoveryFilters original = filters.getAllValues().get(0);
-        CatalogDiscoveryFilters relaxed = filters.getAllValues().get(1);
-        assertThat(original.rating()).isNotNull();
-        assertThat(original.priceTiers()).containsExactly(CatalogDiscoveryPriceTier.LOW);
-        assertThat(relaxed.rating()).isNull();
-        assertThat(relaxed.priceTiers()).isEmpty();
-        assertThat(relaxed.shipsTo()).isEqualTo(original.shipsTo());
-        assertThat(relaxed.price()).isEqualTo(original.price());
-        assertThat(relaxed.conditions()).isEqualTo(original.conditions());
-        assertThat(relaxed.attributes()).isEqualTo(original.attributes());
-        assertThat(execution.safeSummary()).contains(
-                "rating or relative price-tier thresholds",
-                "Destination, price, condition, and product attributes were preserved"
+        verify(searches).search(eq(profile), any(SearchUserProductsCommand.class), filters.capture());
+        assertThat(filters.getValue().rating()).isEqualTo(authorized.rating());
+        assertThat(filters.getValue().priceTiers()).containsExactly(CatalogDiscoveryPriceTier.LOW);
+        assertThat(execution.safeSummary()).isEqualTo("Found 0 grounded product option(s).");
+    }
+
+    @Test
+    void blocksCatalogExecutionWhenServerQualificationFindsCriticalBootGaps() {
+        UUID userId = UUID.randomUUID();
+        AgentJsonSupport json = mock(AgentJsonSupport.class);
+        AgentContextProfileService profiles = mock(AgentContextProfileService.class);
+        AgentProductReadResultService results = mock(AgentProductReadResultService.class);
+        UserProductSearchAgentQualificationService qualifications =
+                mock(UserProductSearchAgentQualificationService.class);
+        UserGroupedProductSearchService searches = mock(UserGroupedProductSearchService.class);
+        EnsureUserProfileCommand profile = new EnsureUserProfileCommand(
+                userId, "shopper@example.test", "Shopper", null);
+        when(json.readArguments("{}", SearchCatalogAgentToolInput.class))
+                .thenReturn(new SearchCatalogAgentToolInput("football boots", 0, 10));
+        when(profiles.profile(userId)).thenReturn(profile);
+        when(qualifications.qualify(profile, "find shoes", "football boots")).thenReturn(
+                new UserProductSearchAgentQualificationResult(
+                        "football boots",
+                        "What boot size do you need, and what country or postal code should they ship to?",
+                        List.of(UserProductSearchQuestionTarget.SIZE, UserProductSearchQuestionTarget.SHIPS_TO),
+                        null
+                )
         );
+        when(json.write(any())).thenReturn("{}");
+        SearchCatalogAgentTool tool = new SearchCatalogAgentTool(
+                json, profiles, results, qualifications, searches);
+
+        var execution = tool.execute(context(userId), "{}");
+
+        assertThat(execution.safeSummary()).contains("What boot size", "ship to");
+        verifyNoInteractions(searches, results);
+    }
+
+    @Test
+    void failsClosedWhenMerchantScopedSearchCannotEnforceAQualifiedExtensionConstraint() {
+        UUID userId = UUID.randomUUID();
+        AgentJsonSupport json = mock(AgentJsonSupport.class);
+        AgentContextProfileService profiles = mock(AgentContextProfileService.class);
+        AgentProductReadResultService results = mock(AgentProductReadResultService.class);
+        UserProductSearchAgentQualificationService qualifications =
+                mock(UserProductSearchAgentQualificationService.class);
+        UserGroupedProductSearchService searches = mock(UserGroupedProductSearchService.class);
+        EnsureUserProfileCommand profile = new EnsureUserProfileCommand(
+                userId, "shopper@example.test", "Shopper", null);
+        SearchCatalogAgentToolInput input = new SearchCatalogAgentToolInput(
+                "size 10 football boots",
+                null,
+                List.of(),
+                null,
+                List.of(),
+                List.of(new SearchCatalogAgentToolInput.Attribute("Size", List.of("10"))),
+                null,
+                List.of(),
+                0,
+                10
+        );
+        CatalogDiscoveryFilters authorized = new CatalogDiscoveryFilters(
+                true,
+                List.of(),
+                null,
+                List.of(),
+                null,
+                List.of(),
+                List.of(),
+                List.of(new com.meant.api.module.catalog.service.dto.CatalogDiscoveryAttributeFilter(
+                        CatalogDiscoveryAttributeName.SIZE, List.of("10"))),
+                null,
+                List.of()
+        );
+        when(json.readArguments("{}", SearchCatalogAgentToolInput.class)).thenReturn(input);
+        when(profiles.profile(userId)).thenReturn(profile);
+        when(qualifications.qualify(profile, "find shoes", "size 10 football boots"))
+                .thenReturn(ready("football boots", authorized));
+        SearchCatalogAgentTool tool = new SearchCatalogAgentTool(
+                json, profiles, results, qualifications, searches);
+
+        assertThatThrownBy(() -> tool.execute(
+                context(userId).withMerchantId(UUID.randomUUID()), "{}"))
+                .isInstanceOf(AgentException.class)
+                .hasMessageContaining("cannot enforce");
+        verifyNoInteractions(searches, results);
+    }
+
+    private UserProductSearchAgentQualificationResult ready(
+            String query,
+            CatalogDiscoveryFilters filters
+    ) {
+        return new UserProductSearchAgentQualificationResult(query, "Ready", List.of(), filters);
+    }
+
+    private CatalogDiscoveryFilters availableOnly() {
+        return new CatalogDiscoveryFilters(
+                true, List.of(), null, List.of(), null, List.of(), List.of(), List.of(), null, List.of());
     }
 
     private AgentToolExecutionContext context() {

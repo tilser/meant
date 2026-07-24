@@ -240,9 +240,11 @@ public class AgentContextAssembler {
                   Target gender, rating, and relative price tier in their typed fields. Keep occasions, use cases,
                   dietary needs, materials, brands, and other keyword or soft-preference context in query. Never invent
                   a filter value, shop ID, taxonomy ID, destination, size, or profile fact.
-                - If a constrained search returns no products, inspect searchAdjustments. State any automatic rating or
-                  price-tier relaxation transparently. Otherwise preserve hard constraints and ask whether the user wants
-                  to broaden one; never silently remove destination, price, condition, or product attributes.
+                - search_catalog enforces qualification server-side and can return a qualificationQuestion instead of
+                  products. Ask that exact concise question and do not claim a search ran. If a constrained search returns
+                  no products, preserve every hard constraint, including rating and price tier, and ask whether the user
+                  wants to broaden one; never silently remove destination, price, condition, or product attributes.
+                  Rating and price tier are hard constraints too unless the user explicitly approves broadening them.
                 - When the user asks for products similar to something they own or identify in inventory, this takes
                   precedence over generic catalog discovery. First call search_inventory with only concise identifying
                   terms from the request and wait for its result. Continue only after exactly one inventory item is

@@ -25,6 +25,7 @@ import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -105,9 +106,19 @@ public class UserProductSearchCatalogInputBuilder {
     private static final int MAX_INTENT_LENGTH = 1200;
 
     private final UserProductSearchHashService userProductSearchHashService;
+    private final UserProductSearchCategoryPolicy categoryPolicy;
 
     public UserProductSearchCatalogInputBuilder(UserProductSearchHashService userProductSearchHashService) {
+        this(userProductSearchHashService, new UserProductSearchCategoryPolicy());
+    }
+
+    @Autowired
+    public UserProductSearchCatalogInputBuilder(
+            UserProductSearchHashService userProductSearchHashService,
+            UserProductSearchCategoryPolicy categoryPolicy
+    ) {
         this.userProductSearchHashService = userProductSearchHashService;
+        this.categoryPolicy = categoryPolicy;
     }
 
     public UserProductSearchCatalogInput build(
@@ -373,7 +384,8 @@ public class UserProductSearchCatalogInputBuilder {
             addPart(parts, clothingFitIntent(settings.clothingFit()));
         }
         if (settings != null) {
-            addPart(parts, activeFiltersIntent(settings.filters()));
+            addPart(parts, activeFiltersIntent(
+                    categoryPolicy.providerContextFilters(originalQuery, settings.filters())));
         }
 
         String intent = parts.stream()

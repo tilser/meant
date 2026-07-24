@@ -14,6 +14,7 @@ import com.meant.api.module.merchant.service.dto.MerchantSemanticProductSearchRe
 import com.meant.api.module.merchant.service.query.ListMerchantIntegrationsQuery;
 import com.meant.api.module.merchant.service.query.SemanticProductSearchQuery;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryRequest;
+import com.meant.api.module.catalog.service.dto.CatalogDiscoveryFilters;
 import com.meant.api.module.catalog.service.dto.CatalogSourceFailure;
 import com.meant.api.module.catalog.service.dto.CatalogSourceFailureKind;
 import com.meant.api.module.catalog.service.dto.CatalogSourceOperation;
@@ -80,7 +81,21 @@ public class MerchantSemanticCatalogDiscoverySource implements CatalogDiscoveryS
 
     @Override
     public boolean supports(CatalogDiscoveryRequest request) {
-        return !request.broad() && request.similarityReference() == null;
+        return !request.broad()
+                && request.similarityReference() == null
+                && supportsDiscoveryFilters(request.discoveryFilters());
+    }
+
+    private boolean supportsDiscoveryFilters(CatalogDiscoveryFilters filters) {
+        return filters == null
+                || !Boolean.FALSE.equals(filters.available())
+                && filters.conditions().isEmpty()
+                && filters.shipsTo() == null
+                && filters.shipsFrom().isEmpty()
+                && filters.shopIds().isEmpty()
+                && filters.attributes().isEmpty()
+                && filters.rating() == null
+                && filters.priceTiers().isEmpty();
     }
 
     @Override
