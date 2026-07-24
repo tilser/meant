@@ -97,7 +97,12 @@ public class SearchCatalogAgentTool implements AgentTool {
                 || context.triggeringUserText().isBlank()
                 ? query
                 : context.triggeringUserText().trim();
-        var qualification = qualificationService.qualify(profile, authoritativeUserText, query);
+        var qualification = qualificationService.qualify(
+                profile,
+                context.conversationId(),
+                context.merchantId(),
+                authoritativeUserText
+        );
         if (!qualification.ready()) {
             return qualificationRequired(
                     qualification.assistantMessage(),

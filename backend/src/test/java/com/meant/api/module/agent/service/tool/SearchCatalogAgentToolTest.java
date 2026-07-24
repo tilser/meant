@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -50,7 +51,8 @@ class SearchCatalogAgentToolTest {
         when(json.readArguments("{}", SearchCatalogAgentToolInput.class))
                 .thenReturn(new SearchCatalogAgentToolInput("trail shoes", 0, 10));
         when(profiles.profile(userId)).thenReturn(profile);
-        when(qualifications.qualify(profile, "find shoes", "trail shoes"))
+        when(qualifications.qualify(
+                eq(profile), any(UUID.class), nullable(UUID.class), eq("find shoes")))
                 .thenReturn(ready("trail shoes", availableOnly()));
         when(result.products()).thenReturn(List.of());
         when(searches.search(eq(profile), any(), any(CatalogDiscoveryFilters.class))).thenReturn(result);
@@ -141,7 +143,8 @@ class SearchCatalogAgentToolTest {
                 null,
                 List.of()
         );
-        when(qualifications.qualify(profile, "find shoes", "black football boots"))
+        when(qualifications.qualify(
+                eq(profile), any(UUID.class), nullable(UUID.class), eq("find shoes")))
                 .thenReturn(ready("black football boots", authorized));
         when(result.products()).thenReturn(List.of());
         when(searches.search(eq(profile), any(), any(CatalogDiscoveryFilters.class))).thenReturn(result);
@@ -219,7 +222,8 @@ class SearchCatalogAgentToolTest {
                 new com.meant.api.module.catalog.service.dto.CatalogDiscoveryRating(new BigDecimal("4.8"), 100L),
                 List.of(CatalogDiscoveryPriceTier.LOW)
         );
-        when(qualifications.qualify(profile, "find shoes", "size 10 football boots under $150"))
+        when(qualifications.qualify(
+                eq(profile), any(UUID.class), nullable(UUID.class), eq("find shoes")))
                 .thenReturn(ready("football boots", authorized));
         when(empty.products()).thenReturn(List.of());
         when(searches.search(eq(profile), any(), any(CatalogDiscoveryFilters.class)))
@@ -252,8 +256,10 @@ class SearchCatalogAgentToolTest {
         when(json.readArguments("{}", SearchCatalogAgentToolInput.class))
                 .thenReturn(new SearchCatalogAgentToolInput("football boots", 0, 10));
         when(profiles.profile(userId)).thenReturn(profile);
-        when(qualifications.qualify(profile, "find shoes", "football boots")).thenReturn(
+        when(qualifications.qualify(
+                eq(profile), any(UUID.class), nullable(UUID.class), eq("find shoes"))).thenReturn(
                 new UserProductSearchAgentQualificationResult(
+                        UUID.randomUUID(),
                         "football boots",
                         "What boot size do you need, and what country or postal code should they ship to?",
                         List.of(UserProductSearchQuestionTarget.SIZE, UserProductSearchQuestionTarget.SHIPS_TO),
@@ -308,7 +314,8 @@ class SearchCatalogAgentToolTest {
         );
         when(json.readArguments("{}", SearchCatalogAgentToolInput.class)).thenReturn(input);
         when(profiles.profile(userId)).thenReturn(profile);
-        when(qualifications.qualify(profile, "find shoes", "size 10 football boots"))
+        when(qualifications.qualify(
+                eq(profile), any(UUID.class), nullable(UUID.class), eq("find shoes")))
                 .thenReturn(ready("football boots", authorized));
         SearchCatalogAgentTool tool = new SearchCatalogAgentTool(
                 json, profiles, results, qualifications, searches);
@@ -324,7 +331,8 @@ class SearchCatalogAgentToolTest {
             String query,
             CatalogDiscoveryFilters filters
     ) {
-        return new UserProductSearchAgentQualificationResult(query, "Ready", List.of(), filters);
+        return new UserProductSearchAgentQualificationResult(
+                UUID.randomUUID(), query, "Ready", List.of(), filters);
     }
 
     private CatalogDiscoveryFilters availableOnly() {

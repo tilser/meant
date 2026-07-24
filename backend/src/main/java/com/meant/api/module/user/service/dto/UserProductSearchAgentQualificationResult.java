@@ -3,9 +3,11 @@ package com.meant.api.module.user.service.dto;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryFilters;
 import com.meant.api.module.user.constant.UserProductSearchQuestionTarget;
 import java.util.List;
+import java.util.UUID;
 
 /** Server-validated qualification outcome for one agent catalog-search attempt. */
 public record UserProductSearchAgentQualificationResult(
+        UUID qualificationId,
         String effectiveQuery,
         String assistantMessage,
         List<UserProductSearchQuestionTarget> questionTargets,

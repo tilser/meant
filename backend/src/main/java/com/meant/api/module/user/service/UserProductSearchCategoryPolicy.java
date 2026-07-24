@@ -58,7 +58,7 @@ public class UserProductSearchCategoryPolicy {
             UserProductSearchQualificationPlan plan,
             GenerateUserProductSearchQualificationQuery query
     ) {
-        Category category = category(query);
+        Category category = category(query.originalQuery(), query.message());
         var shipsTo = plan.shipsTo();
         var shipsFrom = plan.shipsFrom();
         EnumMap<UserProductSearchAttributeName, UserProductSearchQualificationPlan.Attribute> attributes =
@@ -135,7 +135,7 @@ public class UserProductSearchCategoryPolicy {
     }
 
     public boolean permitsConservativeFallback(GenerateUserProductSearchQualificationQuery query) {
-        Category category = category(query);
+        Category category = category(query.originalQuery(), query.message());
         return (category == Category.FIT_SENSITIVE_FOOTWEAR
                 || category == Category.FOOD
                 || category == Category.DIGITAL)
@@ -193,19 +193,6 @@ public class UserProductSearchCategoryPolicy {
         return Category.OTHER;
     }
 
-    private Category category(GenerateUserProductSearchQualificationQuery query) {
-        if (query.catalogQueryHint() == null || query.catalogQueryHint().isBlank()) {
-            return category(query.originalQuery(), query.message());
-        }
-        Category authoritative = explicitCategory(query.message());
-        if (authoritative == Category.OTHER) {
-            authoritative = explicitCategory(query.originalQuery());
-        }
-        return authoritative == Category.OTHER
-                ? explicitCategory(query.catalogQueryHint())
-                : authoritative;
-    }
-
     private boolean hasUnverifiedHardConstraint(String value) {
         return value != null && UNVERIFIED_HARD_CONSTRAINT.matcher(value).find();
     }
@@ -213,8 +200,7 @@ public class UserProductSearchCategoryPolicy {
     private UserProductSearchQualificationPlan.Attribute durableSize(
             GenerateUserProductSearchQualificationQuery query
     ) {
-        String searchText = normalize(query.originalQuery() + " " + query.message() + " "
-                + (query.catalogQueryHint() == null ? "" : query.catalogQueryHint()));
+        String searchText = normalize(query.originalQuery() + " " + query.message());
         return query.durablePreferences().stream()
                 .filter(preference -> preference.attributeName() == UserProductSearchAttributeName.SIZE)
                 .filter(preference -> scopeMatches(preference.scope(), searchText))

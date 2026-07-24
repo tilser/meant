@@ -9,14 +9,17 @@ import static org.mockito.Mockito.when;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryAttributeFilter;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryAttributeName;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryFilters;
-import com.meant.api.module.user.constant.UserProductSearchAttributeName;
+import com.meant.api.module.user.constant.UserProductSearchQualificationStatus;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
-import com.meant.api.module.user.service.dto.UserProductSearchPreferenceResult;
-import com.meant.api.module.user.service.dto.UserProductSearchQualificationModelResult;
+import com.meant.api.module.user.service.command.QualifyUserProductSearchCommand;
 import com.meant.api.module.user.service.dto.UserProductSearchQualificationPlan;
-import com.meant.api.module.user.service.dto.UserSettingsResult;
-import com.meant.api.module.user.service.query.GenerateUserProductSearchQualificationQuery;
+import com.meant.api.module.user.service.dto.UserProductSearchQualificationResult;
+import com.meant.api.module.user.service.dto.UserProductSearchQualificationSnapshot;
+import com.meant.api.module.user.service.query.FindPendingUserProductSearchQualificationQuery;
+import com.meant.api.module.user.service.query.GetUserProductSearchQualificationQuery;
+import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -24,18 +27,33 @@ import org.mockito.ArgumentCaptor;
 class UserProductSearchAgentQualificationServiceTest {
 
     @Test
-    void loadsDurablePreferencesAndReturnsOnlyServerMappedHardFilters() {
-        UserSettingsService settingsService = mock(UserSettingsService.class);
-        UserProductSearchPreferenceService preferenceService = mock(UserProductSearchPreferenceService.class);
-        UserProductSearchQualificationModelService modelService =
-                mock(UserProductSearchQualificationModelService.class);
+    void resumesTheLatestPendingConversationQualificationAndUsesItsValidatedPlan() {
+        UserProductSearchQualificationService qualificationService =
+                mock(UserProductSearchQualificationService.class);
+        UserProductSearchQualificationPersistenceService persistenceService =
+                mock(UserProductSearchQualificationPersistenceService.class);
         UserProductSearchQualificationPlanMapper mapper = mock(UserProductSearchQualificationPlanMapper.class);
-        UserProductSearchQualificationPlan plan = mock(UserProductSearchQualificationPlan.class);
-        UserSettingsResult settings = mock(UserSettingsResult.class);
+        UserProductSearchQualificationPlan pendingPlan = mock(UserProductSearchQualificationPlan.class);
+        UserProductSearchQualificationPlan readyPlan = mock(UserProductSearchQualificationPlan.class);
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID qualificationId = UUID.randomUUID();
         EnsureUserProfileCommand profile = new EnsureUserProfileCommand(
-                UUID.randomUUID(), "shopper@example.test", "Shopper", null);
-        List<UserProductSearchPreferenceResult> durable = List.of(new UserProductSearchPreferenceResult(
-                "football-boots", UserProductSearchAttributeName.SIZE, List.of("10")));
+                userId, "shopper@example.test", "Shopper", null);
+        UserProductSearchQualificationSnapshot pending = snapshot(
+                qualificationId,
+                userId,
+                conversationId,
+                UserProductSearchQualificationStatus.NEEDS_INPUT,
+                pendingPlan
+        );
+        UserProductSearchQualificationSnapshot ready = snapshot(
+                qualificationId,
+                userId,
+                conversationId,
+                UserProductSearchQualificationStatus.READY,
+                readyPlan
+        );
         CatalogDiscoveryFilters filters = new CatalogDiscoveryFilters(
                 true,
                 List.of(),
@@ -49,32 +67,65 @@ class UserProductSearchAgentQualificationServiceTest {
                 null,
                 List.of()
         );
-        when(settingsService.get(profile)).thenReturn(settings);
-        when(preferenceService.list(profile.id())).thenReturn(durable);
-        when(modelService.generate(any())).thenReturn(
-                new UserProductSearchQualificationModelResult(plan, "model", "prompt"));
-        when(plan.missingFilters()).thenReturn(List.of());
-        when(plan.missingTargets()).thenReturn(List.of());
-        when(plan.effectiveQuery()).thenReturn("football boots");
-        when(mapper.map(plan)).thenReturn(filters);
+        when(persistenceService.findLatestPending(any())).thenReturn(Optional.of(pending));
+        when(qualificationService.qualify(any(), any())).thenReturn(new UserProductSearchQualificationResult(
+                qualificationId,
+                UserProductSearchQualificationStatus.READY,
+                "Ready",
+                List.of(),
+                List.of(),
+                "football boots"
+        ));
+        when(persistenceService.find(any(GetUserProductSearchQualificationQuery.class)))
+                .thenReturn(Optional.of(ready));
+        when(readyPlan.missingFilters()).thenReturn(List.of());
+        when(readyPlan.missingTargets()).thenReturn(List.of());
+        when(readyPlan.effectiveQuery()).thenReturn("football boots");
+        when(readyPlan.assistantMessage()).thenReturn("Ready");
+        when(mapper.map(readyPlan)).thenReturn(filters);
         var service = new UserProductSearchAgentQualificationService(
-                settingsService, preferenceService, modelService, mapper);
+                qualificationService, persistenceService, mapper);
 
         var result = service.qualify(
                 profile,
-                "I need boots in my usual size",
-                "football boots"
+                conversationId,
+                null,
+                "Size 10, shipping to the United States"
         );
 
-        ArgumentCaptor<GenerateUserProductSearchQualificationQuery> query =
-                ArgumentCaptor.forClass(GenerateUserProductSearchQualificationQuery.class);
-        verify(modelService).generate(query.capture());
-        assertThat(query.getValue().settings()).isSameAs(settings);
-        assertThat(query.getValue().durablePreferences()).isEqualTo(durable);
-        assertThat(query.getValue().originalQuery()).isEqualTo("I need boots in my usual size");
-        assertThat(query.getValue().message()).isEqualTo("I need boots in my usual size");
-        assertThat(query.getValue().catalogQueryHint()).isEqualTo("football boots");
+        ArgumentCaptor<FindPendingUserProductSearchQualificationQuery> pendingQuery =
+                ArgumentCaptor.forClass(FindPendingUserProductSearchQualificationQuery.class);
+        verify(persistenceService).findLatestPending(pendingQuery.capture());
+        assertThat(pendingQuery.getValue().conversationId()).isEqualTo(conversationId);
+        ArgumentCaptor<QualifyUserProductSearchCommand> command =
+                ArgumentCaptor.forClass(QualifyUserProductSearchCommand.class);
+        verify(qualificationService).qualify(org.mockito.ArgumentMatchers.eq(profile), command.capture());
+        assertThat(command.getValue().qualificationId()).isEqualTo(qualificationId);
+        assertThat(command.getValue().message()).isEqualTo("Size 10, shipping to the United States");
+        assertThat(result.qualificationId()).isEqualTo(qualificationId);
         assertThat(result.ready()).isTrue();
         assertThat(result.filters()).isSameAs(filters);
+    }
+
+    private UserProductSearchQualificationSnapshot snapshot(
+            UUID qualificationId,
+            UUID userId,
+            UUID conversationId,
+            UserProductSearchQualificationStatus status,
+            UserProductSearchQualificationPlan plan
+    ) {
+        return new UserProductSearchQualificationSnapshot(
+                qualificationId,
+                userId,
+                conversationId,
+                null,
+                "football boots",
+                status,
+                plan,
+                "model",
+                "prompt",
+                Instant.EPOCH,
+                Instant.EPOCH
+        );
     }
 }

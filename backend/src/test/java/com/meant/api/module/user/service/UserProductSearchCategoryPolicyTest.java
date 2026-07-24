@@ -94,26 +94,6 @@ class UserProductSearchCategoryPolicyTest {
     }
 
     @Test
-    void untrustedAgentHintCannotReclassifyAnAuthoritativeBootRequest() {
-        GenerateUserProductSearchQualificationQuery query =
-                new GenerateUserProductSearchQualificationQuery(
-                        "football boots",
-                        "football boots",
-                        null,
-                        settings(null),
-                        List.of(),
-                        "digital guide"
-                );
-
-        var result = policy.enforce(plan("digital guide"), query);
-
-        assertThat(result.missingTargets()).containsExactlyInAnyOrder(
-                UserProductSearchQuestionTarget.SIZE,
-                UserProductSearchQuestionTarget.SHIPS_TO
-        );
-    }
-
-    @Test
     void providerContextExcludesFoodPreferencesFromBootSearchesButKeepsThemForFood() {
         List<ShoppingFilterResult> filters = List.of(
                 new ShoppingFilterResult(

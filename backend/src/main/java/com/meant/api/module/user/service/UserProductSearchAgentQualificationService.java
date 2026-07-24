@@ -1,12 +1,15 @@
 package com.meant.api.module.user.service;
 
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
+import com.meant.api.module.user.service.command.QualifyUserProductSearchCommand;
+import com.meant.api.module.user.constant.UserProductSearchQualificationStatus;
 import com.meant.api.module.user.service.dto.UserProductSearchAgentQualificationResult;
-import com.meant.api.module.user.service.query.GenerateUserProductSearchQualificationQuery;
+import com.meant.api.module.user.service.query.FindPendingUserProductSearchQualificationQuery;
+import com.meant.api.module.user.service.query.GetUserProductSearchQualificationQuery;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import java.util.List;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
@@ -19,45 +22,51 @@ import org.springframework.validation.annotation.Validated;
 @RequiredArgsConstructor
 public class UserProductSearchAgentQualificationService {
 
-    private final UserSettingsService userSettingsService;
-    private final UserProductSearchPreferenceService preferenceService;
-    private final UserProductSearchQualificationModelService modelService;
+    private final UserProductSearchQualificationService qualificationService;
+    private final UserProductSearchQualificationPersistenceService persistenceService;
     private final UserProductSearchQualificationPlanMapper planMapper;
 
     public UserProductSearchAgentQualificationResult qualify(
             @NotNull @Valid EnsureUserProfileCommand profile,
-            @NotBlank String authoritativeUserText,
-            @NotBlank String proposedCatalogQuery
+            @NotNull UUID conversationId,
+            UUID merchantId,
+            @NotBlank String authoritativeUserText
     ) {
-        var generated = modelService.generate(new GenerateUserProductSearchQualificationQuery(
+        UUID pendingQualificationId = persistenceService.findLatestPending(
+                        new FindPendingUserProductSearchQualificationQuery(
+                                profile.id(), conversationId, merchantId))
+                .map(snapshot -> snapshot.qualificationId())
+                .orElse(null);
+        var result = qualificationService.qualify(profile, new QualifyUserProductSearchCommand(
+                profile.id(),
+                conversationId,
+                pendingQualificationId,
                 authoritativeUserText.trim(),
-                authoritativeUserText.trim(),
-                null,
-                userSettingsService.get(profile),
-                preferenceService.list(profile.id()),
-                proposedCatalogQuery.trim()
+                merchantId
         ));
-        var plan = generated.plan();
+        var snapshot = persistenceService.find(new GetUserProductSearchQualificationQuery(
+                        profile.id(), result.qualificationId()))
+                .orElseThrow(() -> new IllegalStateException(
+                        "Persisted agent product-search qualification was not found"));
+        var plan = snapshot.plan();
         if (!plan.missingFilters().isEmpty() || !plan.missingTargets().isEmpty()) {
             return new UserProductSearchAgentQualificationResult(
+                    result.qualificationId(),
                     plan.effectiveQuery(),
                     plan.assistantMessage(),
                     plan.missingTargets(),
                     null
             );
         }
+        if (result.status() != UserProductSearchQualificationStatus.READY) {
+            throw new IllegalStateException("Complete agent product-search qualification was not READY");
+        }
         return new UserProductSearchAgentQualificationResult(
+                result.qualificationId(),
                 plan.effectiveQuery(),
                 plan.assistantMessage(),
-                List.of(),
+                plan.missingTargets(),
                 planMapper.map(plan)
         );
-    }
-
-    public UserProductSearchAgentQualificationResult qualify(
-            @NotNull @Valid EnsureUserProfileCommand profile,
-            @NotBlank String query
-    ) {
-        return qualify(profile, query, query);
     }
 }

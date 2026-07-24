@@ -10,6 +10,7 @@ import com.meant.api.module.user.service.command.UserProductSearchPreferenceComm
 import com.meant.api.module.user.service.dto.UserProductSearchQualificationPlan;
 import com.meant.api.module.user.service.dto.UserProductSearchQualificationSnapshot;
 import com.meant.api.module.user.service.query.GetUserProductSearchQualificationQuery;
+import com.meant.api.module.user.service.query.FindPendingUserProductSearchQualificationQuery;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
@@ -35,6 +36,27 @@ public class UserProductSearchQualificationPersistenceService {
     ) {
         return qualificationRepository.findByIdAndUserId(query.qualificationId(), query.userId())
                 .map(this::snapshot);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<UserProductSearchQualificationSnapshot> findLatestPending(
+            @NotNull @Valid FindPendingUserProductSearchQualificationQuery query
+    ) {
+        Optional<UserProductSearchQualification> qualification = query.merchantId() == null
+                ? qualificationRepository
+                        .findFirstByUserIdAndConversationIdAndMerchantIdIsNullAndStatusOrderByUpdatedAtDesc(
+                                query.userId(),
+                                query.conversationId(),
+                                UserProductSearchQualificationStatus.NEEDS_INPUT
+                        )
+                : qualificationRepository
+                        .findFirstByUserIdAndConversationIdAndMerchantIdAndStatusOrderByUpdatedAtDesc(
+                                query.userId(),
+                                query.conversationId(),
+                                query.merchantId(),
+                                UserProductSearchQualificationStatus.NEEDS_INPUT
+                        );
+        return qualification.map(this::snapshot);
     }
 
     @Transactional(readOnly = true)
