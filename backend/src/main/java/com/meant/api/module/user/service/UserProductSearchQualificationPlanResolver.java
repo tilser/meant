@@ -131,12 +131,12 @@ public class UserProductSearchQualificationPlanResolver {
         List<UserProductSearchQualificationPlan.Attribute> attributes = java.util.Arrays.stream(
                         UserProductSearchAttributeName.values())
                 .map(name -> new UserProductSearchQualificationPlan.Attribute(
-                        name, UserProductSearchFilterState.MISSING, List.of(), none))
+                        name, UserProductSearchFilterState.NOT_APPLICABLE, List.of(), none))
                 .toList();
         UserProductSearchQualificationPlan fallback = new UserProductSearchQualificationPlan(
                 UserProductSearchQualificationPlan.CURRENT_SCHEMA_VERSION,
                 query.originalQuery().trim(),
-                "I still need your search preferences.",
+                "I can start with a broad search and refine from the results.",
                 List.of(),
                 List.of(),
                 new UserProductSearchQualificationPlan.AvailableFilter(
@@ -145,13 +145,13 @@ public class UserProductSearchQualificationPlanResolver {
                         UserProductSearchQualificationPlan.Provenance.system("sale-ready products only")
                 ),
                 new UserProductSearchQualificationPlan.ConditionFilter(
-                        UserProductSearchFilterState.MISSING, List.of(), none),
+                        UserProductSearchFilterState.NOT_APPLICABLE, List.of(), none),
                 new UserProductSearchQualificationPlan.LocationFilter(
-                        UserProductSearchFilterState.MISSING, null, none),
+                        UserProductSearchFilterState.NOT_APPLICABLE, null, none),
                 new UserProductSearchQualificationPlan.LocationsFilter(
-                        UserProductSearchFilterState.MISSING, List.of(), none),
+                        UserProductSearchFilterState.NOT_APPLICABLE, List.of(), none),
                 new UserProductSearchQualificationPlan.PriceFilter(
-                        UserProductSearchFilterState.MISSING, null, null, none),
+                        UserProductSearchFilterState.NOT_APPLICABLE, null, null, none),
                 new UserProductSearchQualificationPlan.ReferenceFilter(
                         UserProductSearchFilterState.NOT_APPLICABLE,
                         List.of(),
@@ -163,11 +163,11 @@ public class UserProductSearchQualificationPlanResolver {
                         UserProductSearchQualificationPlan.Provenance.system("trusted taxonomy resolver unavailable")
                 ),
                 new UserProductSearchQualificationPlan.AttributesFilter(
-                        UserProductSearchFilterState.MISSING, attributes),
+                        UserProductSearchFilterState.NOT_APPLICABLE, attributes),
                 new UserProductSearchQualificationPlan.RatingFilter(
-                        UserProductSearchFilterState.MISSING, null, null, none),
+                        UserProductSearchFilterState.NOT_APPLICABLE, null, null, none),
                 new UserProductSearchQualificationPlan.PriceTierFilter(
-                        UserProductSearchFilterState.MISSING, List.of(), none),
+                        UserProductSearchFilterState.NOT_APPLICABLE, List.of(), none),
                 List.of()
         );
         return safeFallback(fallback);

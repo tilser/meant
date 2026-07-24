@@ -202,7 +202,7 @@ class UserProductSearchCatalogInputBuilderTest {
     }
 
     @Test
-    void qualifiedSearchUsesOnlyLlmSelectedDurableContext() {
+    void qualifiedSearchUsesTypedLocationAndKeepsNonHardProfilePreferencesInIntent() {
         CatalogDiscoveryFilters qualifiedFilters = new CatalogDiscoveryFilters(
                 true,
                 List.of(),
@@ -233,11 +233,11 @@ class UserProductSearchCatalogInputBuilderTest {
         assertThat(input.context().postalCode()).isEqualTo("10001");
         assertThat(input.context().intent())
                 .contains("Catalog query: trail running shoes")
+                .contains("Organic - Prefer organic materials.")
                 .doesNotContain(
                         "Prague",
                         "Czechia",
-                        "men's sizing",
-                        "Organic - Prefer organic materials."
+                        "men's sizing"
                 );
         assertThat(input.discoveryFilters()).isSameAs(qualifiedFilters);
     }

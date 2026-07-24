@@ -161,7 +161,8 @@ public class UserProductSearchCatalogInputBuilder {
                         priceFilter,
                         currency,
                         queryIntent,
-                        qualifiedFilters == null ? settings : null
+                        settings,
+                        qualifiedFilters == null
                 )
         );
         CatalogSearchSignals signals = signals(buyerIp, userAgent);
@@ -358,7 +359,8 @@ public class UserProductSearchCatalogInputBuilder {
             ParsedPrice priceFilter,
             String currency,
             UserProductSearchQueryIntentResult queryIntent,
-            UserSettingsResult settings
+            UserSettingsResult settings,
+            boolean includeProfileLocationAndFit
     ) {
         List<String> parts = new ArrayList<>();
         addPart(parts, "Original request: " + originalQuery);
@@ -366,9 +368,11 @@ public class UserProductSearchCatalogInputBuilder {
         addPart(parts, priceIntent(parsedPrice, priceFilter, currency));
         addPart(parts, listPart("Hard constraints", queryIntent.constraints()));
         addPart(parts, listPart("Preference hints", queryIntent.preferenceHints()));
-        if (settings != null) {
+        if (settings != null && includeProfileLocationAndFit) {
             addPart(parts, locationsIntent(settings.locations()));
             addPart(parts, clothingFitIntent(settings.clothingFit()));
+        }
+        if (settings != null) {
             addPart(parts, activeFiltersIntent(settings.filters()));
         }
 

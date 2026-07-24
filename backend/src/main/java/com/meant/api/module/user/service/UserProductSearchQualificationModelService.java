@@ -77,16 +77,29 @@ public class UserProductSearchQualificationModelService {
             one valid bound is sufficient. RATING may contain min, minCount, or both. A missing optional bound does
             not make an otherwise valid filter unresolved. CONDITION supports NEW and SECONDHAND. Location countries
             use ISO 3166-1 alpha-2. PRICE_TIER supports LOW, MEDIUM, and HIGH.
-            These six filters are always relevant for a catalog purchase search. Set relevant=true for each one.
-            A missing value must remain unresolved even when another pricing filter is present; never mark a core
-            filter irrelevant to avoid asking the user.
+
+            Relevance and criticality are category-specific. A filter is relevant only when it would materially
+            improve this particular search, and a missing relevant value should block search only when results would
+            otherwise be misleading, unusable, or not meaningfully purchasable. Do not turn ordinary optional
+            refinements into questions. Examples:
+            - Fit-sensitive footwear such as football boots normally requires SIZE and SHIPS_TO before search. Use a
+              matching durable size and saved destination when available; otherwise ask one concise combined question.
+            - Apparel can require SIZE or TARGET_GENDER when fit is central, but COLOR, CONDITION, RATING, origin, and
+              price are optional unless the request makes them material.
+            - Food never uses SIZE or TARGET_GENDER. Preserve dietary, ingredient, format, quantity, and delivery
+              constraints in effectiveQuery and context; SHIPS_TO is relevant when delivery feasibility is material.
+            - Digital goods do not require a shipping destination.
+            - Broad inspiration or category browsing should normally be READY without asking for budget, rating,
+              condition, origin, color, or price tier.
+            Use relevant=false for supported filters that do not materially apply. Missing is not itself evidence of
+            relevance. Never mark a genuinely critical category attribute irrelevant merely to authorize search.
 
             Return exactly one decision for each supported attribute: COLOR, SIZE, and TARGET_GENDER. Relevance is
             per attribute. For example, blue jeans can have COLOR from the query, TARGET_GENDER from the profile,
             and SIZE unresolved. Use Shopify target-gender labels such as Male, Female, or Unisex.
 
-            If any relevant decision lacks both a value and explicit indifference, ask for every such decision in
-            one concise natural-language assistantMessage. questionTargets must list every unresolved decision and
+            If any critical relevant decision lacks both a value and explicit indifference, ask for every such decision
+            in one concise natural-language assistantMessage. questionTargets must list every unresolved decision and
             no resolved decision. Suggested replies may be empty when one chip cannot answer the combined question.
             If nothing is unresolved, questionTargets must be empty and assistantMessage may say search is ready.
 
@@ -449,7 +462,7 @@ public class UserProductSearchQualificationModelService {
     }
 
     private UserProductSearchQualificationPlan.ConditionFilter condition(RawEnumValues raw) {
-        UserProductSearchFilterState state = coreState(
+        UserProductSearchFilterState state = state(
                 raw.relevant(), raw.explicitAny(), !safe(raw.values()).isEmpty(), "condition");
         List<UserProductCondition> values = state == UserProductSearchFilterState.VALUE
                 ? enumValues(raw.values(), UserProductCondition.class, "condition")
@@ -461,7 +474,7 @@ public class UserProductSearchQualificationModelService {
 
     private UserProductSearchQualificationPlan.LocationFilter shipsTo(RawLocationFilter raw) {
         boolean hasValue = blankToNull(raw.country()) != null;
-        UserProductSearchFilterState state = coreState(
+        UserProductSearchFilterState state = state(
                 raw.relevant(), raw.explicitAny(), hasValue, "shipsTo");
         UserProductSearchQualificationPlan.Location value = state == UserProductSearchFilterState.VALUE
                 ? location(raw.country(), raw.region(), raw.postalCode(), "shipsTo")
@@ -472,7 +485,7 @@ public class UserProductSearchQualificationModelService {
 
     private UserProductSearchQualificationPlan.LocationsFilter shipsFrom(RawLocationsFilter raw) {
         boolean hasValue = !safe(raw.values()).isEmpty();
-        UserProductSearchFilterState state = coreState(
+        UserProductSearchFilterState state = state(
                 raw.relevant(), raw.explicitAny(), hasValue, "shipsFrom");
         List<UserProductSearchQualificationPlan.Location> values = state == UserProductSearchFilterState.VALUE
                 ? safe(raw.values()).stream()
@@ -505,7 +518,7 @@ public class UserProductSearchQualificationModelService {
 
     private UserProductSearchQualificationPlan.PriceFilter price(RawPrice raw) {
         boolean hasValue = raw.minUsd() != null || raw.maxUsd() != null;
-        UserProductSearchFilterState state = coreState(
+        UserProductSearchFilterState state = state(
                 raw.relevant(), raw.explicitAny(), hasValue, "price");
         Long min = state == UserProductSearchFilterState.VALUE ? usdMinor(raw.minUsd(), "price.minUsd") : null;
         Long max = state == UserProductSearchFilterState.VALUE ? usdMinor(raw.maxUsd(), "price.maxUsd") : null;
@@ -556,7 +569,7 @@ public class UserProductSearchQualificationModelService {
 
     private UserProductSearchQualificationPlan.RatingFilter rating(RawRating raw) {
         boolean hasValue = raw.min() != null || raw.minCount() != null;
-        UserProductSearchFilterState state = coreState(
+        UserProductSearchFilterState state = state(
                 raw.relevant(), raw.explicitAny(), hasValue, "rating");
         if (state != UserProductSearchFilterState.VALUE) {
             return new UserProductSearchQualificationPlan.RatingFilter(
@@ -575,7 +588,7 @@ public class UserProductSearchQualificationModelService {
     }
 
     private UserProductSearchQualificationPlan.PriceTierFilter priceTier(RawEnumValues raw) {
-        UserProductSearchFilterState state = coreState(
+        UserProductSearchFilterState state = state(
                 raw.relevant(), raw.explicitAny(), !safe(raw.values()).isEmpty(), "priceTier");
         List<UserProductPriceTier> values = state == UserProductSearchFilterState.VALUE
                 ? enumValues(raw.values(), UserProductPriceTier.class, "priceTier")
@@ -606,18 +619,6 @@ public class UserProductSearchQualificationModelService {
             return UserProductSearchFilterState.ANY;
         }
         return hasValue ? UserProductSearchFilterState.VALUE : UserProductSearchFilterState.MISSING;
-    }
-
-    private UserProductSearchFilterState coreState(
-            Boolean relevant,
-            Boolean explicitAny,
-            boolean hasValue,
-            String field
-    ) {
-        if (!requiredFlag(relevant, field + ".relevant")) {
-            throw invalid(field + " is a core catalog filter and must remain relevant");
-        }
-        return state(true, explicitAny, hasValue, field);
     }
 
     private boolean requiredFlag(Boolean value, String field) {

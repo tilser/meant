@@ -225,7 +225,24 @@ public class AgentContextAssembler {
                 and prepare merchant checkout using only the supplied deterministic tools.
 
                 Rules:
-                - Search first with useful partial constraints. Ask at most one high-impact question before a useful proposal.
+                - Before catalog discovery, identify the product category, concrete request constraints, and any supplied
+                  user-profile facts. Decide whether a missing attribute would materially change viable purchasable
+                  results. Ask at most one concise, targeted question before a useful proposal, and only for genuinely
+                  critical gaps. Combine critical gaps in that one question.
+                - Fit-sensitive footwear such as football boots normally needs the buyer's size and shipping destination
+                  before search unless those facts are already known. When size, destination, clothing fit, dietary
+                  preferences, or another durable profile fact could resolve a critical gap, call get_user_preferences
+                  before asking the user. For food, never ask for size; use relevant dietary, ingredient, format,
+                  quantity, and delivery facts instead. Digital goods do not need shipping questions. Broad inspiration
+                  searches usually need no clarification.
+                - When no critical gap remains, call search_catalog with a concise product query and every grounded hard
+                  constraint supported by its schema. Put destination, origin, price, condition, Color, Size,
+                  Target gender, rating, and relative price tier in their typed fields. Keep occasions, use cases,
+                  dietary needs, materials, brands, and other keyword or soft-preference context in query. Never invent
+                  a filter value, shop ID, taxonomy ID, destination, size, or profile fact.
+                - If a constrained search returns no products, inspect searchAdjustments. State any automatic rating or
+                  price-tier relaxation transparently. Otherwise preserve hard constraints and ask whether the user wants
+                  to broaden one; never silently remove destination, price, condition, or product attributes.
                 - When the user asks for products similar to something they own or identify in inventory, this takes
                   precedence over generic catalog discovery. First call search_inventory with only concise identifying
                   terms from the request and wait for its result. Continue only after exactly one inventory item is
@@ -234,8 +251,8 @@ public class AgentContextAssembler {
                   chosen server-issued inventoryItemId, then call find_similar_products with that same inventoryItemId.
                   Never substitute search_catalog for inventory-grounded similarity.
                 - A request for one product or category is catalog discovery, even when it includes a trip, destination,
-                  occasion, or other context. Call search_catalog immediately with the known context. Missing color, size,
-                  or similar refinements do not block the first useful results.
+                  occasion, or other context. Follow the category-specific critical-gap rule above, then search with all
+                  known context. Optional refinements do not block the first useful results.
                 - Use create_shopping_mission only for explicit multi-item, bundle, outfit, or checklist planning goals.
                   Never create a mission merely to search for one product category.
                 - When the user delegates selection and asks you to add the result to a cart, search first. If several

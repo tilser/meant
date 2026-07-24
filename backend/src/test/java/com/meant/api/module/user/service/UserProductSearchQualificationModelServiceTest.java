@@ -114,19 +114,56 @@ class UserProductSearchQualificationModelServiceTest {
     }
 
     @Test
-    void neverAuthorizesReadyWhenTheModelSuppressesACoreFilterAsIrrelevant() {
-        String invalid = combinedQuestionResponse().replaceFirst(
+    void acceptsCategorySpecificIrrelevanceWithoutTurningItIntoAMissingFilter() {
+        String categorySpecific = combinedQuestionResponse().replaceFirst(
                 "(?s)\"condition\"\\s*:\\s*\\{\\s*\"relevant\"\\s*:\\s*true",
                 "\"condition\": {\"relevant\": false"
         );
-        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient(invalid, invalid);
+        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient(categorySpecific, categorySpecific);
 
         var plan = service(client).generate(query("blue jeans", "blue jeans", null)).plan();
 
         assertThat(client.calls).isEqualTo(2);
-        assertThat(plan.condition().state()).isEqualTo(UserProductSearchFilterState.MISSING);
-        assertThat(plan.missingTargets()).contains(UserProductSearchQuestionTarget.CONDITION);
-        assertThat(plan.missingFilters()).isNotEmpty();
+        assertThat(plan.condition().state()).isEqualTo(UserProductSearchFilterState.NOT_APPLICABLE);
+        assertThat(plan.missingTargets()).doesNotContain(UserProductSearchQuestionTarget.CONDITION);
+        assertThat(plan.missingFilters()).doesNotContain(UserProductSearchFilterKind.CONDITION);
+    }
+
+    @Test
+    void foodSearchDoesNotAskForFootwearOrGenericCommerceFilters() {
+        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient(foodResponse());
+
+        var plan = service(client).generate(query(
+                "gluten-free pasta delivered to the United States",
+                "gluten-free pasta delivered to the United States",
+                null
+        )).plan();
+
+        assertThat(client.calls).isEqualTo(1);
+        assertThat(plan.missingTargets()).isEmpty();
+        assertThat(plan.effectiveQuery()).isEqualTo("gluten-free pasta");
+        assertThat(plan.shipsTo().state()).isEqualTo(UserProductSearchFilterState.VALUE);
+        assertThat(attribute(plan, UserProductSearchAttributeName.SIZE).state())
+                .isEqualTo(UserProductSearchFilterState.NOT_APPLICABLE);
+        assertThat(attribute(plan, UserProductSearchAttributeName.TARGET_GENDER).state())
+                .isEqualTo(UserProductSearchFilterState.NOT_APPLICABLE);
+        assertThat(plan.condition().state()).isEqualTo(UserProductSearchFilterState.NOT_APPLICABLE);
+        assertThat(plan.price().state()).isEqualTo(UserProductSearchFilterState.NOT_APPLICABLE);
+        assertThat(plan.rating().state()).isEqualTo(UserProductSearchFilterState.NOT_APPLICABLE);
+    }
+
+    @Test
+    void modelFailureFallsBackToABroadReadySearchInsteadOfQuestioningEveryFilter() {
+        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient("not-json", "still-not-json");
+
+        var plan = service(client).generate(query("desk lamp", "desk lamp", null)).plan();
+
+        assertThat(client.calls).isEqualTo(2);
+        assertThat(plan.effectiveQuery()).isEqualTo("desk lamp");
+        assertThat(plan.missingFilters()).isEmpty();
+        assertThat(plan.missingTargets()).isEmpty();
+        assertThat(plan.questionTargets()).isEmpty();
+        assertThat(plan.assistantMessage()).contains("everything I need to search");
     }
 
     @Test
@@ -337,6 +374,41 @@ class UserProductSearchQualificationModelServiceTest {
                 .replace("\"questionTargets\": []", "\"questionTargets\": [\"RATING\"]")
                 .replace("\"rating\": {\"relevant\": true, \"explicitAny\": true",
                         "\"rating\": {\"relevant\": true, \"explicitAny\": false");
+    }
+
+    private String foodResponse() {
+        return """
+                {
+                  "effectiveQuery": "gluten-free pasta",
+                  "assistantMessage": "Ready to search for gluten-free pasta.",
+                  "suggestedReplies": [],
+                  "questionTargets": [],
+                  "condition": {"relevant": false, "explicitAny": false,
+                    "provenance": {"source": "NONE", "evidence": ""}, "values": []},
+                  "shipsTo": {"relevant": true, "explicitAny": false,
+                    "provenance": {"source": "ORIGINAL_QUERY", "evidence": "United States"},
+                    "country": "US", "region": null, "postalCode": null},
+                  "shipsFrom": {"relevant": false, "explicitAny": false,
+                    "provenance": {"source": "NONE", "evidence": ""}, "values": []},
+                  "price": {"relevant": false, "explicitAny": false,
+                    "provenance": {"source": "NONE", "evidence": ""},
+                    "minUsd": null, "maxUsd": null},
+                  "attributes": [
+                    {"name": "COLOR", "relevant": false, "explicitAny": false,
+                      "provenance": {"source": "NONE", "evidence": ""}, "values": []},
+                    {"name": "SIZE", "relevant": false, "explicitAny": false,
+                      "provenance": {"source": "NONE", "evidence": ""}, "values": []},
+                    {"name": "TARGET_GENDER", "relevant": false, "explicitAny": false,
+                      "provenance": {"source": "NONE", "evidence": ""}, "values": []}
+                  ],
+                  "rating": {"relevant": false, "explicitAny": false,
+                    "provenance": {"source": "NONE", "evidence": ""},
+                    "min": null, "minCount": null},
+                  "priceTier": {"relevant": false, "explicitAny": false,
+                    "provenance": {"source": "NONE", "evidence": ""}, "values": []},
+                  "durableAttributes": []
+                }
+                """;
     }
 
     private static final class FakeOpenRouterChatClient extends OpenRouterChatClient {
