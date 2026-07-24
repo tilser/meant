@@ -62,20 +62,6 @@
               AND cart.merchant_id IS NULL
               AND lower(btrim(cart.external_merchant_id)) = storefront.shop_identity;
 
-            -- A technical Shopify source host is not a safe presentation fallback. Old carts without
-            -- a verified storefront claim remain executable through routing_domain but display no domain.
-            UPDATE cart
-            SET merchant_domain = NULL
-            WHERE provider = 'SHOPIFY'
-              AND merchant_integration_id IS NULL
-              AND merchant_id IS NULL
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM merchant_identity identity
-                  WHERE identity.namespace = 'SHOPIFY_SHOP'
-                    AND identity.role = 'PROVIDER_ID'
-                    AND identity.normalized_value = lower(btrim(cart.external_merchant_id))
-              );
         ]]></sql>
 
         <sql>
@@ -102,6 +88,23 @@
                 )
             )
         </sql>
+        <sql dbms="postgresql" splitStatements="false"><![CDATA[
+            -- A technical Shopify source host is not a safe presentation fallback. Old carts without
+            -- a verified storefront claim remain executable through routing_domain but display no domain.
+            -- Run this only after replacing the legacy constraint, which required merchant_domain.
+            UPDATE cart
+            SET merchant_domain = NULL
+            WHERE provider = 'SHOPIFY'
+              AND merchant_integration_id IS NULL
+              AND merchant_id IS NULL
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM merchant_identity identity
+                  WHERE identity.namespace = 'SHOPIFY_SHOP'
+                    AND identity.role = 'PROVIDER_ID'
+                    AND identity.normalized_value = lower(btrim(cart.external_merchant_id))
+              );
+        ]]></sql>
     </changeSet>
 
     <changeSet id="002-rewrite-cart-agent-artifact-storefront-domain" author="codex">

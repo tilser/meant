@@ -31,10 +31,12 @@ class CartMerchantDomainMigrationIT extends PostgresIntegrationTestSupport {
         UUID shopifyIntegrationId = UUID.randomUUID();
         UUID genericIntegrationId = UUID.randomUUID();
         UUID externalCartId = UUID.randomUUID();
+        UUID unverifiedExternalCartId = UUID.randomUUID();
         UUID managedShopifyCartId = UUID.randomUUID();
         UUID managedGenericCartId = UUID.randomUUID();
         String storefront = "allbirds.com";
         String routingDomain = "weareallbirds.myshopify.com";
+        String unverifiedRoutingDomain = "unverified-shop.myshopify.com";
         String genericRoutingDomain = "mcp.allbirds.example";
         jdbcTemplate.execute("create schema " + schema);
         try {
@@ -46,10 +48,12 @@ class CartMerchantDomainMigrationIT extends PostgresIntegrationTestSupport {
                     shopifyIntegrationId,
                     genericIntegrationId,
                     externalCartId,
+                    unverifiedExternalCartId,
                     managedShopifyCartId,
                     managedGenericCartId,
                     storefront,
                     routingDomain,
+                    unverifiedRoutingDomain,
                     genericRoutingDomain
             );
 
@@ -66,6 +70,11 @@ class CartMerchantDomainMigrationIT extends PostgresIntegrationTestSupport {
                     from %s.cart
                     where id = ?
                     """.formatted(schema), managedShopifyCartId);
+            Map<String, Object> unverifiedExternalCart = jdbcTemplate.queryForMap("""
+                    select merchant_domain, routing_domain
+                    from %s.cart
+                    where id = ?
+                    """.formatted(schema), unverifiedExternalCartId);
             Map<String, Object> managedGenericCart = jdbcTemplate.queryForMap("""
                     select merchant_domain, routing_domain
                     from %s.cart
@@ -76,6 +85,11 @@ class CartMerchantDomainMigrationIT extends PostgresIntegrationTestSupport {
                     from %s.agent_artifact_reference
                     where cart_id = ?
                     """.formatted(schema), externalCartId);
+            Map<String, Object> unverifiedArtifact = jdbcTemplate.queryForMap("""
+                    select label, payload_json
+                    from %s.agent_artifact_reference
+                    where cart_id = ?
+                    """.formatted(schema), unverifiedExternalCartId);
 
             assertThat(externalCart)
                     .containsEntry("merchant_domain", storefront)
@@ -83,6 +97,9 @@ class CartMerchantDomainMigrationIT extends PostgresIntegrationTestSupport {
             assertThat(managedShopifyCart)
                     .containsEntry("merchant_domain", storefront)
                     .containsEntry("routing_domain", routingDomain);
+            assertThat(unverifiedExternalCart)
+                    .containsEntry("merchant_domain", null)
+                    .containsEntry("routing_domain", unverifiedRoutingDomain);
             assertThat(managedGenericCart)
                     .containsEntry("merchant_domain", storefront)
                     .containsEntry("routing_domain", genericRoutingDomain);
@@ -92,6 +109,12 @@ class CartMerchantDomainMigrationIT extends PostgresIntegrationTestSupport {
                     .contains("\"merchantOrigin\": \"allbirds.com\"")
                     .doesNotContain("\"merchantDomain\"")
                     .doesNotContain(routingDomain);
+            assertThat(unverifiedArtifact)
+                    .containsEntry("label", "Cart");
+            assertThat((String) unverifiedArtifact.get("payload_json"))
+                    .doesNotContain("\"merchantDomain\"")
+                    .doesNotContain("\"merchantOrigin\"")
+                    .doesNotContain(unverifiedRoutingDomain);
         } finally {
             jdbcTemplate.execute("drop schema " + schema + " cascade");
         }
@@ -187,10 +210,12 @@ class CartMerchantDomainMigrationIT extends PostgresIntegrationTestSupport {
             UUID shopifyIntegrationId,
             UUID genericIntegrationId,
             UUID externalCartId,
+            UUID unverifiedExternalCartId,
             UUID managedShopifyCartId,
             UUID managedGenericCartId,
             String storefront,
             String routingDomain,
+            String unverifiedRoutingDomain,
             String genericRoutingDomain
     ) {
         String endpoint = "https://" + routingDomain + "/api/ucp/mcp";
@@ -223,6 +248,16 @@ class CartMerchantDomainMigrationIT extends PostgresIntegrationTestSupport {
                 insert into %s.cart (
                     id, merchant_id, merchant_domain, provider, merchant_integration_id,
                     external_merchant_id, routing_scope_key
+                ) values (?, null, ?, 'SHOPIFY', null, 'gid://shopify/Shop/2', ?)
+                """.formatted(schema),
+                unverifiedExternalCartId,
+                unverifiedRoutingDomain,
+                "SHOPIFY:merchant:gid://shopify/Shop/2:domain:" + unverifiedRoutingDomain
+        );
+        jdbcTemplate.update("""
+                insert into %s.cart (
+                    id, merchant_id, merchant_domain, provider, merchant_integration_id,
+                    external_merchant_id, routing_scope_key
                 ) values (?, ?, 'allbirds.com', 'SHOPIFY', ?, 'gid://shopify/Shop/1', ?)
                 """.formatted(schema),
                 managedShopifyCartId,
@@ -249,6 +284,16 @@ class CartMerchantDomainMigrationIT extends PostgresIntegrationTestSupport {
                 externalCartId,
                 "Cart at " + routingDomain,
                 "{\"merchantDomain\":\"" + routingDomain + "\",\"cartId\":\"" + externalCartId + "\"}"
+        );
+        jdbcTemplate.update("""
+                insert into %s.agent_artifact_reference (
+                    artifact_type, cart_id, label, payload_json
+                ) values ('CART', ?, ?, ?)
+                """.formatted(schema),
+                unverifiedExternalCartId,
+                "Cart at " + unverifiedRoutingDomain,
+                "{\"merchantDomain\":\"" + unverifiedRoutingDomain + "\",\"cartId\":\""
+                        + unverifiedExternalCartId + "\"}"
         );
     }
 
