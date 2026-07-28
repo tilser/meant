@@ -13,11 +13,11 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
-import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 
 @Component
 public class GeoNamesLocationProvider implements LocationSearchProvider {
@@ -77,10 +77,6 @@ public class GeoNamesLocationProvider implements LocationSearchProvider {
                             .queryParam("username", properties.username().trim())
                             .build())
                     .retrieve()
-                    .onStatus(HttpStatusCode::isError, (request, httpResponse) -> {
-                        throw new LocationSearchException(
-                                "GeoNames search returned HTTP " + httpResponse.getStatusCode());
-                    })
                     .body(GeoNamesSearchResponse.class);
             validateStatus(response == null ? null : response.status());
             if (response == null || response.geonames() == null) {
@@ -93,6 +89,8 @@ public class GeoNamesLocationProvider implements LocationSearchProvider {
                     .toList();
         } catch (LocationSearchException exception) {
             throw exception;
+        } catch (RestClientResponseException exception) {
+            throw responseException("search", exception);
         } catch (RestClientException exception) {
             throw new LocationSearchException("Could not reach GeoNames", exception);
         }
@@ -109,12 +107,6 @@ public class GeoNamesLocationProvider implements LocationSearchProvider {
                             .queryParam("username", properties.username().trim())
                             .build())
                     .retrieve()
-                    .onStatus(status -> status.value() == 404, (request, response) -> {
-                        throw new InvalidLocationException("GeoNames location was not found");
-                    })
-                    .onStatus(HttpStatusCode::isError, (request, response) -> {
-                        throw new LocationSearchException("GeoNames lookup returned HTTP " + response.getStatusCode());
-                    })
                     .body(GeoNamesPlace.class);
             if (place != null && place.status() != null) {
                 if (place.status().value() == 15) {
@@ -129,6 +121,11 @@ public class GeoNamesLocationProvider implements LocationSearchProvider {
             return suggestion;
         } catch (InvalidLocationException | LocationSearchException exception) {
             throw exception;
+        } catch (RestClientResponseException exception) {
+            if (exception.getStatusCode().value() == 404) {
+                throw new InvalidLocationException("GeoNames location was not found");
+            }
+            throw responseException("lookup", exception);
         } catch (RestClientException exception) {
             throw new LocationSearchException("Could not reach GeoNames", exception);
         }
@@ -160,10 +157,33 @@ public class GeoNamesLocationProvider implements LocationSearchProvider {
 
     private void validateStatus(GeoNamesStatus status) {
         if (status != null) {
-            throw new LocationSearchException(
-                    "GeoNames rejected the request with status %s: %s"
-                            .formatted(status.value(), status.message()));
+            throw rejectedRequest(status);
         }
+    }
+
+    private LocationSearchException responseException(
+            String operation,
+            RestClientResponseException exception
+    ) {
+        try {
+            GeoNamesErrorResponse response = exception.getResponseBodyAs(GeoNamesErrorResponse.class);
+            if (response != null && response.status() != null) {
+                return rejectedRequest(response.status());
+            }
+        } catch (RestClientException ignored) {
+            // Fall through to the HTTP status when the upstream body is not valid GeoNames JSON.
+        }
+        return new LocationSearchException(
+                "GeoNames %s returned HTTP %s".formatted(operation, exception.getStatusCode()),
+                exception
+        );
+    }
+
+    private LocationSearchException rejectedRequest(GeoNamesStatus status) {
+        return new LocationSearchException(
+                "GeoNames rejected the request with status %s: %s"
+                        .formatted(status.value(), status.message())
+        );
     }
 
     private long geonameId(String id) {
@@ -206,6 +226,10 @@ public class GeoNamesLocationProvider implements LocationSearchProvider {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     private record GeoNamesSearchResponse(List<GeoNamesPlace> geonames, GeoNamesStatus status) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record GeoNamesErrorResponse(GeoNamesStatus status) {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

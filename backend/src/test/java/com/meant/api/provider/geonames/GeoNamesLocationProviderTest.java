@@ -5,13 +5,16 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.queryParam;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 
 import com.meant.api.module.location.exception.InvalidLocationException;
+import com.meant.api.module.location.exception.LocationSearchException;
 import com.meant.api.module.location.service.dto.LocationSuggestion;
 import java.net.URI;
 import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
@@ -101,6 +104,32 @@ class GeoNamesLocationProviderTest {
 
         assertThatThrownBy(() -> provider.search("Pra", 8, "en"))
                 .hasMessageContaining("username is not configured");
+    }
+
+    @Test
+    void searchPreservesGeoNamesErrorDetailsFromAnHttpErrorResponse() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        GeoNamesLocationProvider provider = new GeoNamesLocationProvider(builder, properties());
+        server.expect(requestTo("https://secure.geonames.test/searchJSON"
+                        + "?name_startsWith=pra&featureClass=P&orderby=relevance&maxRows=8"
+                        + "&lang=en&style=FULL&username=test-user"))
+                .andRespond(withStatus(HttpStatus.UNAUTHORIZED)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body("""
+                                {
+                                  "status": {
+                                    "message": "user account not enabled to use the free webservice",
+                                    "value": 10
+                                  }
+                                }
+                                """));
+
+        assertThatThrownBy(() -> provider.search("Pra", 8, "en"))
+                .isInstanceOf(LocationSearchException.class)
+                .hasMessage("GeoNames rejected the request with status 10: "
+                        + "user account not enabled to use the free webservice");
+        server.verify();
     }
 
     private GeoNamesProperties properties() {
