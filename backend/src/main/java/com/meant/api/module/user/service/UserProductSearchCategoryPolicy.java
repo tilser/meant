@@ -67,6 +67,12 @@ public class UserProductSearchCategoryPolicy {
                 attributes(plan.attributes());
         boolean changed = false;
 
+        if (category != Category.DIGITAL && !resolved(shipsTo.state())) {
+            UserProductSearchQualificationPlan.LocationFilter savedDestination = savedDestination(query.settings());
+            shipsTo = savedDestination == null ? missingLocation() : savedDestination;
+            changed = true;
+        }
+
         if (category == Category.FIT_SENSITIVE_FOOTWEAR) {
             var size = attributes.get(UserProductSearchAttributeName.SIZE);
             if (!resolved(size.state())) {
@@ -75,11 +81,6 @@ public class UserProductSearchCategoryPolicy {
                         UserProductSearchAttributeName.SIZE,
                         durableSize == null ? missingAttribute(UserProductSearchAttributeName.SIZE) : durableSize
                 );
-                changed = true;
-            }
-            if (!resolved(shipsTo.state())) {
-                UserProductSearchQualificationPlan.LocationFilter savedDestination = savedDestination(query.settings());
-                shipsTo = savedDestination == null ? missingLocation() : savedDestination;
                 changed = true;
             }
         } else if (category == Category.FOOD) {
@@ -137,12 +138,21 @@ public class UserProductSearchCategoryPolicy {
     }
 
     public boolean permitsConservativeFallback(GenerateUserProductSearchQualificationQuery query) {
+        return conservativeFallbackDenialReason(query) == null;
+    }
+
+    public String conservativeFallbackDenialReason(GenerateUserProductSearchQualificationQuery query) {
         Category category = category(query.originalQuery(), query.message());
-        return (category == Category.FIT_SENSITIVE_FOOTWEAR
-                || category == Category.FOOD
-                || category == Category.DIGITAL)
-                && !hasUnverifiedHardConstraint(query.originalQuery())
-                && !hasUnverifiedHardConstraint(query.message());
+        if (category != Category.FIT_SENSITIVE_FOOTWEAR
+                && category != Category.FOOD
+                && category != Category.DIGITAL) {
+            return "category=" + category + " has no server-owned conservative policy";
+        }
+        if (hasUnverifiedHardConstraint(query.originalQuery())
+                || hasUnverifiedHardConstraint(query.message())) {
+            return "unverified hard constraints require successful model qualification";
+        }
+        return null;
     }
 
     public List<ShoppingFilterResult> providerContextFilters(
@@ -337,13 +347,15 @@ public class UserProductSearchCategoryPolicy {
         boolean size = missing.contains(UserProductSearchQuestionTarget.SIZE);
         boolean destination = missing.contains(UserProductSearchQuestionTarget.SHIPS_TO);
         if (size && destination && missing.size() == 2) {
-            return "What boot size do you need, and what country or postal code should they ship to?";
+            return "What boot size do you need, and what country or postal code should they ship to? "
+                    + "You can say location does not matter if it should not filter the search.";
         }
         if (size && missing.size() == 1) {
             return "What boot size do you need?";
         }
         if (destination && missing.size() == 1) {
-            return "What country or postal code should the order ship to?";
+            return "What country or postal code should the order ship to? You can also say “I don’t care” "
+                    + "if location should not filter the search.";
         }
         List<String> labels = new ArrayList<>();
         missing.forEach(target -> labels.add(target.name().toLowerCase(Locale.ROOT).replace('_', ' ')));

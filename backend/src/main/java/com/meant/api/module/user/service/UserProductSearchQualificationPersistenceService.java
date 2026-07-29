@@ -10,6 +10,7 @@ import com.meant.api.module.user.service.command.SaveUserProductSearchPreference
 import com.meant.api.module.user.service.command.UserProductSearchPreferenceCommand;
 import com.meant.api.module.user.service.dto.UserProductSearchQualificationPlan;
 import com.meant.api.module.user.service.dto.UserProductSearchQualificationSnapshot;
+import com.meant.api.module.user.service.query.FindPendingUserProductSearchQualificationQuery;
 import com.meant.api.module.user.service.query.GetUserProductSearchQualificationQuery;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -35,6 +36,20 @@ public class UserProductSearchQualificationPersistenceService {
             @NotNull @Valid GetUserProductSearchQualificationQuery query
     ) {
         return qualificationRepository.findByIdAndUserId(query.qualificationId(), query.userId())
+                .map(this::snapshot);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<UserProductSearchQualificationSnapshot> findLatestPending(
+            @NotNull @Valid FindPendingUserProductSearchQualificationQuery query
+    ) {
+        return qualificationRepository
+                .findFirstByUserIdAndConversationIdAndMerchantIdAndStatusOrderByUpdatedAtDesc(
+                        query.userId(),
+                        query.conversationId(),
+                        query.merchantId(),
+                        UserProductSearchQualificationStatus.NEEDS_INPUT
+                )
                 .map(this::snapshot);
     }
 

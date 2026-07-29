@@ -134,6 +134,7 @@ class UserQualifiedProductSearchResolverTest {
                 "search-v1",
                 "qualification-v2",
                 "explanation-v1",
+                4096,
                 Duration.ofHours(1),
                 Duration.ofMinutes(30),
                 Duration.ofMinutes(30),

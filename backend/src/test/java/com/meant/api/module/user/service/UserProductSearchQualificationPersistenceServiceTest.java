@@ -13,6 +13,7 @@ import com.meant.api.module.user.service.command.PersistUserProductSearchQualifi
 import com.meant.api.module.user.service.command.CancelUserProductSearchQualificationCommand;
 import com.meant.api.module.user.service.command.SaveUserProductSearchPreferencesCommand;
 import com.meant.api.module.user.service.dto.UserProductSearchQualificationPlan;
+import com.meant.api.module.user.service.query.FindPendingUserProductSearchQualificationQuery;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
@@ -132,6 +133,38 @@ class UserProductSearchQualificationPersistenceServiceTest {
         assertThat(repository.saved).isNull();
     }
 
+    @Test
+    void findsTheLatestPendingQualificationForTheExactConversationScope() {
+        UUID qualificationId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UserProductSearchQualification pending = UserProductSearchQualification.create(
+                qualificationId,
+                userId,
+                conversationId,
+                null,
+                "running shoes",
+                UserProductSearchQualificationStatus.NEEDS_INPUT,
+                planCodec.encode(plan(false)),
+                "model",
+                "v1",
+                Instant.parse("2026-07-29T12:00:00Z")
+        );
+        repository.pending = Optional.of(pending);
+
+        var result = service.findLatestPending(
+                new FindPendingUserProductSearchQualificationQuery(userId, conversationId, null));
+
+        assertThat(result).isPresent();
+        assertThat(result.orElseThrow().qualificationId()).isEqualTo(qualificationId);
+        assertThat(repository.pendingLookupArguments).containsExactly(
+                userId,
+                conversationId,
+                null,
+                UserProductSearchQualificationStatus.NEEDS_INPUT
+        );
+    }
+
     private PersistUserProductSearchQualificationCommand command(
             UUID qualificationId,
             UUID userId,
@@ -215,6 +248,8 @@ class UserProductSearchQualificationPersistenceServiceTest {
 
         private final List<String> writes;
         private Optional<UserProductSearchQualification> found = Optional.empty();
+        private Optional<UserProductSearchQualification> pending = Optional.empty();
+        private List<Object> pendingLookupArguments = List.of();
         private UserProductSearchQualification saved;
 
         private FakeQualificationRepository(List<String> writes) {
@@ -233,6 +268,10 @@ class UserProductSearchQualificationPersistenceServiceTest {
         public Object invoke(Object proxy, Method method, Object[] arguments) {
             return switch (method.getName()) {
                 case "findByIdForUpdate" -> found;
+                case "findFirstByUserIdAndConversationIdAndMerchantIdAndStatusOrderByUpdatedAtDesc" -> {
+                    pendingLookupArguments = new ArrayList<>(java.util.Arrays.asList(arguments));
+                    yield pending;
+                }
                 case "save" -> {
                     saved = (UserProductSearchQualification) arguments[0];
                     writes.add("qualification");

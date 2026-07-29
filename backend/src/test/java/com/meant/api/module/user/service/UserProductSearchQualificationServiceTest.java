@@ -263,6 +263,7 @@ class UserProductSearchQualificationServiceTest {
                         "search-v1",
                         "qualification-v1",
                         "explanation-v1",
+                        4096,
                         Duration.ofMinutes(1),
                         Duration.ofMinutes(30),
                         Duration.ofMinutes(1),

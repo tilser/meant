@@ -2,6 +2,7 @@ package com.meant.api.common.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
@@ -114,6 +115,62 @@ class OpenRouterChatClientTest {
                 .doesNotContain("opaque-token")
                 .doesNotContain("private user prompt")
                 .doesNotContain("private system prompt");
+        server.verify();
+    }
+
+    @Test
+    void completeJsonRejectsLengthLimitedContentBeforeTheCallerParsesIt(CapturedOutput output) {
+        RestClient.Builder restClientBuilder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
+        OpenRouterChatClient client = new OpenRouterChatClient(
+                restClientBuilder,
+                openRouterProperties("test-key")
+        );
+        server.expect(requestTo("https://openrouter.test/api/v1/chat/completions"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"max_tokens\":4096")))
+                .andRespond(withStatus(HttpStatus.OK)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body("""
+                                {
+                                  "model": "resolved-model",
+                                  "choices": [{
+                                    "finish_reason": "length",
+                                    "native_finish_reason": "MAX_TOKENS",
+                                    "message": {"role": "assistant", "content": "{\\"value\\":"}
+                                  }],
+                                  "usage": {
+                                    "prompt_tokens": 200,
+                                    "completion_tokens": 4096,
+                                    "total_tokens": 4296
+                                  }
+                                }
+                                """));
+
+        assertThatThrownBy(() -> client.completeJson(
+                "requested-model",
+                "system",
+                "user",
+                "test_schema",
+                responseSchema(),
+                4096
+        ))
+                .isInstanceOf(OpenRouterException.class)
+                .hasMessageContaining("was truncated")
+                .hasMessageContaining("requestedModel=requested-model")
+                .hasMessageContaining("resolvedModel=resolved-model")
+                .hasMessageContaining("finishReason=length")
+                .hasMessageContaining("completionTokens=4096")
+                .hasMessageContaining("maximumOutputTokens=4096");
+        assertThat(output)
+                .contains(
+                        "OpenRouter chat completion truncated",
+                        "requestedModel=requested-model",
+                        "resolvedModel=resolved-model",
+                        "completionTokens=4096",
+                        "maximumOutputTokens=4096"
+                )
+                .doesNotContain("{\"value\":");
         server.verify();
     }
 

@@ -93,13 +93,13 @@ public class UserProductSearchQualificationService {
                 : UserProductSearchQualificationStatus.NEEDS_INPUT;
         log.info(
                 "Product-search qualification model result validated. userId={}, conversationId={}, "
-                        + "status={}, currentSchema={}, missingFilterCount={}, missingTargetCount={}",
+                        + "status={}, currentSchema={}, missingFilters={}, missingTargets={}",
                 command.userId(),
                 command.conversationId(),
                 status,
                 generated.plan().currentSchema(),
-                generated.plan().missingFilters().size(),
-                generated.plan().missingTargets().size()
+                generated.plan().missingFilters(),
+                generated.plan().missingTargets()
         );
         UUID qualificationId = previous == null ? UUID.randomUUID() : previous.qualificationId();
         UserProductSearchQualificationSnapshot persisted = persistenceService.persist(

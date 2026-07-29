@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
 import tools.jackson.core.JacksonException;
@@ -36,6 +37,7 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 @Validated
 @RequiredArgsConstructor
+@Slf4j
 public class UserProductSearchQualificationModelService {
 
     private static final int MAX_ASSISTANT_MESSAGE_LENGTH = 1_500;
@@ -82,12 +84,16 @@ public class UserProductSearchQualificationModelService {
             improve this particular search, and a missing relevant value should block search only when results would
             otherwise be misleading, unusable, or not meaningfully purchasable. Do not turn ordinary optional
             refinements into questions. Examples:
-            - Fit-sensitive footwear such as football boots normally requires SIZE and SHIPS_TO before search. Use a
-              matching durable size and saved destination when available; otherwise ask one concise combined question.
+            - Every physical product search requires a SHIPS_TO decision before search. Use a saved destination when
+              available. Otherwise ask where the order should ship and explicitly allow the user to say location does
+              not matter. Only explicit user indifference may produce ANY; ANY intentionally omits the provider
+              shipping filter.
+            - Fit-sensitive footwear such as football boots also normally requires SIZE before search. Use a matching
+              durable size when available; otherwise ask one concise combined question for size and destination.
             - Apparel can require SIZE or TARGET_GENDER when fit is central, but COLOR, CONDITION, RATING, origin, and
               price are optional unless the request makes them material.
             - Food never uses SIZE or TARGET_GENDER. Preserve dietary, ingredient, format, quantity, and delivery
-              constraints in effectiveQuery and context; SHIPS_TO is relevant when delivery feasibility is material.
+              constraints in effectiveQuery and context.
             - Digital goods do not require a shipping destination.
             - Broad inspiration or category browsing should normally be READY without asking for budget, rating,
               condition, origin, color, or price tier.
@@ -123,40 +129,78 @@ public class UserProductSearchQualificationModelService {
     public UserProductSearchQualificationModelResult generate(
             @NotNull @Valid GenerateUserProductSearchQualificationQuery query
     ) {
-        String model = openRouterProperties.models().chatModel();
+        String primaryModel = openRouterProperties.models().chatModel();
+        String repairModel = fallbackModel(primaryModel);
         UserProductSearchQualificationPlanResolver.Resolution firstResolution = null;
+        RuntimeException initialFailure = null;
         String repairFeedback;
         try {
-            UserProductSearchQualificationPlan candidate = completeCandidate(model, query, null);
+            UserProductSearchQualificationPlan candidate = completeCandidate(primaryModel, query, null);
             firstResolution = planResolver.resolve(candidate, query);
             if (firstResolution.valid()) {
-                return result(firstResolution.plan(), model);
+                return result(firstResolution.plan(), primaryModel);
             }
+            log.warn(
+                    "Product-search qualification model result rejected. attempt=initial, model={}, "
+                            + "violationCount={}, violations={}",
+                    primaryModel,
+                    firstResolution.violations().size(),
+                    firstResolution.violations()
+            );
             repairFeedback = String.join("; ", firstResolution.violations());
         } catch (RuntimeException exception) {
+            initialFailure = exception;
+            log.warn(
+                    "Product-search qualification model attempt failed. attempt=initial, model={}, "
+                            + "failureType={}, failureMessage={}",
+                    primaryModel,
+                    exception.getClass().getName(),
+                    safeErrorMessage(exception)
+            );
             repairFeedback = "The assessment was structurally invalid: " + safeErrorMessage(exception);
         }
 
+        UserProductSearchQualificationPlanResolver.Resolution repairedResolution;
         try {
-            UserProductSearchQualificationPlan repaired = completeCandidate(model, query, repairFeedback);
-            UserProductSearchQualificationPlanResolver.Resolution repairedResolution =
-                    planResolver.resolve(repaired, query);
-            if (repairedResolution.valid()) {
-                return result(repairedResolution.plan(), model);
-            }
-            if (!repairedResolution.plan().missingFilters().isEmpty()
-                    || !repairedResolution.plan().missingTargets().isEmpty()) {
-                return result(planResolver.safeFallback(repairedResolution.plan()), model);
-            }
-            return result(planResolver.safeFallback(query), model);
+            UserProductSearchQualificationPlan repaired = completeCandidate(repairModel, query, repairFeedback);
+            repairedResolution = planResolver.resolve(repaired, query);
         } catch (RuntimeException exception) {
+            log.warn(
+                    "Product-search qualification model attempt failed. attempt=repair, model={}, "
+                            + "failureType={}, failureMessage={}",
+                    repairModel,
+                    exception.getClass().getName(),
+                    safeErrorMessage(exception)
+            );
+            addSuppressed(exception, initialFailure);
             UserProductSearchQualificationPlan fallback = firstResolution != null
                     && (!firstResolution.plan().missingFilters().isEmpty()
                     || !firstResolution.plan().missingTargets().isEmpty())
                     ? planResolver.safeFallback(firstResolution.plan())
-                    : planResolver.safeFallback(query);
-            return result(fallback, model);
+                    : planResolver.safeFallback(query, exception);
+            return result(fallback, repairModel);
         }
+
+        if (repairedResolution.valid()) {
+            return result(repairedResolution.plan(), repairModel);
+        }
+        log.warn(
+                "Product-search qualification model result rejected. attempt=repair, model={}, "
+                        + "violationCount={}, violations={}",
+                repairModel,
+                repairedResolution.violations().size(),
+                repairedResolution.violations()
+        );
+        if (!repairedResolution.plan().missingFilters().isEmpty()
+                || !repairedResolution.plan().missingTargets().isEmpty()) {
+            return result(planResolver.safeFallback(repairedResolution.plan()), repairModel);
+        }
+        return result(planResolver.safeFallback(query, initialFailure), repairModel);
+    }
+
+    private String fallbackModel(String primaryModel) {
+        String configured = openRouterProperties.models().productSearchQueryParser();
+        return configured.equals(primaryModel) ? primaryModel : configured;
     }
 
     private UserProductSearchQualificationModelResult result(
@@ -175,6 +219,12 @@ public class UserProductSearchQualificationModelService {
         return message.length() <= 500 ? message : message.substring(0, 500);
     }
 
+    private void addSuppressed(RuntimeException failure, RuntimeException earlierFailure) {
+        if (earlierFailure != null && earlierFailure != failure) {
+            failure.addSuppressed(earlierFailure);
+        }
+    }
+
     private UserProductSearchQualificationPlan completeCandidate(
             String model,
             GenerateUserProductSearchQualificationQuery query,
@@ -185,7 +235,8 @@ public class UserProductSearchQualificationModelService {
                 SYSTEM_PROMPT,
                 userPrompt(query, repairFeedback),
                 "product_search_qualification",
-                responseSchema()
+                responseSchema(),
+                searchProperties.qualificationMaximumOutputTokens()
         );
         return sanitize(parse(response));
     }

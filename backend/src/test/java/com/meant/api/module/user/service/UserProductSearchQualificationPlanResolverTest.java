@@ -40,7 +40,8 @@ class UserProductSearchQualificationPlanResolverTest {
                 notApplicablePriceTier()
         );
 
-        var resolution = resolver.resolve(candidate, query("desk lamp", "desk lamp", null));
+        var resolution = resolver.resolve(candidate, query(
+                "desk lamp", "desk lamp", null, settingsWithDestination()));
 
         assertThat(resolution.valid()).isFalse();
         assertThat(resolution.violations()).contains("RATING ANY lacks explicit filter-specific indifference");
@@ -78,7 +79,7 @@ class UserProductSearchQualificationPlanResolverTest {
                 "running shoes",
                 "running shoes",
                 null,
-                settings(),
+                settingsWithDestination(),
                 List.of(new UserProductSearchPreferenceResult(
                         "jeans", UserProductSearchAttributeName.SIZE, List.of("32")))
         );
@@ -121,7 +122,7 @@ class UserProductSearchQualificationPlanResolverTest {
                 "running shoes",
                 "running shoes",
                 null,
-                settings(),
+                settingsWithDestination(),
                 List.of(new UserProductSearchPreferenceResult(
                         "running-shoes", UserProductSearchAttributeName.SIZE, List.of("10")))
         );
@@ -276,6 +277,39 @@ class UserProductSearchQualificationPlanResolverTest {
         assertThat(resolution.valid()).isTrue();
         assertThat(resolution.plan().shipsTo().value())
                 .isEqualTo(new UserProductSearchQualificationPlan.Location("US", "NY", "10001"));
+    }
+
+    @Test
+    void ignoresAnUnmatchedModelProfileClaimAndUsesThePrimarySavedDestination() {
+        UserProductSearchQualificationPlan candidate = withShipsTo(
+                plan(
+                        "black jacket",
+                        List.of(),
+                        notApplicableCondition(),
+                        notApplicableShipsFrom(),
+                        notApplicablePrice(),
+                        notApplicableAttributes(),
+                        notApplicableRating(),
+                        notApplicablePriceTier()
+                ),
+                new UserProductSearchQualificationPlan.LocationFilter(
+                        UserProductSearchFilterState.VALUE,
+                        new UserProductSearchQualificationPlan.Location("CA", null, null),
+                        new UserProductSearchQualificationPlan.Provenance(
+                                UserProductSearchDecisionSource.PROFILE,
+                                "Canada"
+                        )
+                )
+        );
+
+        var resolution = resolver.resolve(candidate, query(
+                "black jacket", "black jacket", null, settingsWithDestination()));
+
+        assertThat(resolution.valid()).isTrue();
+        assertThat(resolution.plan().shipsTo().value())
+                .isEqualTo(new UserProductSearchQualificationPlan.Location("CZ", "Prague", "18600"));
+        assertThat(resolution.plan().shipsTo().provenance().source())
+                .isEqualTo(UserProductSearchDecisionSource.PROFILE);
     }
 
     @Test
@@ -546,7 +580,8 @@ class UserProductSearchQualificationPlanResolverTest {
                 notApplicablePriceTier()
         );
 
-        var resolution = resolver.resolve(candidate, query("desk lamp", "ano", previous));
+        var resolution = resolver.resolve(candidate, query(
+                "desk lamp", "ano", previous, settingsWithDestination()));
 
         assertThat(resolution.valid()).isTrue();
         assertThat(resolution.plan().rating().state()).isEqualTo(UserProductSearchFilterState.ANY);
@@ -554,6 +589,55 @@ class UserProductSearchQualificationPlanResolverTest {
                 .isEqualTo(UserProductSearchDecisionSource.CURRENT_USER_TURN);
         assertThat(resolution.plan().missingTargets()).isEmpty();
         assertThat(resolution.plan().questionTargets()).isEmpty();
+    }
+
+    @Test
+    void acceptsExplicitShippingIndifferenceAfterAskingForTheDestination() {
+        UserProductSearchQualificationPlan previous = withShipsTo(
+                plan(
+                        "black jacket",
+                        List.of(UserProductSearchQuestionTarget.SHIPS_TO),
+                        notApplicableCondition(),
+                        notApplicableShipsFrom(),
+                        notApplicablePrice(),
+                        notApplicableAttributes(),
+                        notApplicableRating(),
+                        notApplicablePriceTier()
+                ),
+                new UserProductSearchQualificationPlan.LocationFilter(
+                        UserProductSearchFilterState.MISSING,
+                        null,
+                        UserProductSearchQualificationPlan.Provenance.none()
+                )
+        ).withConversation(
+                "What country should the order ship to, or does location not matter?",
+                List.of(),
+                List.of(UserProductSearchQuestionTarget.SHIPS_TO)
+        );
+        UserProductSearchQualificationPlan candidate = withShipsTo(
+                plan(
+                        "black jacket",
+                        List.of(),
+                        notApplicableCondition(),
+                        notApplicableShipsFrom(),
+                        notApplicablePrice(),
+                        notApplicableAttributes(),
+                        notApplicableRating(),
+                        notApplicablePriceTier()
+                ),
+                new UserProductSearchQualificationPlan.LocationFilter(
+                        UserProductSearchFilterState.ANY,
+                        null,
+                        currentTurn("I don't care")
+                )
+        );
+
+        var resolution = resolver.resolve(candidate, query(
+                "black jacket", "I don't care", previous));
+
+        assertThat(resolution.valid()).isTrue();
+        assertThat(resolution.plan().shipsTo().state()).isEqualTo(UserProductSearchFilterState.ANY);
+        assertThat(resolution.plan().missingTargets()).isEmpty();
     }
 
     @Test
@@ -579,7 +663,8 @@ class UserProductSearchQualificationPlanResolverTest {
                 notApplicablePriceTier()
         );
 
-        var resolution = resolver.resolve(candidate, query("blue jeans", "blue jeans", null));
+        var resolution = resolver.resolve(candidate, query(
+                "blue jeans", "blue jeans", null, settingsWithDestination()));
 
         assertThat(resolution.valid()).isTrue();
         assertThat(resolution.plan().attributes().state()).isEqualTo(UserProductSearchFilterState.MISSING);
@@ -656,7 +741,7 @@ class UserProductSearchQualificationPlanResolverTest {
 
         var resolution = resolver.resolve(
                 candidate,
-                query("new blue jeans", "size 32, under 100", previous)
+                query("new blue jeans", "size 32, under 100", previous, settingsWithDestination())
         );
 
         assertThat(resolution.valid()).isTrue();
@@ -961,12 +1046,39 @@ class UserProductSearchQualificationPlanResolverTest {
             String message,
             UserProductSearchQualificationPlan previous
     ) {
+        return query(originalQuery, message, previous, settings());
+    }
+
+    private GenerateUserProductSearchQualificationQuery query(
+            String originalQuery,
+            String message,
+            UserProductSearchQualificationPlan previous,
+            UserSettingsResult settings
+    ) {
         return new GenerateUserProductSearchQualificationQuery(
                 originalQuery,
                 message,
                 previous,
-                settings(),
+                settings,
                 List.of()
+        );
+    }
+
+    private UserSettingsResult settingsWithDestination() {
+        Instant now = Instant.parse("2026-07-17T10:00:00Z");
+        UserLocationResult location = new UserLocationResult(
+                "home", "Czech Republic", "CZ", "Prague", "18600", "Prague", "Prague");
+        return new UserSettingsResult(
+                null,
+                null,
+                location,
+                List.of(location),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                now,
+                now
         );
     }
 

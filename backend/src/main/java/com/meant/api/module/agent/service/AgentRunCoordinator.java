@@ -329,12 +329,28 @@ public class AgentRunCoordinator {
             modelMessages.add(AgentModelMessage.assistant(response.text(), calls));
             totalToolCalls += calls.size();
             if (totalToolCalls > properties.maximumTotalToolInvocations()) {
+                log.warn(
+                        "Agent total tool-call guard triggered. runId={}, iteration={}, totalToolCalls={}, limit={}",
+                        runId,
+                        iteration,
+                        totalToolCalls,
+                        properties.maximumTotalToolInvocations()
+                );
                 terminateForLimit(runId, executionOwner, "tool_limit", "I reached the safe tool limit before finishing.");
                 return;
             }
             for (AgentModelToolCall call : calls) {
                 int toolCount = perToolCounts.merge(call.name(), 1, Integer::sum);
                 if (toolCount > properties.maximumPerToolInvocations()) {
+                    log.warn(
+                            "Agent per-tool call guard triggered. runId={}, iteration={}, toolName={}, "
+                                    + "toolInvocationCount={}, limit={}",
+                            runId,
+                            iteration,
+                            call.name(),
+                            toolCount,
+                            properties.maximumPerToolInvocations()
+                    );
                     terminateForLimit(
                             runId,
                             executionOwner,
@@ -346,6 +362,16 @@ public class AgentRunCoordinator {
                 String fingerprint = fingerprint(call);
                 int repeatCount = repeatedCalls.merge(fingerprint, 1, Integer::sum);
                 if (repeatCount >= properties.repeatedIdenticalToolCallThreshold()) {
+                    log.warn(
+                            "Agent repeated tool-call guard triggered. runId={}, iteration={}, toolName={}, "
+                                    + "repeatCount={}, threshold={}, argumentsFingerprint={}",
+                            runId,
+                            iteration,
+                            call.name(),
+                            repeatCount,
+                            properties.repeatedIdenticalToolCallThreshold(),
+                            fingerprint
+                    );
                     terminateForLimit(
                             runId,
                             executionOwner,
@@ -365,6 +391,16 @@ public class AgentRunCoordinator {
             }
 
             ToolBatchResult batchResult = executeTools(toolContext, calls, executionOwner, deadline);
+            if (batchResult.waitingForUserMessage() != null) {
+                requireActive(runId, executionOwner, deadline);
+                messageLedgerService.appendTerminalAssistant(
+                        runId,
+                        executionOwner,
+                        batchResult.waitingForUserMessage(),
+                        true
+                );
+                return;
+            }
             if (batchResult.mutationAttempted()) {
                 mutationAttempted = true;
                 if (batchResult.allAttemptedMutationsSucceeded()) {
@@ -501,6 +537,15 @@ public class AgentRunCoordinator {
         ).getFirst();
         AgentExecutedToolCall executed = toolCallExecutor.execute(context, call);
         requireActive(context.runId(), executionOwner, deadline);
+        if (executed.waitingForUserMessage() != null) {
+            messageLedgerService.appendTerminalAssistant(
+                    context.runId(),
+                    executionOwner,
+                    executed.waitingForUserMessage(),
+                    true
+            );
+            return;
+        }
         String message = executed.successful()
                 ? readIntentResolver.completionMessage(intent, executed.modelResult().resultJson())
                 : readIntentResolver.failureMessage(intent);
@@ -592,7 +637,12 @@ public class AgentRunCoordinator {
         return new ToolBatchResult(
                 calls.stream().map(call -> results.get(call.id()).modelResult()).toList(),
                 !mutations.isEmpty(),
-                !mutations.isEmpty() && mutations.stream().allMatch(call -> results.get(call.id()).successful())
+                !mutations.isEmpty() && mutations.stream().allMatch(call -> results.get(call.id()).successful()),
+                calls.stream()
+                        .map(call -> results.get(call.id()).waitingForUserMessage())
+                        .filter(java.util.Objects::nonNull)
+                        .findFirst()
+                        .orElse(null)
         );
     }
 
@@ -713,7 +763,8 @@ public class AgentRunCoordinator {
     private record ToolBatchResult(
             List<AgentModelToolResult> modelResults,
             boolean mutationAttempted,
-            boolean allAttemptedMutationsSucceeded
+            boolean allAttemptedMutationsSucceeded,
+            String waitingForUserMessage
     ) {
     }
 

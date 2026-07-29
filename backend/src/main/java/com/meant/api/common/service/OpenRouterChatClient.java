@@ -45,7 +45,26 @@ public class OpenRouterChatClient {
             String schemaName,
             OpenRouterJsonSchemaDefinition schema
     ) {
-        return completeJson(model, systemPrompt, userPrompt, schemaName, schema, null);
+        return completeJson(model, systemPrompt, userPrompt, schemaName, schema, (List<OpenRouterPlugin>) null);
+    }
+
+    public String completeJson(
+            String model,
+            String systemPrompt,
+            String userPrompt,
+            String schemaName,
+            OpenRouterJsonSchemaDefinition schema,
+            int maximumOutputTokens
+    ) {
+        return completeJsonInternal(
+                model,
+                systemPrompt,
+                userPrompt,
+                schemaName,
+                schema,
+                null,
+                maximumOutputTokens
+        );
     }
 
     public String completeJson(
@@ -55,6 +74,18 @@ public class OpenRouterChatClient {
             String schemaName,
             OpenRouterJsonSchemaDefinition schema,
             List<OpenRouterPlugin> plugins
+    ) {
+        return completeJsonInternal(model, systemPrompt, userPrompt, schemaName, schema, plugins, null);
+    }
+
+    private String completeJsonInternal(
+            String model,
+            String systemPrompt,
+            String userPrompt,
+            String schemaName,
+            OpenRouterJsonSchemaDefinition schema,
+            List<OpenRouterPlugin> plugins,
+            Integer maximumOutputTokens
     ) {
         if (openRouterProperties.apiKey().isBlank()) {
             throw new OpenRouterException("OpenRouter API key is not configured");
@@ -71,7 +102,8 @@ public class OpenRouterChatClient {
                         "json_schema",
                         new OpenRouterJsonSchema(schemaName, true, schema)
                 ),
-                plugins
+                plugins,
+                maximumOutputTokens
         );
 
         try {
@@ -86,7 +118,7 @@ public class OpenRouterChatClient {
                     .body(request)
                     .retrieve()
                     .body(OpenRouterChatResponse.class);
-            return content(response);
+            return content(response, model, maximumOutputTokens);
         } catch (RestClientResponseException exception) {
             throw httpFailure(
                     "chat completion",
@@ -152,11 +184,38 @@ public class OpenRouterChatClient {
         return redacted.substring(0, RESPONSE_BODY_PREVIEW_LIMIT) + "...";
     }
 
-    private String content(OpenRouterChatResponse response) {
+    private String content(
+            OpenRouterChatResponse response,
+            String requestedModel,
+            Integer maximumOutputTokens
+    ) {
         if (response == null || response.choices() == null || response.choices().isEmpty()) {
             throw new OpenRouterException("OpenRouter response did not include any choices");
         }
-        OpenRouterChatMessage message = response.choices().getFirst().message();
+        OpenRouterChatResponse.Choice choice = response.choices().getFirst();
+        if ("length".equalsIgnoreCase(choice.finishReason())) {
+            Long completionTokens = response.usage() == null ? null : response.usage().completionTokens();
+            log.warn(
+                    "OpenRouter chat completion truncated. requestedModel={}, resolvedModel={}, finishReason={}, "
+                            + "nativeFinishReason={}, completionTokens={}, maximumOutputTokens={}",
+                    requestedModel,
+                    response.model(),
+                    choice.finishReason(),
+                    choice.nativeFinishReason(),
+                    completionTokens,
+                    maximumOutputTokens
+            );
+            throw new OpenRouterException(
+                    "OpenRouter chat completion was truncated"
+                            + " (requestedModel=" + requestedModel
+                            + ", resolvedModel=" + response.model()
+                            + ", finishReason=" + choice.finishReason()
+                            + ", nativeFinishReason=" + choice.nativeFinishReason()
+                            + ", completionTokens=" + completionTokens
+                            + ", maximumOutputTokens=" + maximumOutputTokens + ")"
+            );
+        }
+        OpenRouterChatMessage message = choice.message();
         if (message == null || message.content() == null || message.content().isBlank()) {
             throw new OpenRouterException("OpenRouter response did not include message content");
         }

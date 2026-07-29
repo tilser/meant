@@ -135,7 +135,8 @@ public class UserProductSearchQualificationPlanResolver {
                 && missing.contains(UserProductSearchQuestionTarget.SIZE)
                 && missing.contains(UserProductSearchQuestionTarget.SHIPS_TO)) {
             return plan.withConversation(
-                    "What boot size do you need, and what country or postal code should they ship to?",
+                    "What boot size do you need, and what country or postal code should they ship to? "
+                            + "You can say location does not matter if it should not filter the search.",
                     List.of(),
                     missing
             );
@@ -150,9 +151,21 @@ public class UserProductSearchQualificationPlanResolver {
     }
 
     public UserProductSearchQualificationPlan safeFallback(GenerateUserProductSearchQualificationQuery query) {
-        if (!categoryPolicy.permitsConservativeFallback(query)) {
-            throw new OpenRouterException(
-                    "Product-search qualification failed and no conservative category fallback was available");
+        return safeFallback(query, null);
+    }
+
+    public UserProductSearchQualificationPlan safeFallback(
+            GenerateUserProductSearchQualificationQuery query,
+            Throwable cause
+    ) {
+        String denialReason = categoryPolicy.conservativeFallbackDenialReason(query);
+        if (denialReason != null) {
+            String message = "Product-search qualification failed and no conservative category fallback was available"
+                    + " (reason=" + denialReason + ")";
+            if (cause == null) {
+                throw new OpenRouterException(message);
+            }
+            throw new OpenRouterException(message, cause);
         }
         UserProductSearchQualificationPlan.Provenance none = UserProductSearchQualificationPlan.Provenance.none();
         List<UserProductSearchQualificationPlan.Attribute> attributes = java.util.Arrays.stream(
@@ -222,7 +235,6 @@ public class UserProductSearchQualificationPlanResolver {
                 && filter.provenance().source() == UserProductSearchDecisionSource.PROFILE) {
             var savedLocation = savedProfileLocation(filter, query.settings());
             if (savedLocation == null) {
-                violations.add("SHIPS_TO profile value does not match a saved location");
                 return new UserProductSearchQualificationPlan.LocationFilter(
                         UserProductSearchFilterState.MISSING,
                         null,
@@ -236,7 +248,10 @@ public class UserProductSearchQualificationPlanResolver {
                             savedLocation.region(),
                             savedLocation.postalCode()
                     ),
-                    filter.provenance()
+                    new UserProductSearchQualificationPlan.Provenance(
+                            UserProductSearchDecisionSource.PROFILE,
+                            savedLocation.code()
+                    )
             );
         }
         List<String> values = filter.value() == null ? List.of() : List.of(filter.value().country());

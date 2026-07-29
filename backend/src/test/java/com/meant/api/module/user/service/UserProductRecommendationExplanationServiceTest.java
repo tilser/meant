@@ -337,6 +337,7 @@ class UserProductRecommendationExplanationServiceTest {
                         "v1",
                         "v1",
                         "v1",
+                        4096,
                         Duration.ofHours(24),
                         Duration.ofMinutes(30),
                         Duration.ofMinutes(30),

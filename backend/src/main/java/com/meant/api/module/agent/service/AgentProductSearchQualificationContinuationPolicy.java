@@ -36,7 +36,8 @@ public class AgentProductSearchQualificationContinuationPolicy {
     private static final Pattern PRICE_TIER = Pattern.compile(
             "(?i)\\b(?:(?:low|medium|high)\\s+price\\s+tier|price\\s+tier|budget|premium|luxury)\\b");
     private static final Pattern INDIFFERENCE = Pattern.compile(
-            "(?i)\\b(?:any|either|no\\s+preference|doesn'?t\\s+matter|do\\s+not\\s+care)\\b");
+            "(?i)\\b(?:any|either|no\\s+preference|doesn['’]?t\\s+matter|"
+                    + "don['’]?t\\s+care|do\\s+not\\s+care)\\b");
 
     private final UserProductSearchCategoryPolicy categoryPolicy;
 
@@ -81,7 +82,7 @@ public class AgentProductSearchQualificationContinuationPolicy {
             case PRICE -> PRICE.matcher(value).find();
             case COLOR -> COLOR.matcher(value).find();
             case SIZE -> SIZE.matcher(value).find()
-                    || targetCount == 1 && value.matches("(?i)\\s*[a-z]?\\d{1,3}(?:\\.5)?[a-z]?\\s*");
+                    || value.matches("(?i)\\s*[a-z]?\\d{1,3}(?:\\.5)?[a-z]?\\s*");
             case TARGET_GENDER -> GENDER.matcher(value).find();
             case RATING -> RATING.matcher(value).find();
             case PRICE_TIER -> PRICE_TIER.matcher(value).find();

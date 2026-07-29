@@ -190,7 +190,8 @@ public class AgentToolCallExecutor {
             );
             return new AgentExecutedToolCall(
                     new AgentModelToolResult(call.id(), call.name(), jsonSupport.bounded(result.resultJson())),
-                    true
+                    true,
+                    result.waitingForUserMessage()
             );
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();

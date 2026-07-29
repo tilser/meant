@@ -12,6 +12,8 @@ public record OpenRouterChatRequest(
         @JsonProperty("response_format")
         OpenRouterResponseFormat responseFormat,
         List<OpenRouterPlugin> plugins,
+        @JsonProperty("max_tokens")
+        Integer maximumTokens,
         Boolean stream
 ) {
 
@@ -21,7 +23,7 @@ public record OpenRouterChatRequest(
             Double temperature,
             OpenRouterResponseFormat responseFormat
     ) {
-        this(model, messages, temperature, responseFormat, null, false);
+        this(model, messages, temperature, responseFormat, null, null, false);
     }
 
     public OpenRouterChatRequest(
@@ -31,6 +33,17 @@ public record OpenRouterChatRequest(
             OpenRouterResponseFormat responseFormat,
             List<OpenRouterPlugin> plugins
     ) {
-        this(model, messages, temperature, responseFormat, plugins, false);
+        this(model, messages, temperature, responseFormat, plugins, null, false);
+    }
+
+    public OpenRouterChatRequest(
+            String model,
+            List<OpenRouterChatMessage> messages,
+            Double temperature,
+            OpenRouterResponseFormat responseFormat,
+            List<OpenRouterPlugin> plugins,
+            Integer maximumTokens
+    ) {
+        this(model, messages, temperature, responseFormat, plugins, maximumTokens, false);
     }
 }

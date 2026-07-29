@@ -275,12 +275,14 @@ class SearchCatalogAgentToolTest {
         var execution = tool.execute(context(userId), "{}");
 
         assertThat(execution.safeSummary()).contains("What boot size", "ship to");
+        assertThat(execution.waitingForUserMessage()).isEqualTo(
+                "What boot size do you need, and what country or postal code should they ship to?");
         assertThat(tool.descriptor().inputSchemaJson()).contains("\"qualificationId\"");
         verifyNoInteractions(searches, results);
     }
 
     @Test
-    void failsClosedWhenMerchantScopedSearchCannotEnforceAQualifiedExtensionConstraint() {
+    void passesQualifiedExtensionConstraintsToMerchantScopedSearch() {
         UUID userId = UUID.randomUUID();
         AgentJsonSupport json = mock(AgentJsonSupport.class);
         AgentContextProfileService profiles = mock(AgentContextProfileService.class);
@@ -320,14 +322,16 @@ class SearchCatalogAgentToolTest {
         when(qualifications.qualify(
                 eq(profile), any(UUID.class), nullable(UUID.class), nullable(UUID.class), eq("find shoes")))
                 .thenReturn(ready("football boots", authorized));
+        UserGroupedProductSearchResult result = mock(UserGroupedProductSearchResult.class);
+        when(result.products()).thenReturn(List.of());
+        when(searches.search(eq(profile), any(), eq(authorized))).thenReturn(result);
+        when(json.write(any())).thenReturn("{}");
         SearchCatalogAgentTool tool = new SearchCatalogAgentTool(
                 json, profiles, results, qualifications, searches);
 
-        assertThatThrownBy(() -> tool.execute(
-                context(userId).withMerchantId(UUID.randomUUID()), "{}"))
-                .isInstanceOf(AgentException.class)
-                .hasMessageContaining("cannot enforce");
-        verifyNoInteractions(searches, results);
+        tool.execute(context(userId).withMerchantId(UUID.randomUUID()), "{}");
+
+        verify(searches).search(eq(profile), any(SearchUserProductsCommand.class), eq(authorized));
     }
 
     private AgentProductSearchQualificationResult ready(

@@ -20,6 +20,9 @@ public record UserProductSearchProperties(
         @NotBlank
         String explanationPromptVersion,
 
+        @Positive
+        int qualificationMaximumOutputTokens,
+
         @NotNull
         Duration cacheTtl,
 

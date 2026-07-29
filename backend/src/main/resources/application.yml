@@ -310,6 +310,7 @@ user:
     search-version: v4
     query-parser-prompt-version: v3
     explanation-prompt-version: v3
+    qualification-maximum-output-tokens: ${USER_PRODUCT_SEARCH_QUALIFICATION_MAXIMUM_OUTPUT_TOKENS:4096}
     cache-ttl: 24h
     qualification-pending-ttl: ${USER_PRODUCT_SEARCH_QUALIFICATION_PENDING_TTL:30m}
     product-detail-session-ttl: ${USER_PRODUCT_DETAIL_SESSION_TTL:30m}

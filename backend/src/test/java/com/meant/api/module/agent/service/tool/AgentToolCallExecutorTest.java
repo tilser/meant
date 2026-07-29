@@ -21,6 +21,7 @@ import com.meant.api.module.agent.service.AgentRunService;
 import com.meant.api.module.agent.service.dto.AgentModelToolCall;
 import com.meant.api.module.agent.service.dto.AgentToolDescriptor;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
+import com.meant.api.module.agent.service.dto.AgentToolExecutionResult;
 import com.meant.api.module.agent.service.dto.AgentToolInvocationReservation;
 import java.time.Duration;
 import java.util.List;
@@ -150,6 +151,51 @@ class AgentToolCallExecutorTest {
                 .contains("\"code\":\"invalid_arguments\"")
                 .contains("$.query is required.")
                 .contains("\"retryable\":true");
+    }
+
+    @Test
+    void propagatesAWaitingForUserOutcomeFromTheExecutedTool() {
+        AgentTool tool = mock(AgentTool.class);
+        AgentToolDescriptor descriptor = new AgentToolDescriptor(
+                "search_catalog",
+                "Search catalog",
+                "{\"type\":\"object\"}",
+                "v1",
+                AgentToolRisk.READ
+        );
+        String question = "Where should the order ship?";
+        when(tool.descriptor()).thenReturn(descriptor);
+        when(tool.execute(any(), anyString()))
+                .thenReturn(AgentToolExecutionResult.waitingForUser(
+                        "{\"qualificationQuestion\":\"Where should the order ship?\"}",
+                        question
+                ));
+        AgentToolAuthorizationPolicy authorizationPolicy = mock(AgentToolAuthorizationPolicy.class);
+        when(authorizationPolicy.authorized(any(), eq(descriptor))).thenReturn(true);
+        when(authorizationPolicy.authorizedInvocation(any(), eq(descriptor), anyString())).thenReturn(true);
+        AgentToolInvocationService invocationService = mock(AgentToolInvocationService.class);
+        when(invocationService.reserve(any(), any(), eq(descriptor), anyString(), anyString(), isNull()))
+                .thenReturn(new AgentToolInvocationReservation(
+                        UUID.randomUUID(), true, null, List.of(), false));
+        ObjectMapper objectMapper = new ObjectMapper();
+        AgentJsonSupport jsonSupport = new AgentJsonSupport(objectMapper, properties());
+        executor = new AgentToolCallExecutor(
+                new AgentToolRegistry(List.of(tool)),
+                authorizationPolicy,
+                invocationService,
+                mock(AgentRunService.class),
+                jsonSupport,
+                new AgentToolSchemaValidator(objectMapper),
+                new AgentMutationExecutionLane(new UserMutationExecutionLane()),
+                properties()
+        );
+        AgentToolExecutionContext context = new AgentToolExecutionContext(
+                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "black jacket");
+
+        var result = executor.execute(context, new AgentModelToolCall("call-search", "search_catalog", "{}"));
+
+        assertThat(result.successful()).isTrue();
+        assertThat(result.waitingForUserMessage()).isEqualTo(question);
     }
 
     @Test

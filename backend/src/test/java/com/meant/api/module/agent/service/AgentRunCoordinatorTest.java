@@ -126,6 +126,46 @@ class AgentRunCoordinatorTest {
     }
 
     @Test
+    void qualificationQuestionStopsTheRunAndWaitsForTheUserWithoutAnotherModelTurn() {
+        UUID runId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        String question = "What country or postal code should the order ship to? "
+                + "You can also say “I don’t care” if location should not filter the search.";
+        AgentModelToolCall search =
+                new AgentModelToolCall("call-search", "search_catalog", "{\"query\":\"black jacket\"}");
+        ScriptedAgentModelGateway model = new ScriptedAgentModelGateway(List.of(
+                response(model("", List.of(search))),
+                response(model("This second turn must not run.", List.of()))
+        ));
+        Fixture fixture = fixture(runId, conversationId, model, false);
+        when(fixture.toolExecutor().execute(any(), any())).thenReturn(new AgentExecutedToolCall(
+                new AgentModelToolResult(
+                        "call-search",
+                        "search_catalog",
+                        "{\"qualificationQuestion\":\"" + question + "\"}"
+                ),
+                true,
+                question
+        ));
+
+        coordinator.schedule(runId);
+
+        verify(fixture.messageLedger(), timeout(3000)).appendTerminalAssistant(
+                runId,
+                fixture.executionOwner(),
+                question,
+                true
+        );
+        assertThat(model.requests()).hasSize(1);
+        verify(fixture.runService(), never()).failOwnedExecution(
+                eq(runId),
+                eq(fixture.executionOwner()),
+                eq("repeated_tool_call"),
+                anyString()
+        );
+    }
+
+    @Test
     void explicitVisibleProductComparisonRequiresTheTypedComparisonToolBeforeProse() {
         UUID runId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();

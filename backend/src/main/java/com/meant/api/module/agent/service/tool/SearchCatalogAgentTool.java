@@ -233,7 +233,7 @@ public class SearchCatalogAgentTool implements AgentTool {
                 question,
                 targets
         );
-        return AgentToolExecutionResult.read(json.write(output), question, List.of());
+        return AgentToolExecutionResult.waitingForUser(json.write(output), question);
     }
 
     private void requireRequestedFiltersAuthorized(

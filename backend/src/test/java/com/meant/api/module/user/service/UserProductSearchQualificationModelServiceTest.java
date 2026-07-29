@@ -24,9 +24,13 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.ObjectMapper;
 
+@ExtendWith(OutputCaptureExtension.class)
 class UserProductSearchQualificationModelServiceTest {
 
     @Test
@@ -156,14 +160,48 @@ class UserProductSearchQualificationModelServiceTest {
     }
 
     @Test
-    void modelFailureForAnUnclassifiedSearchFailsClosed() {
+    void modelFailureForAnUnclassifiedSearchFailsClosedWithBothAttemptFailures(CapturedOutput output) {
         FakeOpenRouterChatClient client = new FakeOpenRouterChatClient("not-json", "still-not-json");
 
         assertThatThrownBy(() -> service(client).generate(query("desk lamp", "desk lamp", null)))
-                .isInstanceOf(OpenRouterException.class)
-                .hasMessageContaining("no conservative category fallback");
+                .isInstanceOfSatisfying(OpenRouterException.class, exception -> {
+                    assertThat(exception)
+                            .hasMessageContaining("no conservative category fallback")
+                            .hasMessageContaining("category=HOME")
+                            .hasCauseInstanceOf(OpenRouterException.class);
+                    assertThat(exception.getCause())
+                            .hasMessageContaining("invalid product-search qualification JSON");
+                    assertThat(exception.getCause().getSuppressed())
+                            .singleElement()
+                            .satisfies(suppressed -> assertThat(suppressed)
+                                    .isInstanceOf(OpenRouterException.class)
+                                    .hasMessageContaining("invalid product-search qualification JSON"));
+                });
 
         assertThat(client.calls).isEqualTo(2);
+        assertThat(output)
+                .contains(
+                        "attempt=initial",
+                        "attempt=repair",
+                        "failureType=com.meant.api.common.exception.OpenRouterException",
+                        "failureMessage=OpenRouter returned invalid product-search qualification JSON"
+                );
+    }
+
+    @Test
+    void retriesMalformedPrimaryOutputWithTheConfiguredFallbackModelAndOutputBudget() {
+        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient(
+                new OpenRouterException(
+                        "OpenRouter chat completion was truncated (finishReason=length)"),
+                combinedQuestionResponse()
+        );
+
+        var result = service(client).generate(query("blue jeans", "blue jeans", null));
+
+        assertThat(client.models).containsExactly("chat-model", "qualification-model");
+        assertThat(client.maximumOutputTokens).containsExactly(4096, 4096);
+        assertThat(result.model()).isEqualTo("qualification-model");
+        assertThat(result.plan().currentSchema()).isTrue();
     }
 
     @Test
@@ -300,6 +338,7 @@ class UserProductSearchQualificationModelServiceTest {
                 "search-v1",
                 "qualification-v1",
                 "explanation-v1",
+                4096,
                 Duration.ofMinutes(1),
                 Duration.ofMinutes(30),
                 Duration.ofMinutes(1),
@@ -472,13 +511,15 @@ class UserProductSearchQualificationModelServiceTest {
 
     private static final class FakeOpenRouterChatClient extends OpenRouterChatClient {
 
-        private final List<String> responses;
+        private final List<Object> responses;
         private final List<String> userPrompts = new ArrayList<>();
+        private final List<String> models = new ArrayList<>();
+        private final List<Integer> maximumOutputTokens = new ArrayList<>();
         private int calls;
         private String model;
         private OpenRouterJsonSchemaDefinition schema;
 
-        private FakeOpenRouterChatClient(String... responses) {
+        private FakeOpenRouterChatClient(Object... responses) {
             super(RestClient.builder(), new OpenRouterProperties(
                     "https://openrouter.test/api/v1",
                     "test-key",
@@ -494,12 +535,19 @@ class UserProductSearchQualificationModelServiceTest {
                 String systemPrompt,
                 String userPrompt,
                 String schemaName,
-                OpenRouterJsonSchemaDefinition schema
+                OpenRouterJsonSchemaDefinition schema,
+                int maximumOutputTokens
         ) {
             this.model = model;
+            this.models.add(model);
             this.userPrompts.add(userPrompt);
+            this.maximumOutputTokens.add(maximumOutputTokens);
             this.schema = schema;
-            return responses.get(calls++);
+            Object response = responses.get(calls++);
+            if (response instanceof RuntimeException exception) {
+                throw exception;
+            }
+            return (String) response;
         }
     }
 }

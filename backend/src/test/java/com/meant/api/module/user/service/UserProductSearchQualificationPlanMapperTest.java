@@ -151,6 +151,20 @@ class UserProductSearchQualificationPlanMapperTest {
     }
 
     @Test
+    void explicitShippingIndifferenceOmitsTheProviderShippingFilter() {
+        UserProductSearchQualificationPlan plan = completePlan(
+                new UserProductSearchQualificationPlan.AttributesFilter(
+                        UserProductSearchFilterState.NOT_APPLICABLE,
+                        List.of()
+                )
+        );
+
+        var filters = mapper.map(plan);
+
+        assertThat(filters.shipsTo()).isNull();
+    }
+
+    @Test
     void refusesAnInconsistentPlanWithAnIndividuallyMissingAttribute() {
         UserProductSearchQualificationPlan plan = completePlan(new UserProductSearchQualificationPlan.AttributesFilter(
                 value(),

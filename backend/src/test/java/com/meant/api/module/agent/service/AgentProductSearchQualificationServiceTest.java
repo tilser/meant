@@ -28,6 +28,7 @@ import com.meant.api.module.user.service.UserProductSearchQualificationPersisten
 import com.meant.api.module.user.service.UserProductSearchQualificationPlanMapper;
 import com.meant.api.module.user.service.UserProductSearchQualificationService;
 import com.meant.api.module.user.service.command.CancelUserProductSearchQualificationCommand;
+import com.meant.api.module.user.service.query.FindPendingUserProductSearchQualificationQuery;
 import com.meant.api.module.user.service.query.GetUserProductSearchQualificationQuery;
 import java.time.Duration;
 import java.time.Instant;
@@ -38,6 +39,34 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 class AgentProductSearchQualificationServiceTest {
+
+    @Test
+    void treatsCommonDontCareAnswersAsShippingIndifference() {
+        UserProductSearchQualificationPlan plan = mock(UserProductSearchQualificationPlan.class);
+        when(plan.missingTargets()).thenReturn(List.of(UserProductSearchQuestionTarget.SHIPS_TO));
+        UserProductSearchQualificationSnapshot pending = new UserProductSearchQualificationSnapshot(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                null,
+                "black jacket",
+                UserProductSearchQualificationStatus.NEEDS_INPUT,
+                plan,
+                "model",
+                "prompt",
+                Instant.now(),
+                Instant.now()
+        );
+        var policy = new AgentProductSearchQualificationContinuationPolicy(
+                new UserProductSearchCategoryPolicy());
+
+        assertThat(policy.decide(pending, "I don't care"))
+                .isEqualTo(AgentProductSearchQualificationContinuationPolicy.Decision.ANSWER);
+        assertThat(policy.decide(pending, "I dont care"))
+                .isEqualTo(AgentProductSearchQualificationContinuationPolicy.Decision.ANSWER);
+        assertThat(policy.decide(pending, "I don’t care"))
+                .isEqualTo(AgentProductSearchQualificationContinuationPolicy.Decision.ANSWER);
+    }
 
     @Test
     void rejectsAConversationThatIsNotOwnedByTheAgentUserBeforeQualification() {
@@ -144,7 +173,67 @@ class AgentProductSearchQualificationServiceTest {
     }
 
     @Test
-    void startsAnUnrelatedRequestWithoutConsultingAStalePendingQualification() {
+    void infersThePendingQualificationWhenTheModelOmitsItsContinuationId() {
+        UserProductSearchQualificationService qualificationService =
+                mock(UserProductSearchQualificationService.class);
+        UserProductSearchQualificationPersistenceService persistenceService =
+                mock(UserProductSearchQualificationPersistenceService.class);
+        UserProductSearchQualificationPlanMapper mapper = mock(UserProductSearchQualificationPlanMapper.class);
+        UserProductSearchQualificationPlan pendingPlan = mock(UserProductSearchQualificationPlan.class);
+        UserProductSearchQualificationPlan readyPlan = mock(UserProductSearchQualificationPlan.class);
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID qualificationId = UUID.randomUUID();
+        EnsureUserProfileCommand profile = new EnsureUserProfileCommand(
+                userId, "shopper@example.test", "Shopper", null);
+        UserProductSearchQualificationSnapshot pending = snapshot(
+                qualificationId,
+                userId,
+                conversationId,
+                UserProductSearchQualificationStatus.NEEDS_INPUT,
+                pendingPlan
+        );
+        UserProductSearchQualificationSnapshot ready = snapshot(
+                qualificationId,
+                userId,
+                conversationId,
+                UserProductSearchQualificationStatus.READY,
+                readyPlan
+        );
+        when(pendingPlan.missingTargets()).thenReturn(
+                List.of(UserProductSearchQuestionTarget.SIZE, UserProductSearchQuestionTarget.SHIPS_TO));
+        when(persistenceService.findLatestPending(
+                new FindPendingUserProductSearchQualificationQuery(userId, conversationId, null)))
+                .thenReturn(Optional.of(pending));
+        when(persistenceService.find(new GetUserProductSearchQualificationQuery(userId, qualificationId)))
+                .thenReturn(Optional.of(ready));
+        when(qualificationService.qualify(any(), any())).thenReturn(new UserProductSearchQualificationResult(
+                qualificationId,
+                UserProductSearchQualificationStatus.READY,
+                "Ready",
+                List.of(),
+                List.of(),
+                "running shoes"
+        ));
+        when(readyPlan.missingFilters()).thenReturn(List.of());
+        when(readyPlan.missingTargets()).thenReturn(List.of());
+        when(mapper.map(readyPlan)).thenReturn(new CatalogDiscoveryFilters(
+                true, List.of(), null, List.of(), null, List.of(), List.of(), List.of(), null, List.of()));
+        var service = service(qualificationService, persistenceService, mapper);
+
+        var result = service.qualify(profile, conversationId, null, null, "46");
+
+        ArgumentCaptor<QualifyUserProductSearchCommand> command =
+                ArgumentCaptor.forClass(QualifyUserProductSearchCommand.class);
+        verify(qualificationService).qualify(org.mockito.ArgumentMatchers.eq(profile), command.capture());
+        assertThat(command.getValue().qualificationId()).isEqualTo(qualificationId);
+        assertThat(command.getValue().message()).isEqualTo("46");
+        assertThat(result.qualificationId()).isEqualTo(qualificationId);
+        assertThat(result.authoritativeQuery()).isEqualTo("football boots");
+    }
+
+    @Test
+    void startsANewRequestWhenNoPendingQualificationExists() {
         UserProductSearchQualificationService qualificationService =
                 mock(UserProductSearchQualificationService.class);
         UserProductSearchQualificationPersistenceService persistenceService =
@@ -398,6 +487,7 @@ class AgentProductSearchQualificationServiceTest {
                 "v1",
                 "v1",
                 "v1",
+                4096,
                 Duration.ofHours(24),
                 Duration.ofMinutes(30),
                 Duration.ofMinutes(30),

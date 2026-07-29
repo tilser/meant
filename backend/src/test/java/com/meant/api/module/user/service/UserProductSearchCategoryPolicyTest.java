@@ -53,6 +53,30 @@ class UserProductSearchCategoryPolicyTest {
     }
 
     @Test
+    void physicalProductRequiresAnExplicitShippingDecisionBeforeSearch() {
+        var result = policy.enforce(plan("black jacket"), query(
+                "black jacket", "black jacket", settings(null), List.of()));
+
+        assertThat(result.shipsTo().state()).isEqualTo(UserProductSearchFilterState.MISSING);
+        assertThat(result.missingTargets()).containsExactly(UserProductSearchQuestionTarget.SHIPS_TO);
+        assertThat(result.assistantMessage()).contains("country or postal code", "I don’t care");
+    }
+
+    @Test
+    void physicalProductUsesTheSavedDestinationWithoutAskingAgain() {
+        UserLocationResult location = new UserLocationResult(
+                "saved-home", "Czech Republic", "CZ", "Prague", "18600", "Prague", "Prague");
+
+        var result = policy.enforce(plan("black jacket"), query(
+                "black jacket", "black jacket", settings(location), List.of()));
+
+        assertThat(result.missingTargets()).isEmpty();
+        assertThat(result.shipsTo().state()).isEqualTo(UserProductSearchFilterState.VALUE);
+        assertThat(result.shipsTo().value())
+                .isEqualTo(new UserProductSearchQualificationPlan.Location("CZ", "Prague", "18600"));
+    }
+
+    @Test
     void foodNeverCarriesSizeOrTargetGenderRequirements() {
         UserProductSearchQualificationPlan candidate = withMissingFitAttributes(plan("gluten-free pasta"));
 

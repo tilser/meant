@@ -12,6 +12,7 @@ import com.meant.api.module.user.properties.UserProductSearchProperties;
 import com.meant.api.module.user.service.UserProductSearchQualificationPersistenceService;
 import com.meant.api.module.user.service.UserProductSearchQualificationPlanMapper;
 import com.meant.api.module.user.service.UserProductSearchQualificationService;
+import com.meant.api.module.user.service.query.FindPendingUserProductSearchQualificationQuery;
 import com.meant.api.module.user.service.query.GetUserProductSearchQualificationQuery;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -64,10 +65,12 @@ public class AgentProductSearchQualificationService {
                     profile.id(), conversationId, merchantId, qualificationId, currentTurn);
             log.info(
                     "Agent product-search continuation resolved. userId={}, conversationId={}, resumeId={}, "
-                            + "cancelled={}",
+                            + "source={}, resolution={}, cancelled={}",
                     profile.id(),
                     conversationId,
                     continuation.resumeId(),
+                    continuation.source(),
+                    continuation.resolution(),
                     continuation.cancelled()
             );
             if (continuation.cancelled()) {
@@ -105,15 +108,15 @@ public class AgentProductSearchQualificationService {
             var plan = snapshot.plan();
             log.info(
                     "Agent product-search qualification snapshot loaded. userId={}, conversationId={}, "
-                            + "qualificationId={}, persistedStatus={}, currentSchema={}, missingFilterCount={}, "
-                            + "missingTargetCount={}",
+                            + "qualificationId={}, persistedStatus={}, currentSchema={}, missingFilters={}, "
+                            + "missingTargets={}",
                     profile.id(),
                     conversationId,
                     result.qualificationId(),
                     snapshot.status(),
                     plan.currentSchema(),
-                    plan.missingFilters().size(),
-                    plan.missingTargets().size()
+                    plan.missingFilters(),
+                    plan.missingTargets()
             );
             if (!plan.missingFilters().isEmpty() || !plan.missingTargets().isEmpty()) {
                 return new AgentProductSearchQualificationResult(
@@ -174,12 +177,19 @@ public class AgentProductSearchQualificationService {
             UUID qualificationId,
             String currentTurn
     ) {
-        if (qualificationId == null) {
-            return new Continuation(null, false);
+        boolean inferred = qualificationId == null;
+        var pending = inferred
+                ? persistenceService.findLatestPending(new FindPendingUserProductSearchQualificationQuery(
+                        userId, conversationId, merchantId))
+                : persistenceService.find(new GetUserProductSearchQualificationQuery(userId, qualificationId));
+        if (pending.isEmpty()) {
+            if (inferred) {
+                return new Continuation(
+                        null, false, ContinuationSource.NONE, ContinuationResolution.START_NEW);
+            }
+            throw UserException.notFound("Product-search qualification not found");
         }
-        var snapshot = persistenceService.find(
-                        new GetUserProductSearchQualificationQuery(userId, qualificationId))
-                .orElseThrow(() -> UserException.notFound("Product-search qualification not found"));
+        var snapshot = pending.get();
         if (!snapshot.conversationId().equals(conversationId)
                 || !Objects.equals(snapshot.merchantId(), merchantId)
                 || snapshot.status() != UserProductSearchQualificationStatus.NEEDS_INPUT) {
@@ -187,17 +197,23 @@ public class AgentProductSearchQualificationService {
         }
         if (snapshot.updatedAt().plus(searchProperties.qualificationPendingTtl()).isBefore(Instant.now())) {
             cancel(snapshot);
+            if (inferred) {
+                return new Continuation(
+                        null, false, ContinuationSource.INFERRED, ContinuationResolution.EXPIRED);
+            }
             throw UserException.notFound("Product-search qualification expired; repeat the shopping request");
         }
+        ContinuationSource source = inferred ? ContinuationSource.INFERRED : ContinuationSource.REQUESTED;
         return switch (continuationPolicy.decide(snapshot, currentTurn)) {
-            case ANSWER -> new Continuation(qualificationId, false);
+            case ANSWER -> new Continuation(
+                    snapshot.qualificationId(), false, source, ContinuationResolution.ANSWER);
             case CANCEL -> {
                 cancel(snapshot);
-                yield new Continuation(null, true);
+                yield new Continuation(null, true, source, ContinuationResolution.CANCEL);
             }
             case NEW_INTENT -> {
                 cancel(snapshot);
-                yield new Continuation(null, false);
+                yield new Continuation(null, false, source, ContinuationResolution.NEW_INTENT);
             }
         };
     }
@@ -212,7 +228,26 @@ public class AgentProductSearchQualificationService {
         ));
     }
 
-    private record Continuation(UUID resumeId, boolean cancelled) {
+    private record Continuation(
+            UUID resumeId,
+            boolean cancelled,
+            ContinuationSource source,
+            ContinuationResolution resolution
+    ) {
+    }
+
+    private enum ContinuationSource {
+        NONE,
+        REQUESTED,
+        INFERRED
+    }
+
+    private enum ContinuationResolution {
+        START_NEW,
+        ANSWER,
+        CANCEL,
+        NEW_INTENT,
+        EXPIRED
     }
 
     private enum QualificationStage {
