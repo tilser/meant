@@ -249,7 +249,8 @@ public class AgentToolInvocationService {
                         artifactRepository.findByToolInvocationIdOrderByOrdinalAsc(invocation.getId()).stream()
                                 .map(AgentResultMapper::artifact)
                                 .toList(),
-                        false
+                        false,
+                        invocation.getWaitingForUserMessage()
                 );
             }
             boolean retryableFailure = invocation.getStatus() == AgentToolInvocationStatus.FAILED
@@ -267,7 +268,8 @@ public class AgentToolInvocationService {
                         true,
                         null,
                         java.util.List.of(),
-                        reconciliationRetry
+                        reconciliationRetry,
+                        null
                 );
             }
             throw AgentException.conflict("An equivalent tool mutation is already in progress or cannot be retried.");
@@ -285,7 +287,14 @@ public class AgentToolInvocationService {
                 .createdAt(clock.instant())
                 .build());
         appendProposed(runId, executionOwner, call, descriptor);
-        return new AgentToolInvocationReservation(invocation.getId(), true, null, java.util.List.of(), false);
+        return new AgentToolInvocationReservation(
+                invocation.getId(),
+                true,
+                null,
+                java.util.List.of(),
+                false,
+                null
+        );
     }
 
     private void requireMatchingInvocation(
@@ -405,6 +414,7 @@ public class AgentToolInvocationService {
         var first = result.artifacts().stream().findFirst().orElse(null);
         invocation.complete(
                 boundedResult,
+                result.waitingForUserMessage(),
                 latencyMilliseconds,
                 first == null ? null : first.canonicalProductKey(),
                 first == null ? null : first.offerKey(),

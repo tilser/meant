@@ -1,5 +1,6 @@
 package com.meant.api.module.agent.entity;
 
+import com.meant.api.common.util.AcceptLanguageParser;
 import com.meant.api.module.agent.constant.AgentRunStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -50,6 +51,10 @@ public class AgentRun {
 
     private String buyerIp;
 
+    private String userAgent;
+
+    private String language;
+
     @Column(nullable = false)
     private int iterationCount;
 
@@ -94,7 +99,8 @@ public class AgentRun {
             String promptVersion,
             Instant now
     ) {
-        return queued(conversationId, userId, triggeringMessageId, model, promptVersion, null, now);
+        return queued(conversationId, userId, triggeringMessageId, model, promptVersion,
+                null, null, null, now);
     }
 
     public static AgentRun queued(
@@ -106,6 +112,35 @@ public class AgentRun {
             String buyerIp,
             Instant now
     ) {
+        return queued(conversationId, userId, triggeringMessageId, model, promptVersion,
+                buyerIp, null, null, now);
+    }
+
+    public static AgentRun queued(
+            UUID conversationId,
+            UUID userId,
+            UUID triggeringMessageId,
+            String model,
+            String promptVersion,
+            String buyerIp,
+            String userAgent,
+            Instant now
+    ) {
+        return queued(conversationId, userId, triggeringMessageId, model, promptVersion,
+                buyerIp, userAgent, null, now);
+    }
+
+    public static AgentRun queued(
+            UUID conversationId,
+            UUID userId,
+            UUID triggeringMessageId,
+            String model,
+            String promptVersion,
+            String buyerIp,
+            String userAgent,
+            String language,
+            Instant now
+    ) {
         return AgentRun.builder()
                 .conversationId(conversationId)
                 .userId(userId)
@@ -114,6 +149,8 @@ public class AgentRun {
                 .model(model)
                 .promptVersion(promptVersion)
                 .buyerIp(buyerIp)
+                .userAgent(userAgent)
+                .language(AcceptLanguageParser.canonicalLanguageTag(language))
                 .createdAt(now)
                 .build();
     }

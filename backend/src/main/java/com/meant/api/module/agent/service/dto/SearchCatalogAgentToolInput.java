@@ -1,6 +1,7 @@
 package com.meant.api.module.agent.service.dto;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -8,6 +9,7 @@ import java.util.UUID;
 public record SearchCatalogAgentToolInput(
         String query,
         UUID qualificationId,
+        Instant qualificationUpdatedAt,
         Location shipsTo,
         List<Origin> shipsFrom,
         Price price,
@@ -26,12 +28,41 @@ public record SearchCatalogAgentToolInput(
         priceTiers = priceTiers == null ? List.of() : List.copyOf(priceTiers);
     }
 
+    public SearchCatalogAgentToolInput(
+            String query,
+            UUID qualificationId,
+            Location shipsTo,
+            List<Origin> shipsFrom,
+            Price price,
+            List<String> conditions,
+            List<Attribute> attributes,
+            Rating rating,
+            List<String> priceTiers,
+            Integer offset,
+            Integer limit
+    ) {
+        this(
+                query,
+                qualificationId,
+                null,
+                shipsTo,
+                shipsFrom,
+                price,
+                conditions,
+                attributes,
+                rating,
+                priceTiers,
+                offset,
+                limit
+        );
+    }
+
     public SearchCatalogAgentToolInput(String query, Integer offset, Integer limit) {
-        this(query, null, null, List.of(), null, List.of(), List.of(), null, List.of(), offset, limit);
+        this(query, null, null, null, List.of(), null, List.of(), List.of(), null, List.of(), offset, limit);
     }
 
     public SearchCatalogAgentToolInput(String query, UUID qualificationId, Integer offset, Integer limit) {
-        this(query, qualificationId, null, List.of(), null, List.of(), List.of(), null, List.of(), offset, limit);
+        this(query, qualificationId, null, null, List.of(), null, List.of(), List.of(), null, List.of(), offset, limit);
     }
 
     public SearchCatalogAgentToolInput(
@@ -46,7 +77,7 @@ public record SearchCatalogAgentToolInput(
             Integer offset,
             Integer limit
     ) {
-        this(query, null, shipsTo, shipsFrom, price, conditions, attributes, rating, priceTiers, offset, limit);
+        this(query, null, null, shipsTo, shipsFrom, price, conditions, attributes, rating, priceTiers, offset, limit);
     }
 
     public record Location(String country, String region, String postalCode) {

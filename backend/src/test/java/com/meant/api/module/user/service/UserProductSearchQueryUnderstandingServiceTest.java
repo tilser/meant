@@ -54,6 +54,21 @@ class UserProductSearchQueryUnderstandingServiceTest {
     }
 
     @Test
+    void understandQualifiedPreservesEveryValidatedTermWithoutAnotherModelCall() {
+        FakeOpenRouterChatClient openRouterChatClient = new FakeOpenRouterChatClient();
+        UserProductSearchQueryUnderstandingService service = service(openRouterChatClient, queryIntentRepository());
+
+        UserProductSearchQueryIntentResult result =
+                service.understandQualified("Cool running shoes from California");
+
+        assertThat(result.searchQuery()).isEqualTo("cool running shoes from california");
+        assertThat(result.constraints()).isEmpty();
+        assertThat(result.preferenceHints()).isEmpty();
+        assertThat(result.source()).isEqualTo("qualified-authoritative");
+        assertThat(openRouterChatClient.called).isFalse();
+    }
+
+    @Test
     void understandUsesCheapOpenRouterModelForAmbiguousQueriesAndCachesResult() {
         FakeOpenRouterChatClient openRouterChatClient = new FakeOpenRouterChatClient();
         openRouterChatClient.response = """

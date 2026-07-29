@@ -8,10 +8,24 @@ public record AgentToolInvocationReservation(
         boolean execute,
         String completedResultJson,
         List<AgentArtifactResult> completedArtifacts,
-        boolean reconciliationRetry
+        boolean reconciliationRetry,
+        String waitingForUserMessage
 ) {
 
     public AgentToolInvocationReservation {
         completedArtifacts = completedArtifacts == null ? List.of() : List.copyOf(completedArtifacts);
+        waitingForUserMessage = waitingForUserMessage == null || waitingForUserMessage.isBlank()
+                ? null
+                : waitingForUserMessage.trim();
+    }
+
+    public AgentToolInvocationReservation(
+            UUID invocationId,
+            boolean execute,
+            String completedResultJson,
+            List<AgentArtifactResult> completedArtifacts,
+            boolean reconciliationRetry
+    ) {
+        this(invocationId, execute, completedResultJson, completedArtifacts, reconciliationRetry, null);
     }
 }

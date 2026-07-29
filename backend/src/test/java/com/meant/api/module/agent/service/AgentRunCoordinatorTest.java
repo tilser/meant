@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.after;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -115,6 +116,9 @@ class AgentRunCoordinatorTest {
         assertThat(executionContexts.getAllValues())
                 .extracting(AgentToolExecutionContext::buyerIp)
                 .containsOnly("203.0.113.42");
+        assertThat(executionContexts.getAllValues())
+                .extracting(AgentToolExecutionContext::userAgent)
+                .containsOnly("Meant Browser/1.0");
         assertThat(executionContexts.getAllValues())
                 .extracting(AgentToolExecutionContext::merchantId)
                 .containsOnly(merchantId);
@@ -254,6 +258,266 @@ class AgentRunCoordinatorTest {
     }
 
     @Test
+    void clearInitialProductSearchStartsServerQualificationWithoutCallingTheOuterModel() {
+        UUID runId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        String turn = "cool running shoes";
+        String question = "What shoe size do you need?";
+        AgentModelToolCall searchCall = new AgentModelToolCall(
+                null,
+                "search_catalog",
+                "{\"query\":\"cool running shoes\"}"
+        );
+        AgentResolvedReadIntent resolved = new AgentResolvedReadIntent(searchCall, turn);
+        ScriptedAgentModelGateway model = new ScriptedAgentModelGateway(List.of(
+                response(model("This model response must not be needed.", List.of()))
+        ));
+        Fixture fixture = fixture(runId, conversationId, model, false);
+        when(fixture.contextAssembler().assemble(runId)).thenReturn(new AgentModelContext(
+                List.of(AgentModelMessage.user(turn)),
+                turn,
+                null
+        ));
+        when(fixture.readIntentResolver().resolve(any())).thenReturn(Optional.of(resolved));
+        when(fixture.toolExecutor().execute(any(), any())).thenReturn(new AgentExecutedToolCall(
+                new AgentModelToolResult(
+                        runId + "-0-0",
+                        "search_catalog",
+                        "{\"qualificationQuestion\":\"" + question + "\"}"
+                ),
+                true,
+                question
+        ));
+
+        coordinator.schedule(runId);
+
+        verify(fixture.messageLedger(), timeout(3000)).appendTerminalAssistant(
+                runId,
+                fixture.executionOwner(),
+                question,
+                true
+        );
+        ArgumentCaptor<AgentModelToolCall> callCaptor = ArgumentCaptor.forClass(AgentModelToolCall.class);
+        verify(fixture.toolExecutor(), timeout(3000)).execute(any(), callCaptor.capture());
+        assertThat(callCaptor.getValue()).isEqualTo(new AgentModelToolCall(
+                runId + "-0-0",
+                "search_catalog",
+                "{\"query\":\"cool running shoes\"}"
+        ));
+        assertThat(callCaptor.getValue().argumentsJson())
+                .doesNotContain("qualificationId", "qualificationUpdatedAt");
+        assertThat(model.requests()).isEmpty();
+    }
+
+    @Test
+    void bareNovelProductSearchCannotTerminateWithOuterModelQualificationProse() {
+        UUID runId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        String turn = "ceramic yarn bowl";
+        String serverQuestion = "What country should the order ship to?";
+        String untrustedModelQuestion = "What kind of bowl would you like?";
+        AgentResolvedReadIntent resolved = new AgentResolvedReadIntent(
+                new AgentModelToolCall(
+                        null,
+                        "search_catalog",
+                        "{\"query\":\"ceramic yarn bowl\"}"
+                ),
+                turn
+        );
+        ScriptedAgentModelGateway model = new ScriptedAgentModelGateway(List.of(
+                response(model(untrustedModelQuestion, List.of()))
+        ));
+        Fixture fixture = fixture(runId, conversationId, model, false);
+        when(fixture.contextAssembler().assemble(runId)).thenReturn(new AgentModelContext(
+                List.of(AgentModelMessage.user(turn)),
+                turn,
+                null
+        ));
+        when(fixture.readIntentResolver().resolve(any())).thenReturn(Optional.of(resolved));
+        when(fixture.toolExecutor().execute(any(), any())).thenReturn(new AgentExecutedToolCall(
+                new AgentModelToolResult(
+                        runId + "-0-0",
+                        "search_catalog",
+                        "{\"qualificationQuestion\":\"" + serverQuestion + "\"}"
+                ),
+                true,
+                serverQuestion
+        ));
+
+        coordinator.schedule(runId);
+
+        verify(fixture.messageLedger(), timeout(3000)).appendTerminalAssistant(
+                runId,
+                fixture.executionOwner(),
+                serverQuestion,
+                true
+        );
+        verify(fixture.messageLedger(), never()).appendTerminalAssistant(
+                runId,
+                fixture.executionOwner(),
+                untrustedModelQuestion,
+                false
+        );
+        assertThat(model.requests()).isEmpty();
+    }
+
+    @Test
+    void compoundSearchAndCartRequestWaitsForQualificationBeforeModelOrMutation() {
+        UUID runId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        String turn = "find running shoes and add the best pair to my cart";
+        String question = "What shoe size do you need?";
+        AgentResolvedReadIntent resolved = new AgentResolvedReadIntent(
+                new AgentModelToolCall(
+                        null,
+                        "search_catalog",
+                        "{\"query\":\"find running shoes and add the best pair to my cart\"}"
+                ),
+                turn,
+                "add the best pair to my cart"
+        );
+        AgentModelToolCall prematureMutation = new AgentModelToolCall(
+                "call-add",
+                "prepare_carts",
+                "{\"offers\":[{\"offerKey\":\"offer-1\"}]}"
+        );
+        ScriptedAgentModelGateway model = new ScriptedAgentModelGateway(List.of(
+                response(model("", List.of(prematureMutation)))
+        ));
+        Fixture fixture = fixture(runId, conversationId, model, false);
+        when(fixture.contextAssembler().assemble(runId)).thenReturn(new AgentModelContext(
+                List.of(AgentModelMessage.user(turn)),
+                turn,
+                null
+        ));
+        when(fixture.readIntentResolver().resolve(any())).thenReturn(Optional.of(resolved));
+        when(fixture.productClarificationService().unresolvedIntent(any()))
+                .thenReturn(Optional.of(clarification()));
+        when(fixture.toolExecutor().execute(any(), any())).thenReturn(new AgentExecutedToolCall(
+                new AgentModelToolResult(
+                        runId + "-0-0",
+                        "search_catalog",
+                        "{\"qualificationQuestion\":\"" + question + "\"}"
+                ),
+                true,
+                question
+        ));
+
+        coordinator.schedule(runId);
+
+        verify(fixture.messageLedger(), timeout(3000)).appendTerminalAssistant(
+                runId,
+                fixture.executionOwner(),
+                question,
+                true
+        );
+        verify(fixture.toolExecutor(), timeout(3000).times(1)).execute(
+                any(),
+                org.mockito.ArgumentMatchers.argThat(call -> "search_catalog".equals(call.name()))
+        );
+        verify(fixture.toolExecutor(), never()).execute(
+                any(),
+                org.mockito.ArgumentMatchers.argThat(call -> "prepare_carts".equals(call.name()))
+        );
+        verify(fixture.productClarificationService(), never()).unresolvedIntent(any());
+        assertThat(model.requests()).isEmpty();
+    }
+
+    @Test
+    void compoundSearchHandsGroundedResultsToModelAndRejectsProseBeforeTheCartMutation() {
+        UUID runId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        String turn = "find running shoes and add the best pair to my cart";
+        String prematureQuestion = "What shoe size do you wear?";
+        AgentResolvedReadIntent resolved = new AgentResolvedReadIntent(
+                new AgentModelToolCall(
+                        null,
+                        "search_catalog",
+                        "{\"query\":\"find running shoes and add the best pair to my cart\"}"
+                ),
+                turn,
+                "add the best pair to my cart"
+        );
+        AgentModelToolCall mutation = new AgentModelToolCall(
+                "call-add",
+                "prepare_carts",
+                "{\"offers\":[{\"offerKey\":\"offer-1\"}]}"
+        );
+        ScriptedAgentModelGateway model = new ScriptedAgentModelGateway(List.of(
+                response(model(prematureQuestion, List.of())),
+                response(model("", List.of(mutation))),
+                response(model("I added the best matching pair to your cart.", List.of()))
+        ));
+        Fixture fixture = fixture(runId, conversationId, model, false);
+        AgentToolDescriptor mutationDescriptor = new AgentToolDescriptor(
+                "prepare_carts",
+                "Prepare carts",
+                "{\"type\":\"object\",\"additionalProperties\":false}",
+                "1",
+                AgentToolRisk.REVERSIBLE_MUTATION
+        );
+        when(fixture.contextAssembler().assemble(runId)).thenReturn(new AgentModelContext(
+                List.of(AgentModelMessage.user(turn)),
+                turn,
+                null
+        ));
+        when(fixture.authorizationPolicy().available(any(), any()))
+                .thenReturn(List.of(mutationDescriptor));
+        when(fixture.readIntentResolver().resolve(any())).thenReturn(Optional.of(resolved));
+        List<String> executionOrder = new CopyOnWriteArrayList<>();
+        List<AgentToolExecutionContext> executionContexts = new CopyOnWriteArrayList<>();
+        when(fixture.toolExecutor().execute(any(), any())).thenAnswer(invocation -> {
+            executionContexts.add(invocation.getArgument(0));
+            AgentModelToolCall call = invocation.getArgument(1);
+            executionOrder.add(call.name());
+            if ("search_catalog".equals(call.name())) {
+                return new AgentExecutedToolCall(
+                        new AgentModelToolResult(
+                                call.id(),
+                                call.name(),
+                                "{\"products\":[{\"reference\":1,\"canonicalProductKey\":\"shoe-1\","
+                                        + "\"recommendedOfferKey\":\"offer-1\"}]}"
+                        ),
+                        true
+                );
+            }
+            return new AgentExecutedToolCall(
+                    new AgentModelToolResult(call.id(), call.name(), "{\"carts\":[{}]}"),
+                    true
+            );
+        });
+
+        coordinator.schedule(runId);
+
+        verify(fixture.messageLedger(), timeout(3000)).appendTerminalAssistant(
+                runId,
+                fixture.executionOwner(),
+                "I added the best matching pair to your cart.",
+                false
+        );
+        verify(fixture.messageLedger(), never()).appendTerminalAssistant(
+                runId,
+                fixture.executionOwner(),
+                prematureQuestion,
+                false
+        );
+        assertThat(executionOrder).containsExactly("search_catalog", "prepare_carts");
+        assertThat(executionContexts)
+                .extracting(AgentToolExecutionContext::triggeringUserText)
+                .containsExactly(turn, "add the best pair to my cart");
+        assertThat(model.requests()).hasSize(3);
+        assertThat(model.requests().getFirst().messages().getLast().toolResults())
+                .singleElement()
+                .satisfies(result -> {
+                    assertThat(result.toolName()).isEqualTo("search_catalog");
+                    assertThat(result.resultJson()).contains("\"recommendedOfferKey\":\"offer-1\"");
+                });
+        assertThat(model.requests().get(1).messages().getLast().text())
+                .contains("no mutation tool has run")
+                .contains("prepare_carts");
+    }
+
+    @Test
     void explicitOrdinalSimilarityRunsTheVerifiedToolWithoutWaitingForAModelResponse() {
         UUID runId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();
@@ -388,6 +652,227 @@ class AgentRunCoordinatorTest {
         verify(fixture.toolExecutor(), timeout(3000)).execute(any(), any());
         verify(fixture.toolExecutor(), never()).execute(any(),
                 org.mockito.ArgumentMatchers.argThat(call -> "call-2".equals(call.id())));
+    }
+
+    @Test
+    void readOnlyToolMayRetryTheSameArgumentsOnceAfterATransientFailure() {
+        UUID runId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        String arguments = "{\"query\":\"cool running shoes\"}";
+        AgentModelToolCall first = new AgentModelToolCall("call-1", "search_catalog", arguments);
+        AgentModelToolCall retry = new AgentModelToolCall("call-2", "search_catalog", arguments);
+        ScriptedAgentModelGateway model = new ScriptedAgentModelGateway(List.of(
+                response(model("", List.of(first))),
+                response(model("", List.of(retry))),
+                response(model("I found these options:", List.of()))
+        ));
+        Fixture fixture = fixture(runId, conversationId, model, false);
+        when(fixture.toolExecutor().execute(any(), any()))
+                .thenReturn(
+                        new AgentExecutedToolCall(
+                                new AgentModelToolResult(
+                                        "call-1",
+                                        "search_catalog",
+                                        "{\"success\":false,\"retryable\":true}"
+                                ),
+                                false
+                        ),
+                        new AgentExecutedToolCall(
+                                new AgentModelToolResult(
+                                        "call-2",
+                                        "search_catalog",
+                                        "{\"products\":[{\"reference\":1}]}"
+                                ),
+                                true
+                        )
+                );
+
+        coordinator.schedule(runId);
+
+        verify(fixture.toolExecutor(), timeout(3000).times(2)).execute(any(), any());
+        verify(fixture.messageLedger(), timeout(3000)).appendTerminalAssistant(
+                runId,
+                fixture.executionOwner(),
+                "I found these options:",
+                false
+        );
+        verify(fixture.runService(), never()).failOwnedExecution(
+                eq(runId),
+                eq(fixture.executionOwner()),
+                eq("repeated_tool_call"),
+                anyString()
+        );
+    }
+
+    @Test
+    void successfulIdenticalReadsInOneModelBatchExecuteOnceAndReturnEveryToolResult() {
+        UUID runId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        String arguments = "{\"canonicalProductKeys\":[\"product-1\",\"product-2\"]}";
+        AgentModelToolCall first = new AgentModelToolCall("call-1", "compare_products", arguments);
+        AgentModelToolCall duplicate = new AgentModelToolCall("call-2", "compare_products", arguments);
+        ScriptedAgentModelGateway model = new ScriptedAgentModelGateway(List.of(
+                response(model("", List.of(first, duplicate))),
+                response(model("Here is the comparison:", List.of()))
+        ));
+        Fixture fixture = fixture(runId, conversationId, model, false);
+        when(fixture.toolExecutor().execute(any(), any()))
+                .thenAnswer(invocation -> {
+                    AgentModelToolCall call = invocation.getArgument(1);
+                    return new AgentExecutedToolCall(
+                            new AgentModelToolResult(
+                                    call.id(),
+                                    call.name(),
+                                    "{\"products\":[{\"canonicalProductKey\":\"product-1\"}]}"
+                            ),
+                            true
+                    );
+                });
+
+        coordinator.schedule(runId);
+
+        verify(fixture.messageLedger(), timeout(3000)).appendTerminalAssistant(
+                runId,
+                fixture.executionOwner(),
+                "Here is the comparison:",
+                false
+        );
+        verify(fixture.toolExecutor()).execute(any(), any());
+        assertThat(model.requests()).hasSize(2);
+        assertThat(model.requests().get(1).messages().getLast().toolResults())
+                .extracting(AgentModelToolResult::toolCallId)
+                .containsExactly("call-1", "call-2");
+    }
+
+    @Test
+    void searchReadsWithDifferentModelArgumentsExecuteSequentiallyAndReturnEveryToolResult() {
+        UUID runId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        AgentModelToolCall first = new AgentModelToolCall(
+                "call-1",
+                "search_catalog",
+                "{\"query\":\"running shoes\",\"offset\":0,\"limit\":10}"
+        );
+        AgentModelToolCall duplicate = new AgentModelToolCall(
+                "call-2",
+                "search_catalog",
+                "{\"query\":\"hiking boots\",\"offset\":50,\"limit\":1}"
+        );
+        ScriptedAgentModelGateway model = new ScriptedAgentModelGateway(List.of(
+                response(model("", List.of(first, duplicate))),
+                response(model("I found these options:", List.of()))
+        ));
+        Fixture fixture = fixture(runId, conversationId, model, false);
+        when(fixture.toolExecutor().execute(any(), any()))
+                .thenAnswer(invocation -> {
+                    AgentModelToolCall call = invocation.getArgument(1);
+                    return new AgentExecutedToolCall(
+                            new AgentModelToolResult(
+                                    call.id(),
+                                    call.name(),
+                                    "{\"products\":[{\"reference\":1}]}"
+                            ),
+                            true
+                    );
+                });
+
+        coordinator.schedule(runId);
+
+        verify(fixture.messageLedger(), timeout(3000)).appendTerminalAssistant(
+                runId,
+                fixture.executionOwner(),
+                "I found these options:",
+                false
+        );
+        verify(fixture.toolExecutor(), times(2)).execute(any(), any());
+        assertThat(model.requests()).hasSize(2);
+        assertThat(model.requests().get(1).messages().getLast().toolResults())
+                .extracting(AgentModelToolResult::toolCallId)
+                .containsExactly("call-1", "call-2");
+    }
+
+    @Test
+    void failedSearchesWithDistinctArgumentsAllExecuteSequentially() throws Exception {
+        UUID runId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        AgentModelToolCall first = new AgentModelToolCall(
+                "call-1",
+                "search_catalog",
+                "{\"query\":\"running shoes\",\"offset\":0,\"limit\":10}"
+        );
+        AgentModelToolCall retry = new AgentModelToolCall(
+                "call-2",
+                "search_catalog",
+                "{\"query\":\"hiking boots\",\"offset\":50,\"limit\":1}"
+        );
+        AgentModelToolCall skipped = new AgentModelToolCall(
+                "call-3",
+                "search_catalog",
+                "{\"query\":\"sandals\",\"offset\":100,\"limit\":100}"
+        );
+        ScriptedAgentModelGateway model = new ScriptedAgentModelGateway(List.of(
+                response(model("", List.of(first, retry, skipped))),
+                response(model("I couldn't complete the search.", List.of()))
+        ));
+        Fixture fixture = fixture(runId, conversationId, model, false);
+        CountDownLatch firstStarted = new CountDownLatch(1);
+        CountDownLatch secondStarted = new CountDownLatch(1);
+        CountDownLatch releaseFirst = new CountDownLatch(1);
+        List<String> executionOrder = new CopyOnWriteArrayList<>();
+        AtomicInteger activeReads = new AtomicInteger();
+        AtomicInteger maximumActiveReads = new AtomicInteger();
+        when(fixture.toolExecutor().execute(any(), any()))
+                .thenAnswer(invocation -> {
+                    AgentModelToolCall call = invocation.getArgument(1);
+                    executionOrder.add(call.id());
+                    int active = activeReads.incrementAndGet();
+                    maximumActiveReads.accumulateAndGet(active, Math::max);
+                    try {
+                        if ("call-1".equals(call.id())) {
+                            firstStarted.countDown();
+                            if (!releaseFirst.await(3, TimeUnit.SECONDS)) {
+                                throw new IllegalStateException("The test did not release the first read");
+                            }
+                        } else {
+                            secondStarted.countDown();
+                        }
+                        return new AgentExecutedToolCall(
+                                new AgentModelToolResult(
+                                        call.id(),
+                                        call.name(),
+                                        "{\"success\":false,\"retryable\":true}"
+                                ),
+                                false
+                        );
+                    } finally {
+                        activeReads.decrementAndGet();
+                    }
+                });
+
+        coordinator.schedule(runId);
+
+        assertThat(firstStarted.await(3, TimeUnit.SECONDS)).isTrue();
+        try {
+            assertThat(secondStarted.await(250, TimeUnit.MILLISECONDS))
+                    .as("an identical read must not start while the prior attempt is still running")
+                    .isFalse();
+        } finally {
+            releaseFirst.countDown();
+        }
+        assertThat(secondStarted.await(3, TimeUnit.SECONDS)).isTrue();
+        verify(fixture.messageLedger(), timeout(3000)).appendTerminalAssistant(
+                runId,
+                fixture.executionOwner(),
+                "I couldn't complete the search.",
+                false
+        );
+        verify(fixture.toolExecutor(), timeout(3000).times(3)).execute(any(), any());
+        assertThat(executionOrder).containsExactly("call-1", "call-2", "call-3");
+        assertThat(maximumActiveReads).hasValue(1);
+        assertThat(model.requests()).hasSize(2);
+        assertThat(model.requests().get(1).messages().getLast().toolResults())
+                .extracting(AgentModelToolResult::toolCallId)
+                .containsExactly("call-1", "call-2", "call-3");
     }
 
     @Test
@@ -952,6 +1437,7 @@ class AgentRunCoordinatorTest {
                 .model("primary-model")
                 .promptVersion("test-v1")
                 .buyerIp("203.0.113.42")
+                .userAgent("Meant Browser/1.0")
                 .createdAt(Instant.now())
                 .build();
         when(runs.findById(runId)).thenReturn(Optional.of(run));

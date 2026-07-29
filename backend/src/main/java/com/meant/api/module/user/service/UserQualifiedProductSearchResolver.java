@@ -38,8 +38,10 @@ public class UserQualifiedProductSearchResolver {
                 snapshot.qualificationId(),
                 snapshot.conversationId(),
                 snapshot.merchantId(),
-                snapshot.originalQuery(),
-                planMapper.map(snapshot.plan())
+                snapshot.plan().effectiveQuery(),
+                planMapper.map(snapshot.plan()),
+                snapshot.plan().explicitAnyTargets(),
+                snapshot.plan().profileSuppressionTargets()
         );
     }
 }

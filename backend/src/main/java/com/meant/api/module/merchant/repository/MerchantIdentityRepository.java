@@ -1,6 +1,7 @@
 package com.meant.api.module.merchant.repository;
 
 import com.meant.api.module.merchant.constant.MerchantIdentityNamespace;
+import com.meant.api.module.merchant.constant.MerchantIdentityRole;
 import com.meant.api.module.merchant.entity.MerchantIdentity;
 import java.util.Collection;
 import java.util.List;
@@ -17,4 +18,10 @@ public interface MerchantIdentityRepository extends JpaRepository<MerchantIdenti
     );
 
     List<MerchantIdentity> findByMerchantIdOrderByVerifiedAtAsc(UUID merchantId);
+
+    List<MerchantIdentity> findByMerchantIdAndMerchantActiveTrueAndNamespaceAndRoleOrderByVerifiedAtAsc(
+            UUID merchantId,
+            MerchantIdentityNamespace namespace,
+            MerchantIdentityRole role
+    );
 }

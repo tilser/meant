@@ -2,6 +2,7 @@ package com.meant.api.module.user.service;
 
 import static com.meant.api.common.util.CollectionUtils.safeList;
 
+import com.meant.api.common.util.AcceptLanguageParser;
 import com.meant.api.common.util.CountryCodeNormalizer;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryFilters;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryLocation;
@@ -126,7 +127,7 @@ public class UserProductSearchCatalogInputBuilder {
             UserProductSearchQueryIntentResult queryIntent,
             UserSettingsResult settings
     ) {
-        return build(originalQuery, queryIntent, settings, null, null, null);
+        return build(originalQuery, queryIntent, settings, null, null, null, null);
     }
 
     public UserProductSearchCatalogInput build(
@@ -136,7 +137,7 @@ public class UserProductSearchCatalogInputBuilder {
             String buyerIp,
             String userAgent
     ) {
-        return build(originalQuery, queryIntent, settings, buyerIp, userAgent, null);
+        return build(originalQuery, queryIntent, settings, buyerIp, userAgent, null, null);
     }
 
     public UserProductSearchCatalogInput build(
@@ -147,23 +148,41 @@ public class UserProductSearchCatalogInputBuilder {
             String userAgent,
             CatalogDiscoveryFilters qualifiedFilters
     ) {
+        return build(originalQuery, queryIntent, settings, buyerIp, userAgent, null, qualifiedFilters);
+    }
+
+    public UserProductSearchCatalogInput build(
+            String originalQuery,
+            UserProductSearchQueryIntentResult queryIntent,
+            UserSettingsResult settings,
+            String buyerIp,
+            String userAgent,
+            String language,
+            CatalogDiscoveryFilters qualifiedFilters
+    ) {
         validateSupportedCurrency(originalQuery);
-        ParsedPrice parsedPrice = parsePrice(originalQuery, queryIntent.searchQuery());
-        validateCurrency(parsedPrice);
+        ParsedPrice detectedPrice = parsePrice(originalQuery, queryIntent.searchQuery());
+        validateCurrency(detectedPrice);
+        boolean qualifiedPriceActive = qualifiedFilters != null && qualifiedFilters.price() != null;
+        ParsedPrice parsedPrice = detectedPrice != null
+                && (qualifiedPriceActive
+                || qualifiedFilters == null && SEARCH_CURRENCY.equalsIgnoreCase(detectedPrice.currency()))
+                ? detectedPrice
+                : null;
         ParsedPrice priceFilter = qualifiedFilters == null
                 ? parsedPrice
                 : parsedPrice(qualifiedFilters);
         String searchQuery = searchQuery(queryIntent.searchQuery(), parsedPrice);
-        CatalogDiscoveryLocation shipsTo = qualifiedFilters == null ? null : qualifiedFilters.shipsTo();
-        CatalogDiscoveryLocation contextLocation = shipsTo != null
-                ? shipsTo
-                : catalogLocation(settings.location());
+        CatalogDiscoveryLocation contextLocation = qualifiedFilters == null
+                ? catalogLocation(settings.location())
+                : qualifiedFilters.shipsTo();
         String country = contextLocation == null ? null : contextLocation.country();
-        String currency = SEARCH_CURRENCY;
+        String currency = priceFilter == null ? null : SEARCH_CURRENCY;
         CatalogSearchContext context = context(
                 country,
                 contextLocation == null ? null : contextLocation.region(),
                 contextLocation == null ? null : contextLocation.postalCode(),
+                AcceptLanguageParser.canonicalLanguageTag(language),
                 currency,
                 intent(
                         originalQuery,
@@ -211,7 +230,7 @@ public class UserProductSearchCatalogInputBuilder {
 
     private boolean containsNonUsdTextCurrency(Matcher matcher) {
         while (matcher.find()) {
-            if (!SEARCH_CURRENCY.equalsIgnoreCase(currencyFromToken(matcher.group("currency")))) {
+            if ("NON_USD".equals(currencyFromToken(matcher.group("currency")))) {
                 return true;
             }
         }
@@ -255,6 +274,7 @@ public class UserProductSearchCatalogInputBuilder {
             String country,
             String region,
             String postalCode,
+            String language,
             String currency,
             String intent
     ) {
@@ -262,7 +282,7 @@ public class UserProductSearchCatalogInputBuilder {
                 country,
                 region,
                 postalCode,
-                "en",
+                language,
                 currency,
                 intent
         );
@@ -371,7 +391,7 @@ public class UserProductSearchCatalogInputBuilder {
             String currency,
             UserProductSearchQueryIntentResult queryIntent,
             UserSettingsResult settings,
-            boolean includeProfileLocationAndFit
+            boolean includeUnqualifiedProfileContext
     ) {
         List<String> parts = new ArrayList<>();
         addPart(parts, "Original request: " + originalQuery);
@@ -379,7 +399,7 @@ public class UserProductSearchCatalogInputBuilder {
         addPart(parts, priceIntent(parsedPrice, priceFilter, currency));
         addPart(parts, listPart("Hard constraints", queryIntent.constraints()));
         addPart(parts, listPart("Preference hints", queryIntent.preferenceHints()));
-        if (settings != null && includeProfileLocationAndFit) {
+        if (settings != null && includeUnqualifiedProfileContext) {
             addPart(parts, locationsIntent(settings.locations()));
             addPart(parts, clothingFitIntent(settings.clothingFit()));
         }
@@ -557,9 +577,6 @@ public class UserProductSearchCatalogInputBuilder {
             return null;
         }
         String trimmed = amount.trim();
-        if (trimmed.startsWith("$")) {
-            return "USD";
-        }
         if (!trimmed.isEmpty() && NON_USD_CURRENCY_SYMBOLS.indexOf(trimmed.charAt(0)) >= 0) {
             return "NON_USD";
         }
@@ -573,9 +590,11 @@ public class UserProductSearchCatalogInputBuilder {
         String normalized = token.trim().toLowerCase(Locale.ROOT);
         if (normalized.equals("usd")
                 || normalized.matches("u\\.s\\. dollars?")
-                || normalized.matches("us dollars?")
-                || normalized.matches("dollars?")) {
+                || normalized.matches("us dollars?")) {
             return "USD";
+        }
+        if (normalized.matches("dollars?")) {
+            return null;
         }
         return "NON_USD";
     }

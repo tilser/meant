@@ -5,6 +5,7 @@ import com.meant.api.module.catalog.service.FederatedCatalogDiscoveryService;
 import com.meant.api.module.catalog.service.ProductRankingService;
 import com.meant.api.module.catalog.service.dto.*;
 import com.meant.api.module.user.constant.UserProductSearchPagination;
+import com.meant.api.module.user.constant.UserProductSearchQuestionTarget;
 import com.meant.api.module.user.exception.UserProductSearchGroupingException;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.command.SearchUserProductsCommand;
@@ -106,6 +107,46 @@ public class UserGroupedProductSearchService {
         );
     }
 
+    public UserGroupedProductSearchResult search(
+            @NotNull @Valid EnsureUserProfileCommand profileCommand,
+            @NotNull @Valid SearchUserProductsCommand command,
+            CatalogDiscoveryFilters discoveryFilters,
+            Set<UserProductSearchQuestionTarget> explicitAnyTargets
+    ) {
+        return search(
+                command,
+                preparationService.prepare(
+                        profileCommand,
+                        command,
+                        discoveryFilters,
+                        explicitAnyTargets
+                ),
+                null,
+                null
+        );
+    }
+
+    public UserGroupedProductSearchResult search(
+            @NotNull @Valid EnsureUserProfileCommand profileCommand,
+            @NotNull @Valid SearchUserProductsCommand command,
+            CatalogDiscoveryFilters discoveryFilters,
+            Set<UserProductSearchQuestionTarget> explicitAnyTargets,
+            Set<UserProductSearchQuestionTarget> profileSuppressionTargets
+    ) {
+        return search(
+                command,
+                preparationService.prepare(
+                        profileCommand,
+                        command,
+                        discoveryFilters,
+                        explicitAnyTargets,
+                        profileSuppressionTargets
+                ),
+                null,
+                null
+        );
+    }
+
     UserGroupedProductSearchResult searchSimilar(
             EnsureUserProfileCommand profileCommand,
             SearchUserProductsCommand command,
@@ -125,6 +166,50 @@ public class UserGroupedProductSearchService {
         return search(
                 command,
                 preparationService.prepareSimilarity(profileCommand, command, discoveryFilters),
+                anchor,
+                similarityReference
+        );
+    }
+
+    UserGroupedProductSearchResult searchSimilar(
+            EnsureUserProfileCommand profileCommand,
+            SearchUserProductsCommand command,
+            CatalogDiscoveryFilters discoveryFilters,
+            Set<UserProductSearchQuestionTarget> explicitAnyTargets,
+            CanonicalProduct anchor,
+            CatalogSimilarityReference similarityReference
+    ) {
+        return search(
+                command,
+                preparationService.prepareSimilarity(
+                        profileCommand,
+                        command,
+                        discoveryFilters,
+                        explicitAnyTargets
+                ),
+                anchor,
+                similarityReference
+        );
+    }
+
+    UserGroupedProductSearchResult searchSimilar(
+            EnsureUserProfileCommand profileCommand,
+            SearchUserProductsCommand command,
+            CatalogDiscoveryFilters discoveryFilters,
+            Set<UserProductSearchQuestionTarget> explicitAnyTargets,
+            Set<UserProductSearchQuestionTarget> profileSuppressionTargets,
+            CanonicalProduct anchor,
+            CatalogSimilarityReference similarityReference
+    ) {
+        return search(
+                command,
+                preparationService.prepareSimilarity(
+                        profileCommand,
+                        command,
+                        discoveryFilters,
+                        explicitAnyTargets,
+                        profileSuppressionTargets
+                ),
                 anchor,
                 similarityReference
         );

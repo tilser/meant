@@ -6,6 +6,7 @@ public enum UserProductSearchDecisionSource {
     SYSTEM_POLICY,
     ORIGINAL_QUERY,
     CURRENT_USER_TURN,
+    CONVERSATION,
     PROFILE,
     DURABLE_PREFERENCE
 }

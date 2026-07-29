@@ -83,6 +83,24 @@ public class UserProductSearchQueryUnderstandingService {
         return cachedOrGeneratedIntent(trimmedQuery, normalizedOriginalQuery);
     }
 
+    /**
+     * Preserves the already qualified query without a second model rewrite.
+     *
+     * <p>The qualification model has already validated every content term against trusted buyer,
+     * profile, preference, or taste evidence. Running the legacy query-understanding model again
+     * could add an ungrounded keyword after that validation boundary.</p>
+     */
+    public UserProductSearchQueryIntentResult understandQualified(String qualifiedQuery) {
+        String trimmedQuery = qualifiedQuery.trim();
+        String normalizedQuery = userProductSearchHashService.normalizeQuery(trimmedQuery);
+        return deterministicIntent(
+                trimmedQuery,
+                normalizedQuery,
+                normalizedQuery,
+                "qualified-authoritative"
+        );
+    }
+
     public UserProductSearchQueryIntentResult understandSimilarity(String originalQuery) {
         String trimmedQuery = originalQuery.trim();
         String normalizedOriginalQuery = userProductSearchHashService.normalizeQuery(trimmedQuery);

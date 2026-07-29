@@ -120,6 +120,15 @@ public class ShopifyAuthenticatedUcpClient implements ShopifyUcpClient {
         try {
             return callOnce(restClient, options, toolName, arguments, headers, authentication);
         } catch (UnauthorizedResponseException rejected) {
+            if (authentication.header().isEmpty()) {
+                throw failure(
+                        ShopifyUcpTransportFailure.AUTHENTICATION,
+                        "Shopify rejected the unauthenticated UCP request",
+                        null,
+                        401,
+                        rejected
+                );
+            }
             if (!options.unauthorizedRefreshAllowed()) {
                 throw failure(ShopifyUcpTransportFailure.AUTHENTICATION,
                         "Shopify rejected bearer authentication after the refresh budget was exhausted",
@@ -144,7 +153,8 @@ public class ShopifyAuthenticatedUcpClient implements ShopifyUcpClient {
         return authenticate(
                 () -> authenticationStrategy.prepare(options.requiredScopes()),
                 "authentication",
-                null
+                null,
+                options.unauthenticatedAllowed()
         );
     }
 
@@ -155,18 +165,24 @@ public class ShopifyAuthenticatedUcpClient implements ShopifyUcpClient {
         return authenticate(
                 () -> authenticationStrategy.refreshAfterUnauthorized(rejected, options.requiredScopes()),
                 "authentication refresh",
-                401
+                401,
+                false
         );
     }
 
     private ShopifyBearerAuthenticationResult authenticate(
             Supplier<ShopifyBearerAuthenticationResult> authentication,
             String phase,
-            Integer upstreamStatus
+            Integer upstreamStatus,
+            boolean allowDisabled
     ) {
         try {
             ShopifyBearerAuthenticationResult result = authentication.get();
             if (!result.decision().available()) {
+                if (allowDisabled
+                        && result.decision().availability() == ShopifyTokenScopeDecision.Availability.DISABLED) {
+                    return result;
+                }
                 throw failure(
                         ShopifyUcpTransportFailure.AUTHENTICATION,
                         "Shopify bearer " + phase + " is unavailable: " + result.decision().availability(),
@@ -197,6 +213,15 @@ public class ShopifyAuthenticatedUcpClient implements ShopifyUcpClient {
             ShopifyBearerAuthenticationResult authentication
     ) {
         try {
+            if (authentication.header().isEmpty()) {
+                return ucpMcpClient.callToolAllowingJsonToolErrors(
+                        restClient,
+                        options.endpoint(),
+                        toolName,
+                        arguments,
+                        headers
+                );
+            }
             return ucpMcpClient.callToolAuthenticatedAllowingJsonToolErrors(
                     restClient,
                     options.endpoint(),

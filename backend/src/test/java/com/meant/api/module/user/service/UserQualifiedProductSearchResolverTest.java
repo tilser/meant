@@ -67,6 +67,27 @@ class UserQualifiedProductSearchResolverTest {
         verify(planMapper).map(currentPlan);
     }
 
+    @Test
+    void usesTheSanitizedPlanQueryInsteadOfTheOriginalQualificationRequest() {
+        UserProductSearchQualificationPersistenceService persistenceService =
+                mock(UserProductSearchQualificationPersistenceService.class);
+        UserProductSearchQualificationPlanMapper planMapper = mock(UserProductSearchQualificationPlanMapper.class);
+        UserProductSearchQualificationPlan sanitizedPlan = plan(
+                UserProductSearchQualificationPlan.CURRENT_SCHEMA_VERSION,
+                "black jacket"
+        );
+        CatalogDiscoveryFilters expectedFilters = new CatalogDiscoveryFilters(
+                true, List.of(), null, List.of(), null, List.of(), List.of(), List.of(), null, List.of());
+        when(persistenceService.getReady(query()))
+                .thenReturn(snapshot("men's black jacket", sanitizedPlan));
+        when(planMapper.map(sanitizedPlan)).thenReturn(expectedFilters);
+        UserQualifiedProductSearchResolver resolver = resolver(persistenceService, planMapper);
+
+        var resolved = resolver.resolve(USER_ID, QUALIFICATION_ID);
+
+        assertThat(resolved.effectiveQuery()).isEqualTo("black jacket");
+    }
+
     private UserQualifiedProductSearchResolver resolver(
             UserProductSearchQualificationPersistenceService persistenceService,
             UserProductSearchQualificationPlanMapper planMapper
@@ -79,13 +100,20 @@ class UserQualifiedProductSearchResolverTest {
     }
 
     private UserProductSearchQualificationSnapshot snapshot(UserProductSearchQualificationPlan plan) {
+        return snapshot("running shoes", plan);
+    }
+
+    private UserProductSearchQualificationSnapshot snapshot(
+            String originalQuery,
+            UserProductSearchQualificationPlan plan
+    ) {
         Instant now = Instant.now();
         return new UserProductSearchQualificationSnapshot(
                 QUALIFICATION_ID,
                 USER_ID,
                 CONVERSATION_ID,
                 null,
-                "running shoes",
+                originalQuery,
                 UserProductSearchQualificationStatus.READY,
                 plan,
                 "qualification-model",
@@ -96,9 +124,13 @@ class UserQualifiedProductSearchResolverTest {
     }
 
     private UserProductSearchQualificationPlan plan(int schemaVersion) {
+        return plan(schemaVersion, "running shoes");
+    }
+
+    private UserProductSearchQualificationPlan plan(int schemaVersion, String effectiveQuery) {
         return new UserProductSearchQualificationPlan(
                 schemaVersion,
-                "running shoes",
+                effectiveQuery,
                 "Ready to search.",
                 List.of(),
                 List.of(),

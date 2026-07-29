@@ -46,6 +46,20 @@ public interface AgentMessageRepository extends JpaRepository<AgentMessage, UUID
             long throughSequence
     );
 
+    @Query("""
+            select message from AgentMessage message
+            where message.conversationId = :conversationId
+              and message.sequenceNumber <= :throughSequence
+              and message.role in :roles
+            order by message.sequenceNumber desc
+            """)
+    List<AgentMessage> findBuyerVisibleConversationMessages(
+            @Param("conversationId") UUID conversationId,
+            @Param("throughSequence") long throughSequence,
+            @Param("roles") List<AgentMessageRole> roles,
+            Pageable pageable
+    );
+
     Optional<AgentMessage> findByConversationIdAndRoleAndCorrelationId(
             UUID conversationId,
             AgentMessageRole role,

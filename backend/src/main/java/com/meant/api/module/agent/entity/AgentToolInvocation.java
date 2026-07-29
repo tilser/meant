@@ -56,6 +56,8 @@ public class AgentToolInvocation extends AssignedIdEntity<UUID> {
 
     private String resultJson;
 
+    private String waitingForUserMessage;
+
     @Column(updatable = false)
     private String idempotencyKey;
 
@@ -99,6 +101,7 @@ public class AgentToolInvocation extends AssignedIdEntity<UUID> {
         }
         status = AgentToolInvocationStatus.PROPOSED;
         resultJson = null;
+        waitingForUserMessage = null;
         latencyMilliseconds = null;
         failureClassification = null;
         safeMessage = null;
@@ -114,6 +117,7 @@ public class AgentToolInvocation extends AssignedIdEntity<UUID> {
 
     public void complete(
             String result,
+            String waitingMessage,
             long latency,
             String productKey,
             String selectedOfferKey,
@@ -125,6 +129,7 @@ public class AgentToolInvocation extends AssignedIdEntity<UUID> {
     ) {
         status = AgentToolInvocationStatus.COMPLETED;
         resultJson = result;
+        waitingForUserMessage = waitingMessage;
         latencyMilliseconds = latency;
         canonicalProductKey = productKey;
         offerKey = selectedOfferKey;

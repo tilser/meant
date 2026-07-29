@@ -56,6 +56,7 @@ public class ShopifyGlobalCatalogProvider {
     private final ShopifyGlobalCatalogNormalizer normalizer;
     private final ShopifyGlobalCatalogCircuitBreaker circuitBreaker;
     private final ShopifyGlobalCatalogProperties properties;
+    private final ShopifyGlobalCatalogRuntimeDiscovery runtimeDiscovery;
     private final Semaphore concurrency;
     private final MeterRegistry meterRegistry;
 
@@ -66,6 +67,7 @@ public class ShopifyGlobalCatalogProvider {
             ShopifyGlobalCatalogNormalizer normalizer,
             ShopifyGlobalCatalogCircuitBreaker circuitBreaker,
             ShopifyGlobalCatalogProperties properties,
+            ShopifyGlobalCatalogRuntimeDiscovery runtimeDiscovery,
             MeterRegistry meterRegistry
     ) {
         this.client = client;
@@ -73,6 +75,7 @@ public class ShopifyGlobalCatalogProvider {
         this.normalizer = normalizer;
         this.circuitBreaker = circuitBreaker;
         this.properties = properties;
+        this.runtimeDiscovery = runtimeDiscovery;
         this.concurrency = new Semaphore(properties.maximumConcurrentRequests());
         this.meterRegistry = meterRegistry;
     }
@@ -84,7 +87,7 @@ public class ShopifyGlobalCatalogProvider {
             ShopifyGlobalCatalogCircuitBreaker circuitBreaker,
             ShopifyGlobalCatalogProperties properties
     ) {
-        this(client, parser, normalizer, circuitBreaker, properties,
+        this(client, parser, normalizer, circuitBreaker, properties, null,
                 new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
     }
 
@@ -110,6 +113,7 @@ public class ShopifyGlobalCatalogProvider {
                 null,
                 null,
                 request.context(),
+                request.signals(),
                 request.filters(),
                 properties.view(),
                 new Pagination(trimToNull(request.cursor()), limit)
@@ -316,6 +320,24 @@ public class ShopifyGlobalCatalogProvider {
                     "Shopify Global Catalog response could not be normalized safely",
                     null,
                     null));
+        } catch (ShopifyGlobalCatalogDiscoveryException exception) {
+            if (exception.incompatible()) {
+                circuitBreaker.recordFailure(null);
+            } else {
+                circuitBreaker.recordIgnoredFailure();
+            }
+            log.warn(
+                    "Shopify Global Catalog discovery rejected the request route; operation={}, incompatible={}",
+                    operation,
+                    exception.incompatible()
+            );
+            return failedExecution(operation, new CatalogSourceFailure(
+                    exception.incompatible()
+                            ? CatalogSourceFailureKind.MALFORMED_RESPONSE
+                            : CatalogSourceFailureKind.UNAVAILABLE,
+                    "Shopify Global Catalog discovery did not provide a safe compatible endpoint",
+                    null,
+                    null));
         } catch (IllegalArgumentException exception) {
             circuitBreaker.recordFailure(null);
             log.warn("Shopify Global Catalog normalization rejected a value; operation={}", operation);
@@ -396,12 +418,14 @@ public class ShopifyGlobalCatalogProvider {
 
     private ShopifyUcpRequestOptions requestOptions() {
         return new ShopifyUcpRequestOptions(
-                properties.endpoint(),
+                runtimeDiscovery == null ? properties.endpoint() : runtimeDiscovery.endpoint(),
                 properties.allowedHosts(),
                 properties.requiredScopes(),
                 properties.connectTimeout(),
                 properties.readTimeout(),
-                properties.requestDeadline()
+                properties.requestDeadline(),
+                true,
+                true
         );
     }
 

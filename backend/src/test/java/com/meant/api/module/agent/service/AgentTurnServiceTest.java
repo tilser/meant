@@ -85,7 +85,10 @@ class AgentTurnServiceTest {
                 "Find shoes like mine",
                 "client-turn-1",
                 visibleCommand,
-                "203.0.113.42"
+                null,
+                "203.0.113.42",
+                "  Meant Browser/1.0  ",
+                "cs-cz"
         ));
 
         verify(runs, never()).findFirstByConversationIdAndStatusInOrderByCreatedAtAscIdAsc(any(), any());
@@ -97,6 +100,8 @@ class AgentTurnServiceTest {
         ArgumentCaptor<AgentRun> savedRun = ArgumentCaptor.forClass(AgentRun.class);
         verify(runs).saveAndFlush(savedRun.capture());
         assertThat(savedRun.getValue().getBuyerIp()).isEqualTo("203.0.113.42");
+        assertThat(savedRun.getValue().getUserAgent()).isEqualTo("Meant Browser/1.0");
+        assertThat(savedRun.getValue().getLanguage()).isEqualTo("cs-CZ");
     }
 
     @Test

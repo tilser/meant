@@ -168,6 +168,42 @@ class UserGroupedProductSearchServiceTest {
     }
 
     @Test
+    void offsetEightyReturnsTheRankedTailOfTheHundredCandidateWindow() {
+        List<ProductCandidate> candidates = pageCandidates("shopify-window", 100);
+        UserGroupedProductSearchService service = pagingService(
+                new PrefixSource(
+                        "SHOPIFY",
+                        ResultSourceType.PROVIDER_CATALOG,
+                        "SHOPIFY_GLOBAL",
+                        candidates,
+                        false
+                )
+        );
+        EnsureUserProfileCommand profile = profile();
+        SearchUserProductsCommand command = command(profile.id(), 80, 20);
+        UserProductSearchPreparation preparation = new PagingPreparationService().prepare(profile, command);
+        List<CanonicalProduct> grouped = new ExactProductGroupingService().group(candidates);
+        List<String> expectedKeys = ProductRankingTestFactory.service()
+                .rank(
+                        grouped,
+                        new StubRankingContextFactory().create(profile.id(), preparation, grouped)
+                )
+                .products().stream()
+                .skip(80)
+                .map(CanonicalProduct::key)
+                .toList();
+
+        var result = service.search(profile, command);
+
+        assertThat(result.products()).hasSize(20);
+        assertThat(result.products()).extracting(CanonicalProduct::key)
+                .containsExactlyElementsOf(expectedKeys);
+        assertThat(result.offset()).isEqualTo(80);
+        assertThat(result.hasMore()).isFalse();
+        assertThat(result.nextOffset()).isNull();
+    }
+
+    @Test
     void sparseAndFailedSourcesStillPageTheTruncatedSuccessfulPrefix() {
         List<ProductCandidate> sparse = pageCandidates("generic", 1);
         List<ProductCandidate> shopify = pageCandidates("shopify", 8);
@@ -663,7 +699,7 @@ class UserGroupedProductSearchServiceTest {
         private boolean similaritySearch;
 
         private PagingPreparationService() {
-            super(null, null, null, null, null, null);
+            super(null, null, null, null, null, null, null);
         }
 
         @Override
@@ -782,7 +818,7 @@ class UserGroupedProductSearchServiceTest {
         private SearchUserProductsCommand searchCommand;
 
         private StubPreparationService(UserProductSearchPreparation preparation) {
-            super(null, null, null, null, null, null);
+            super(null, null, null, null, null, null, null);
             this.preparation = preparation;
         }
 

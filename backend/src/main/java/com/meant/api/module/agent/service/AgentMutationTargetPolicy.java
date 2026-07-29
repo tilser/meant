@@ -16,6 +16,7 @@ import static com.meant.api.module.agent.service.AgentMutationTargetTextSupport.
 import static com.meant.api.module.agent.service.AgentMutationTargetTextSupport.clarificationOrdinals;
 import static com.meant.api.module.agent.service.AgentMutationTargetTextSupport.descriptiveTokens;
 import static com.meant.api.module.agent.service.AgentMutationTargetTextSupport.hasContextualReference;
+import static com.meant.api.module.agent.service.AgentMutationTargetTextSupport.hasRankedProductReference;
 import static com.meant.api.module.agent.service.AgentMutationTargetTextSupport.isReaddReference;
 import static com.meant.api.module.agent.service.AgentMutationTargetTextSupport.literalReference;
 import static com.meant.api.module.agent.service.AgentMutationTargetTextSupport.ordinals;
@@ -249,6 +250,15 @@ public class AgentMutationTargetPolicy {
         List<AgentVisibleProductReference> candidates = productClarificationCandidates(context, evidence);
         if (candidates.isEmpty() || mustUseCurrentCartForReadd(context, evidence)) {
             return new AgentProductClarificationEvaluation(false, candidates);
+        }
+        Optional<AgentArtifactReference> rankedCurrentRunProduct =
+                currentRunRankedProduct(context, evidence);
+        if (hasRankedProductReference(context.triggeringUserText())
+                && rankedCurrentRunProduct.isPresent()) {
+            return new AgentProductClarificationEvaluation(
+                    false,
+                    visibleReferences(List.of(rankedCurrentRunProduct.get()))
+            );
         }
 
         List<Integer> requestedOrdinals = ordinals(context.triggeringUserText());
@@ -587,8 +597,10 @@ public class AgentMutationTargetPolicy {
                 case "prepare_carts" -> !mustUseCurrentCartForReadd(context, evidence)
                         && (allLiteral(turn, arrayField(arguments, "offers", "offerKey"))
                         || matchesNamedPreparedOffer(context, arguments, evidence)
-                        || matchesContextualPreparedOffer(context, arguments, evidence));
-                case "add_cart_line" -> matchesContextualCartAddition(context, arguments, evidence);
+                        || matchesContextualPreparedOffer(context, arguments, evidence)
+                        || matchesCurrentRunRankedPreparedOffer(context, arguments, evidence));
+                case "add_cart_line" -> matchesContextualCartAddition(context, arguments, evidence)
+                        || matchesCurrentRunRankedCartAddition(context, arguments, evidence);
                 case "update_cart_line", "remove_cart_line" ->
                         matchesContextualCartLine(context, arguments, evidence);
                 case "prepare_checkout" -> matchesLatestCartSet(arguments, evidence, cartSnapshotSupport);
@@ -647,6 +659,41 @@ public class AgentMutationTargetPolicy {
                 .orElse(false);
     }
 
+    private boolean matchesCurrentRunRankedPreparedOffer(
+            AgentToolExecutionContext context,
+            JsonNode arguments,
+            List<AgentArtifactReference> evidence
+    ) {
+        if (!hasRankedProductReference(context.triggeringUserText())) {
+            return false;
+        }
+        JsonNode offers = arguments == null ? null : arguments.get("offers");
+        if (offers == null || !offers.isArray() || offers.size() != 1) {
+            return false;
+        }
+        String offerKey = text(offers.get(0), "offerKey");
+        return currentRunRankedProduct(context, evidence)
+                .filter(reference -> offerBelongsToProduct(
+                        reference,
+                        offerKey,
+                        reference.getCanonicalProductKey()
+                ))
+                .isPresent();
+    }
+
+    private Optional<AgentArtifactReference> currentRunRankedProduct(
+            AgentToolExecutionContext context,
+            List<AgentArtifactReference> evidence
+    ) {
+        List<AgentArtifactReference> currentRunEvidence = evidence.stream()
+                .filter(reference -> Objects.equals(reference.getRunId(), context.runId()))
+                .toList();
+        List<List<AgentArtifactReference>> currentRunSets = productSets(currentRunEvidence);
+        return currentRunSets.isEmpty() || currentRunSets.getFirst().isEmpty()
+                ? Optional.empty()
+                : Optional.of(currentRunSets.getFirst().getFirst());
+    }
+
     private boolean matchesContextualCartAddition(
             AgentToolExecutionContext context,
             JsonNode arguments,
@@ -688,6 +735,28 @@ public class AgentMutationTargetPolicy {
             return true;
         }
         return false;
+    }
+
+    private boolean matchesCurrentRunRankedCartAddition(
+            AgentToolExecutionContext context,
+            JsonNode arguments,
+            List<AgentArtifactReference> evidence
+    ) {
+        if (!hasRankedProductReference(context.triggeringUserText())) {
+            return false;
+        }
+        String cartId = text(arguments, "cartId");
+        String offerKey = text(arguments, "offerKey");
+        if (currentCart(evidence, cartId, cartSnapshotSupport).isEmpty()) {
+            return false;
+        }
+        return currentRunRankedProduct(context, evidence)
+                .filter(reference -> offerBelongsToProduct(
+                        reference,
+                        offerKey,
+                        reference.getCanonicalProductKey()
+                ))
+                .isPresent();
     }
 
     private boolean matchesContextualCartLine(

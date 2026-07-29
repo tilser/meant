@@ -4,7 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.meant.api.module.catalog.service.dto.CanonicalProduct;
+import com.meant.api.module.catalog.service.dto.CatalogDiscoveryAttributeFilter;
+import com.meant.api.module.catalog.service.dto.CatalogDiscoveryAttributeName;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryFilters;
+import com.meant.api.module.catalog.service.dto.CatalogDiscoveryLocation;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryPrice;
 import com.meant.api.module.catalog.service.dto.CatalogSimilarityReference;
 import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
@@ -23,6 +26,7 @@ import com.meant.api.module.catalog.service.dto.ResultProvenance;
 import com.meant.api.module.catalog.service.dto.ResultSourceReference;
 import com.meant.api.module.catalog.service.dto.ResultSourceType;
 import com.meant.api.module.user.exception.UserException;
+import com.meant.api.module.user.constant.UserProductSearchQuestionTarget;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.command.SearchSimilarUserProductsCommand;
 import com.meant.api.module.user.service.command.SearchUserProductsCommand;
@@ -34,6 +38,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -59,7 +64,7 @@ class UserSimilarProductSearchServiceTest {
                 persistence(Optional.empty()),
                 grouped,
                 new ShopifyCatalogSimilarityReferenceResolver(),
-                null
+                readyResolver(null, availableOnly())
         );
 
         var result = service.search(profile(USER_ID), command(USER_ID, anchor.key()));
@@ -87,7 +92,7 @@ class UserSimilarProductSearchServiceTest {
                 persistence(Optional.of(durableAnchor)),
                 grouped,
                 new ShopifyCatalogSimilarityReferenceResolver(),
-                null
+                readyResolver(null, availableOnly())
         );
 
         service.search(profile(USER_ID), command(USER_ID, durableAnchor.key()));
@@ -108,7 +113,7 @@ class UserSimilarProductSearchServiceTest {
                 persistence(Optional.empty()),
                 grouped,
                 new ShopifyCatalogSimilarityReferenceResolver(),
-                null
+                readyResolver(null, availableOnly())
         );
 
         service.search(profile(USER_ID), command(USER_ID, anchor.key()));
@@ -127,12 +132,15 @@ class UserSimilarProductSearchServiceTest {
         CatalogDiscoveryFilters filters = new CatalogDiscoveryFilters(
                 true,
                 List.of(),
-                null,
+                new CatalogDiscoveryLocation("US", "CA", "94107"),
                 List.of(),
                 new CatalogDiscoveryPrice(null, 5_000L),
                 List.of(),
                 List.of(),
-                List.of(),
+                List.of(new CatalogDiscoveryAttributeFilter(
+                        CatalogDiscoveryAttributeName.SIZE,
+                        List.of("46")
+                )),
                 null,
                 List.of()
         );
@@ -146,7 +154,69 @@ class UserSimilarProductSearchServiceTest {
                         CONVERSATION_ID,
                         null,
                         "blue jeans",
-                        filters
+                        filters,
+                        Set.of(UserProductSearchQuestionTarget.TARGET_GENDER),
+                        Set.of(
+                                UserProductSearchQuestionTarget.TARGET_GENDER
+                        )
+                );
+            }
+        };
+        CapturingGroupedProductSearchService grouped = new CapturingGroupedProductSearchService();
+        UserSimilarProductSearchService service = new UserSimilarProductSearchService(
+                store,
+                persistence(Optional.empty()),
+                grouped,
+                new ShopifyCatalogSimilarityReferenceResolver(),
+                resolver
+        );
+
+        service.search(
+                profile(USER_ID),
+                new SearchSimilarUserProductsCommand(
+                        USER_ID,
+                        anchor.key(),
+                        "blue jeans",
+                        QUALIFICATION_ID,
+                        null,
+                        "192.0.2.10",
+                        "test-agent",
+                        "cs-CZ"
+                )
+        );
+
+        assertThat(grouped.command.query()).isEqualTo("blue jeans");
+        assertThat(grouped.command.language()).isEqualTo("cs-CZ");
+        assertThat(grouped.discoveryFilters).isSameAs(filters);
+        assertThat(grouped.discoveryFilters.available()).isTrue();
+        assertThat(grouped.discoveryFilters.shipsTo())
+                .isEqualTo(new CatalogDiscoveryLocation("US", "CA", "94107"));
+        assertThat(grouped.discoveryFilters.attributes()).containsExactly(
+                new CatalogDiscoveryAttributeFilter(CatalogDiscoveryAttributeName.SIZE, List.of("46"))
+        );
+        assertThat(grouped.discoveryFilters.price().max()).isEqualTo(5_000L);
+        assertThat(grouped.explicitAnyTargets)
+                .containsExactly(UserProductSearchQuestionTarget.TARGET_GENDER);
+        assertThat(grouped.profileSuppressionTargets)
+                .containsExactly(UserProductSearchQuestionTarget.TARGET_GENDER);
+    }
+
+    @Test
+    void preservesTheTrustedLikeReferenceForMerchantScopedSimilarity() {
+        UserCanonicalProductSessionStore store = store();
+        CanonicalProduct anchor = product(false, true, false);
+        store.remember(USER_ID, List.of(anchor), Map.of(), Map.of(), Map.of(), List.of());
+        UserQualifiedProductSearchResolver resolver = new UserQualifiedProductSearchResolver(null, null, null) {
+            @Override
+            public UserQualifiedProductSearchInput resolve(UUID userId, UUID qualificationId) {
+                assertThat(userId).isEqualTo(USER_ID);
+                assertThat(qualificationId).isEqualTo(QUALIFICATION_ID);
+                return new UserQualifiedProductSearchInput(
+                        QUALIFICATION_ID,
+                        CONVERSATION_ID,
+                        MERCHANT_ID,
+                        "blue jeans",
+                        availableOnly()
                 );
             }
         };
@@ -171,60 +241,36 @@ class UserSimilarProductSearchServiceTest {
                 )
         );
 
+        assertThat(grouped.command.merchantId()).isEqualTo(MERCHANT_ID);
         assertThat(grouped.command.query()).isEqualTo("blue jeans");
-        assertThat(grouped.discoveryFilters).isSameAs(filters);
-        assertThat(grouped.discoveryFilters.price().max()).isEqualTo(5_000L);
+        assertThat(grouped.reference.provider()).isEqualTo(SHOPIFY);
+        assertThat(grouped.reference.productReference().value())
+                .isEqualTo("gid://shopify/Product/storefront-product");
     }
 
     @Test
-    void keepsMerchantScopedSimilarityOnTheDirectStorefrontSource() {
+    void rejectsMerchantScopedSimilarityWhenNoTrustedLikeReferenceExists() {
         UserCanonicalProductSessionStore store = store();
         CanonicalProduct anchor = product(false, true, false);
         store.remember(USER_ID, List.of(anchor), Map.of(), Map.of(), Map.of(), List.of());
-        UserQualifiedProductSearchResolver resolver = new UserQualifiedProductSearchResolver(null, null, null) {
-            @Override
-            public UserQualifiedProductSearchInput resolve(UUID userId, UUID qualificationId) {
-                assertThat(userId).isEqualTo(USER_ID);
-                assertThat(qualificationId).isEqualTo(QUALIFICATION_ID);
-                return new UserQualifiedProductSearchInput(
-                        QUALIFICATION_ID,
-                        CONVERSATION_ID,
-                        MERCHANT_ID,
-                        "blue jeans",
-                        null
-                );
-            }
-        };
         CapturingGroupedProductSearchService grouped = new CapturingGroupedProductSearchService();
         UserSimilarProductSearchService service = new UserSimilarProductSearchService(
                 store,
                 persistence(Optional.empty()),
                 grouped,
-                product -> {
-                    throw new AssertionError("Scoped similarity must not resolve a provider-catalog reference");
-                },
-                resolver
+                product -> Optional.empty(),
+                readyResolver(MERCHANT_ID, availableOnly())
         );
 
-        service.search(
-                profile(USER_ID),
-                new SearchSimilarUserProductsCommand(
-                        USER_ID,
-                        anchor.key(),
-                        "blue jeans",
-                        QUALIFICATION_ID,
-                        "192.0.2.10",
-                        "test-agent"
-                )
-        );
-
-        assertThat(grouped.command.merchantId()).isEqualTo(MERCHANT_ID);
-        assertThat(grouped.command.query()).isEqualTo("blue jeans");
-        assertThat(grouped.reference).isNull();
+        assertThatThrownBy(() -> service.search(profile(USER_ID), command(USER_ID, anchor.key())))
+                .isInstanceOf(UserException.class)
+                .satisfies(exception ->
+                        assertThat(((UserException) exception).getStatus().value()).isEqualTo(404));
+        assertThat(grouped.calls).isZero();
     }
 
     @Test
-    void acceptsAServerOwnedMerchantScopeWithoutAQualification() {
+    void rejectsAServerOwnedMerchantScopeWithoutAQualificationBeforeDiscovery() {
         UserCanonicalProductSessionStore store = store();
         CanonicalProduct anchor = product(false, true, false);
         store.remember(USER_ID, List.of(anchor), Map.of(), Map.of(), Map.of(), List.of());
@@ -239,23 +285,22 @@ class UserSimilarProductSearchServiceTest {
                 null
         );
 
-        service.search(
-                profile(USER_ID),
-                new SearchSimilarUserProductsCommand(
-                        USER_ID,
-                        anchor.key(),
-                        "blue jeans",
-                        null,
-                        MERCHANT_ID,
-                        "192.0.2.10",
-                        "test-agent"
-                )
-        );
-
-        assertThat(grouped.command.merchantId()).isEqualTo(MERCHANT_ID);
-        assertThat(grouped.command.query()).isEqualTo("blue jeans");
-        assertThat(grouped.discoveryFilters).isNull();
-        assertThat(grouped.reference).isNull();
+        assertThatThrownBy(() -> service.search(
+                        profile(USER_ID),
+                        new SearchSimilarUserProductsCommand(
+                                USER_ID,
+                                anchor.key(),
+                                "blue jeans",
+                                null,
+                                MERCHANT_ID,
+                                "192.0.2.10",
+                                "test-agent"
+                        )
+                ))
+                .isInstanceOf(UserException.class)
+                .satisfies(exception ->
+                        assertThat(((UserException) exception).getStatus().value()).isEqualTo(400));
+        assertThat(grouped.calls).isZero();
     }
 
     @Test
@@ -369,9 +414,45 @@ class UserSimilarProductSearchServiceTest {
                 userId,
                 canonicalProductKey,
                 "trail running shoes",
+                QUALIFICATION_ID,
                 "192.0.2.10",
                 "test-agent"
         );
+    }
+
+    private CatalogDiscoveryFilters availableOnly() {
+        return new CatalogDiscoveryFilters(
+                true,
+                List.of(),
+                null,
+                List.of(),
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                null,
+                List.of()
+        );
+    }
+
+    private UserQualifiedProductSearchResolver readyResolver(
+            UUID merchantId,
+            CatalogDiscoveryFilters filters
+    ) {
+        return new UserQualifiedProductSearchResolver(null, null, null) {
+            @Override
+            public UserQualifiedProductSearchInput resolve(UUID userId, UUID qualificationId) {
+                assertThat(userId).isEqualTo(USER_ID);
+                assertThat(qualificationId).isEqualTo(QUALIFICATION_ID);
+                return new UserQualifiedProductSearchInput(
+                        QUALIFICATION_ID,
+                        CONVERSATION_ID,
+                        merchantId,
+                        "trail running shoes",
+                        filters
+                );
+            }
+        };
     }
 
     private UserCanonicalProductSessionStore store() {
@@ -394,6 +475,8 @@ class UserSimilarProductSearchServiceTest {
                 0, 20, null, false, false, List.of(), 0, false, List.of());
         private SearchUserProductsCommand command;
         private CatalogDiscoveryFilters discoveryFilters;
+        private Set<UserProductSearchQuestionTarget> explicitAnyTargets;
+        private Set<UserProductSearchQuestionTarget> profileSuppressionTargets;
         private CanonicalProduct anchor;
         private CatalogSimilarityReference reference;
         private int calls;
@@ -407,11 +490,15 @@ class UserSimilarProductSearchServiceTest {
                 EnsureUserProfileCommand profileCommand,
                 SearchUserProductsCommand command,
                 CatalogDiscoveryFilters discoveryFilters,
+                Set<UserProductSearchQuestionTarget> explicitAnyTargets,
+                Set<UserProductSearchQuestionTarget> profileSuppressionTargets,
                 CanonicalProduct anchor,
                 CatalogSimilarityReference similarityReference
         ) {
             this.command = command;
             this.discoveryFilters = discoveryFilters;
+            this.explicitAnyTargets = explicitAnyTargets;
+            this.profileSuppressionTargets = profileSuppressionTargets;
             this.anchor = anchor;
             this.reference = similarityReference;
             calls++;

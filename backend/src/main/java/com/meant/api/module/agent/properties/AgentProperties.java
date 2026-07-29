@@ -1,5 +1,6 @@
 package com.meant.api.module.agent.properties;
 
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
@@ -30,7 +31,7 @@ public record AgentProperties(
         @Min(1) int contextMessageBudget,
         @Min(4096) int contextCharacterBudget,
         @Min(256) int maximumResultCharacters,
-        @Min(1) int repeatedIdenticalToolCallThreshold,
+        @Min(2) int repeatedIdenticalToolCallThreshold,
         @NotNull Duration runDeadline,
         @NotNull Duration modelTimeout,
         @NotNull Duration toolDeadline,
@@ -40,4 +41,19 @@ public record AgentProperties(
         @NotNull Duration eventRetention,
         @NotNull Duration staleRunAge
 ) {
+
+    @AssertTrue(message = "agent deadlines and timeouts must be positive")
+    public boolean hasPositiveDeadlines() {
+        return positive(runDeadline)
+                && positive(modelTimeout)
+                && positive(toolDeadline)
+                && positive(eventStreamTimeout)
+                && positive(eventPollInterval)
+                && positive(eventRetention)
+                && positive(staleRunAge);
+    }
+
+    private static boolean positive(Duration duration) {
+        return duration != null && !duration.isZero() && !duration.isNegative();
+    }
 }

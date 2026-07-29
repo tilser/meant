@@ -140,7 +140,8 @@ public class AgentToolCallExecutor {
         if (!reservation.execute()) {
             return new AgentExecutedToolCall(
                     new AgentModelToolResult(call.id(), call.name(), reservation.completedResultJson()),
-                    true
+                    true,
+                    reservation.waitingForUserMessage()
             );
         }
         if (cancellationRequested(context)) {

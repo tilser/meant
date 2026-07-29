@@ -1,6 +1,7 @@
 package com.meant.api.module.user.service;
 
 import com.meant.api.module.user.constant.UserProductSearchPagination;
+import com.meant.api.module.user.constant.UserProductSearchQuestionTarget;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryFilters;
 import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
@@ -11,6 +12,7 @@ import com.meant.api.module.user.service.dto.UserProductSearchQueryIntentResult;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
 import com.meant.api.module.user.service.dto.UserTasteProfileResult;
 import java.time.Instant;
+import java.util.Set;
 import java.util.function.Consumer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -26,12 +28,13 @@ public class UserProductSearchPreparationService {
     private final UserProductSearchCatalogInputBuilder catalogInputBuilder;
     private final UserProductSearchHashService hashService;
     private final UserInventoryService userInventoryService;
+    private final UserProductSearchProfileSuppressionPolicy profileSuppressionPolicy;
 
     public UserProductSearchPreparation prepare(
             EnsureUserProfileCommand profileCommand,
             SearchUserProductsCommand command
     ) {
-        return prepare(profileCommand, command, null, ignored -> { });
+        return prepare(profileCommand, command, null, Set.of(), Set.of(), ignored -> { });
     }
 
     public UserProductSearchPreparation prepare(
@@ -39,7 +42,47 @@ public class UserProductSearchPreparationService {
             SearchUserProductsCommand command,
             CatalogDiscoveryFilters discoveryFilters
     ) {
-        return prepare(profileCommand, command, discoveryFilters, ignored -> { });
+        return prepare(
+                profileCommand,
+                command,
+                discoveryFilters,
+                Set.of(),
+                Set.of(),
+                ignored -> { }
+        );
+    }
+
+    public UserProductSearchPreparation prepare(
+            EnsureUserProfileCommand profileCommand,
+            SearchUserProductsCommand command,
+            CatalogDiscoveryFilters discoveryFilters,
+            Set<UserProductSearchQuestionTarget> explicitAnyTargets
+    ) {
+        return prepare(
+                profileCommand,
+                command,
+                discoveryFilters,
+                explicitAnyTargets,
+                explicitAnyTargets,
+                ignored -> { }
+        );
+    }
+
+    public UserProductSearchPreparation prepare(
+            EnsureUserProfileCommand profileCommand,
+            SearchUserProductsCommand command,
+            CatalogDiscoveryFilters discoveryFilters,
+            Set<UserProductSearchQuestionTarget> explicitAnyTargets,
+            Set<UserProductSearchQuestionTarget> profileSuppressionTargets
+    ) {
+        return prepare(
+                profileCommand,
+                command,
+                discoveryFilters,
+                explicitAnyTargets,
+                profileSuppressionTargets,
+                ignored -> { }
+        );
     }
 
     public UserProductSearchPreparation prepare(
@@ -47,7 +90,7 @@ public class UserProductSearchPreparationService {
             SearchUserProductsCommand command,
             Consumer<Stage> stageConsumer
     ) {
-        return prepare(profileCommand, command, null, stageConsumer);
+        return prepare(profileCommand, command, null, Set.of(), Set.of(), stageConsumer);
     }
 
     public UserProductSearchPreparation prepare(
@@ -56,7 +99,51 @@ public class UserProductSearchPreparationService {
             CatalogDiscoveryFilters discoveryFilters,
             Consumer<Stage> stageConsumer
     ) {
-        return prepare(profileCommand, command, discoveryFilters, stageConsumer, false);
+        return prepare(
+                profileCommand,
+                command,
+                discoveryFilters,
+                Set.of(),
+                Set.of(),
+                stageConsumer,
+                false
+        );
+    }
+
+    public UserProductSearchPreparation prepare(
+            EnsureUserProfileCommand profileCommand,
+            SearchUserProductsCommand command,
+            CatalogDiscoveryFilters discoveryFilters,
+            Set<UserProductSearchQuestionTarget> explicitAnyTargets,
+            Consumer<Stage> stageConsumer
+    ) {
+        return prepare(
+                profileCommand,
+                command,
+                discoveryFilters,
+                explicitAnyTargets,
+                explicitAnyTargets,
+                stageConsumer
+        );
+    }
+
+    public UserProductSearchPreparation prepare(
+            EnsureUserProfileCommand profileCommand,
+            SearchUserProductsCommand command,
+            CatalogDiscoveryFilters discoveryFilters,
+            Set<UserProductSearchQuestionTarget> explicitAnyTargets,
+            Set<UserProductSearchQuestionTarget> profileSuppressionTargets,
+            Consumer<Stage> stageConsumer
+    ) {
+        return prepare(
+                profileCommand,
+                command,
+                discoveryFilters,
+                explicitAnyTargets,
+                profileSuppressionTargets,
+                stageConsumer,
+                false
+        );
     }
 
     public UserProductSearchPreparation prepareSimilarity(
@@ -64,13 +151,56 @@ public class UserProductSearchPreparationService {
             SearchUserProductsCommand command,
             CatalogDiscoveryFilters discoveryFilters
     ) {
-        return prepare(profileCommand, command, discoveryFilters, ignored -> { }, true);
+        return prepare(
+                profileCommand,
+                command,
+                discoveryFilters,
+                Set.of(),
+                Set.of(),
+                ignored -> { },
+                true
+        );
+    }
+
+    public UserProductSearchPreparation prepareSimilarity(
+            EnsureUserProfileCommand profileCommand,
+            SearchUserProductsCommand command,
+            CatalogDiscoveryFilters discoveryFilters,
+            Set<UserProductSearchQuestionTarget> explicitAnyTargets
+    ) {
+        return prepareSimilarity(
+                profileCommand,
+                command,
+                discoveryFilters,
+                explicitAnyTargets,
+                explicitAnyTargets
+        );
+    }
+
+    public UserProductSearchPreparation prepareSimilarity(
+            EnsureUserProfileCommand profileCommand,
+            SearchUserProductsCommand command,
+            CatalogDiscoveryFilters discoveryFilters,
+            Set<UserProductSearchQuestionTarget> explicitAnyTargets,
+            Set<UserProductSearchQuestionTarget> profileSuppressionTargets
+    ) {
+        return prepare(
+                profileCommand,
+                command,
+                discoveryFilters,
+                explicitAnyTargets,
+                profileSuppressionTargets,
+                ignored -> { },
+                true
+        );
     }
 
     private UserProductSearchPreparation prepare(
             EnsureUserProfileCommand profileCommand,
             SearchUserProductsCommand command,
             CatalogDiscoveryFilters discoveryFilters,
+            Set<UserProductSearchQuestionTarget> explicitAnyTargets,
+            Set<UserProductSearchQuestionTarget> profileSuppressionTargets,
             Consumer<Stage> stageConsumer,
             boolean similaritySearch
     ) {
@@ -81,17 +211,37 @@ public class UserProductSearchPreparationService {
         String query = command.query().trim();
         UserProductSearchQueryIntentResult queryIntent = similaritySearch
                 ? queryUnderstandingService.understandSimilarity(query)
-                : queryUnderstandingService.understand(query);
+                : discoveryFilters == null
+                ? queryUnderstandingService.understand(query)
+                : queryUnderstandingService.understandQualified(query);
 
         stageConsumer.accept(Stage.LOADING_CONTEXT);
-        UserSettingsResult settings = userSettingsService.get(profileCommand);
-        UserTasteProfileResult tasteProfile = userTasteProfileService.profile(command.userId(), settings);
+        Set<UserProductSearchQuestionTarget> requestExplicitAnyTargets =
+                explicitAnyTargets == null ? Set.of() : Set.copyOf(explicitAnyTargets);
+        Set<UserProductSearchQuestionTarget> requestProfileSuppressionTargets =
+                profileSuppressionTargets == null
+                        ? Set.of()
+                        : Set.copyOf(profileSuppressionTargets);
+        UserSettingsResult persistedSettings = userSettingsService.get(profileCommand);
+        UserTasteProfileResult persistedTasteProfile =
+                userTasteProfileService.profile(command.userId(), persistedSettings);
+        UserSettingsResult settings =
+                profileSuppressionPolicy.settings(
+                        persistedSettings,
+                        requestProfileSuppressionTargets
+                );
+        UserTasteProfileResult tasteProfile =
+                profileSuppressionPolicy.tasteProfile(
+                        persistedTasteProfile,
+                        requestProfileSuppressionTargets
+                );
         UserProductSearchCatalogInput catalogInput = catalogInputBuilder.build(
                 query,
                 queryIntent,
                 settings,
                 command.buyerIp(),
                 command.userAgent(),
+                command.language(),
                 discoveryFilters
         );
         int offset = command.offset();
@@ -111,7 +261,9 @@ public class UserProductSearchPreparationService {
                 Instant.now(),
                 offset,
                 limit,
-                fetchLimit(offset, limit)
+                fetchLimit(offset, limit),
+                requestExplicitAnyTargets,
+                requestProfileSuppressionTargets
         );
     }
 

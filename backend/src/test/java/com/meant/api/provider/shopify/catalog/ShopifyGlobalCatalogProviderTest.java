@@ -1,6 +1,8 @@
 package com.meant.api.provider.shopify.catalog;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.meant.api.module.catalog.service.ExactProductGroupingService;
 import com.meant.api.module.catalog.service.dto.CanonicalProduct;
@@ -19,6 +21,7 @@ import com.meant.api.module.catalog.service.dto.ResultSourceReference;
 import com.meant.api.module.catalog.service.dto.ResultSourceType;
 import com.meant.api.plugin.catalog.extension.shopify.ShopifyGlobalCatalogExtensionCapability;
 import com.meant.api.plugin.catalog.extension.shopify.ShopifyGlobalCatalogExtensionProperties;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchSignals;
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import com.meant.api.plugin.spi.UcpToolResponse;
 import com.meant.api.provider.shopify.auth.ShopifyUcpClient;
@@ -61,13 +64,48 @@ class ShopifyGlobalCatalogProviderTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
+    void routesCatalogInvocationToRuntimeDiscoveredEndpoint() throws Exception {
+        ShopifyGlobalCatalogProperties properties = properties(3);
+        URI discoveredEndpoint = URI.create("https://catalog.shopify.test/api/ucp/runtime-v2");
+        ShopifyGlobalCatalogRuntimeDiscovery runtimeDiscovery =
+                mock(ShopifyGlobalCatalogRuntimeDiscovery.class);
+        when(runtimeDiscovery.endpoint()).thenReturn(discoveredEndpoint);
+        CapturingClient client = new CapturingClient(response(globalResponse()));
+        ShopifyGlobalCatalogCircuitBreaker circuitBreaker = new ShopifyGlobalCatalogCircuitBreaker(
+                properties.circuitFailureThreshold(),
+                properties.circuitOpenDuration(),
+                Clock.fixed(OBSERVED_AT, ZoneOffset.UTC)
+        );
+        ShopifyGlobalCatalogProvider provider = new ShopifyGlobalCatalogProvider(
+                client,
+                new ShopifyGlobalCatalogResponseParser(objectMapper, properties),
+                new ShopifyGlobalCatalogNormalizer(properties, Clock.fixed(OBSERVED_AT, ZoneOffset.UTC)),
+                circuitBreaker,
+                properties,
+                runtimeDiscovery,
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry()
+        );
+
+        assertThat(provider.searchCatalog(new ShopifyGlobalCatalogSearchRequest(
+                "trail running shoes",
+                null,
+                null
+        )).successful()).isTrue();
+
+        assertThat(client.calls).singleElement().satisfies(call ->
+                assertThat(call.options().endpoint()).isEqualTo(discoveredEndpoint));
+    }
+
+    @Test
     void searchCallsGlobalCatalogOnceNormalizesSellerOffersAndIgnoresUnknownExtensions() throws Exception {
         CapturingClient client = new CapturingClient(response(globalResponse()));
         ShopifyGlobalCatalogProvider provider = provider(client, properties(3));
 
         var result = provider.searchCatalog(new ShopifyGlobalCatalogSearchRequest(
                 "trail running shoes",
+                null,
                 new ShopifyCatalogContext("US", null, null, "en", "USD", "marathon training"),
+                new CatalogSearchSignals("203.0.113.4", "Meant Test"),
                 null,
                 null,
                 "cursor-in"
@@ -79,6 +117,7 @@ class ShopifyGlobalCatalogProviderTest {
         assertThat(client.calls.getFirst().options().endpoint()).isEqualTo(properties(3).endpoint());
         assertThat(client.calls.getFirst().options().requiredScopes())
                 .containsExactly("read_global_api_catalog_search");
+        assertThat(client.calls.getFirst().options().unauthenticatedAllowed()).isTrue();
         assertThat(client.calls.getFirst().options().connectTimeout()).isEqualTo(Duration.ofSeconds(1));
         assertThat(client.calls.getFirst().options().readTimeout()).isEqualTo(Duration.ofSeconds(2));
         assertThat(client.calls.getFirst().options().requestDeadline()).isEqualTo(Duration.ofSeconds(3));
@@ -86,6 +125,11 @@ class ShopifyGlobalCatalogProviderTest {
         assertThat(arguments.catalog().pagination().limit()).isEqualTo(10);
         assertThat(arguments.catalog().pagination().cursor()).isEqualTo("cursor-in");
         assertThat(arguments.catalog().view()).isEqualTo("offer");
+        assertThat(arguments.catalog().signals().buyerIp()).isEqualTo("203.0.113.4");
+        assertThat(arguments.catalog().signals().userAgent()).isEqualTo("Meant Test");
+        assertThat(objectMapper.writeValueAsString(arguments))
+                .contains("\"signals\":{\"dev.ucp.buyer_ip\":\"203.0.113.4\","
+                        + "\"dev.ucp.user_agent\":\"Meant Test\"}");
 
         assertThat(result.discoverySource().value()).isEqualTo("SHOPIFY_GLOBAL_CATALOG");
         assertThat(result.protocolVersion()).isEqualTo("2026-04-08");
@@ -838,9 +882,11 @@ class ShopifyGlobalCatalogProviderTest {
     private ShopifyGlobalCatalogProperties properties(int failureThreshold) {
         return new ShopifyGlobalCatalogProperties(
                 true,
+                true,
                 URI.create("https://catalog.shopify.test/api/ucp/mcp"),
                 Set.of("catalog.shopify.test"),
                 "2026-04-08",
+                Duration.ofMinutes(15),
                 10,
                 50,
                 50,

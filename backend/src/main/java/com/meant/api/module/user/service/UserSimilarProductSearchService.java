@@ -36,32 +36,39 @@ public class UserSimilarProductSearchService {
         if (!profileCommand.id().equals(command.userId())) {
             throw UserException.forbidden("Similarity search user does not match authenticated user");
         }
+        if (command.qualificationId() == null) {
+            throw new UserException("A READY product-search qualification is required for similarity search");
+        }
         CanonicalProduct anchor = productSessionStore.find(command.userId(), command.canonicalProductKey())
                 .map(UserCanonicalProductSessionStore.Entry::product)
                 .or(() -> productReferencePersistenceService.findProduct(
                         command.userId(), command.canonicalProductKey()))
                 .orElseThrow(() -> UserException.notFound("Canonical product reference was not found"));
-        UserQualifiedProductSearchInput qualified = command.qualificationId() == null
-                ? null
-                : qualifiedSearchResolver.resolve(command.userId(), command.qualificationId());
-        if (qualified != null && command.merchantId() != null
+        UserQualifiedProductSearchInput qualified =
+                qualifiedSearchResolver.resolve(command.userId(), command.qualificationId());
+        if (command.merchantId() != null
                 && !Objects.equals(qualified.merchantId(), command.merchantId())) {
             throw UserException.notFound("Product-search qualification not found");
         }
-        var merchantId = qualified == null ? command.merchantId() : qualified.merchantId();
-        CatalogSimilarityReference reference = merchantId != null
-                ? null
-                : similarityReferenceResolver.resolve(anchor)
-                        .orElseThrow(() -> UserException.notFound(
-                                "Canonical product has no supported product-level similarity reference"));
-        String query = qualified == null ? command.query() : qualified.effectiveQuery();
-        CatalogDiscoveryFilters discoveryFilters = qualified == null ? null : qualified.filters();
+        var merchantId = qualified.merchantId();
+        CatalogSimilarityReference reference = similarityReferenceResolver.resolve(anchor)
+                .orElseThrow(() -> UserException.notFound(
+                        "Canonical product has no supported product-level similarity reference"));
+        String query = qualified.effectiveQuery();
+        CatalogDiscoveryFilters discoveryFilters = qualified.filters();
+        if (discoveryFilters == null || !Boolean.TRUE.equals(discoveryFilters.available())) {
+            throw new UserException(
+                    "A complete sale-ready product-search qualification is required for similarity search");
+        }
+        var explicitAnyTargets = qualified.explicitAnyTargets();
+        var profileSuppressionTargets = qualified.profileSuppressionTargets();
         SearchUserProductsCommand searchCommand = new SearchUserProductsCommand(
                 command.userId(),
                 query,
                 merchantId,
                 command.buyerIp(),
                 command.userAgent(),
+                command.language(),
                 UserProductSearchPagination.DEFAULT_OFFSET,
                 UserProductSearchPagination.DEFAULT_LIMIT
         );
@@ -69,6 +76,8 @@ public class UserSimilarProductSearchService {
                 profileCommand,
                 searchCommand,
                 discoveryFilters,
+                explicitAnyTargets,
+                profileSuppressionTargets,
                 anchor,
                 reference
         );

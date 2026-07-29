@@ -74,7 +74,7 @@ class UserProductSearchQualificationPlanCodecTest {
                     .isEqualTo(UserProductSearchDecisionSource.CURRENT_USER_TURN);
         });
         assertThat(encoded)
-                .contains("\"schemaVersion\":2", "\"SIZE\"", "\"CURRENT_USER_TURN\"")
+                .contains("\"schemaVersion\":3", "\"SIZE\"", "\"CURRENT_USER_TURN\"")
                 .doesNotContain("javaType");
     }
 

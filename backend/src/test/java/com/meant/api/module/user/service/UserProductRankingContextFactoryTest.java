@@ -1,6 +1,7 @@
 package com.meant.api.module.user.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import com.meant.api.module.user.constant.UserProductSearchQuestionTarget;
 import com.meant.api.module.user.constant.UserTasteSignalStatus;
 import com.meant.api.module.user.constant.UserTasteSignalType;
 import com.meant.api.module.user.constant.UserTasteSuggestionStatus;
@@ -16,6 +17,7 @@ import com.meant.api.module.catalog.service.dto.CanonicalProduct;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -58,6 +60,45 @@ class UserProductRankingContextFactoryTest {
         assertThat(context.preferences()).isEmpty();
     }
 
+    @Test
+    void sizeAnyRemovesSizeSettingsAndHistoricalQueryTasteWhileKeepingUnrelatedPreferences() {
+        ProductRankingContext context = factory().create(UUID.randomUUID(), preparation(
+                List.of(
+                        filter("plus-size-available", "Plus size available"),
+                        filter("organic-cotton", "Organic cotton")
+                ),
+                List.of(
+                        taste(UserTasteSignalType.QUERY, "running shoes 46", "running shoes 46", 2.0d),
+                        taste(UserTasteSignalType.FILTER, "opaque-size", "EU 46", 2.0d),
+                        taste(UserTasteSignalType.MATERIAL, "linen", "Linen", 2.0d)
+                ),
+                Set.of(UserProductSearchQuestionTarget.SIZE),
+                Set.of(UserProductSearchQuestionTarget.SIZE)
+        ), List.of());
+
+        assertThat(context.preferences())
+                .extracting(ProductRankingContext.PreferenceSignal::identity)
+                .containsExactly("organic-cotton", "linen");
+    }
+
+    @Test
+    void buyerGenderValueOverrideRemovesGenderedProfileTasteWithoutBeingAnExplicitAny() {
+        ProductRankingContext context = factory().create(UUID.randomUUID(), preparation(
+                List.of(filter("organic-cotton", "Organic cotton")),
+                List.of(
+                        taste(UserTasteSignalType.CATEGORY, "womens-clothing", "Women's clothing", 2.0d),
+                        taste(UserTasteSignalType.FILTER, "mens-fit", "Men's fit", 2.0d),
+                        taste(UserTasteSignalType.MATERIAL, "merino", "Merino wool", 2.0d)
+                ),
+                Set.of(),
+                Set.of(UserProductSearchQuestionTarget.TARGET_GENDER)
+        ), List.of());
+
+        assertThat(context.preferences())
+                .extracting(ProductRankingContext.PreferenceSignal::identity)
+                .containsExactly("organic-cotton", "merino");
+    }
+
     private UserProductRankingContextFactory factory() {
         return new UserProductRankingContextFactory(new StubInventoryService());
     }
@@ -66,17 +107,45 @@ class UserProductRankingContextFactoryTest {
             ShoppingFilterResult explicit,
             List<UserTasteSignalResult> taste
     ) {
-        UserSettingsResult settings = explicit == null ? null : new UserSettingsResult(
-                null, null, null, List.of(), List.of(explicit), List.of(), List.of(), List.of(), NOW, NOW);
+        return preparation(
+                explicit == null ? List.of() : List.of(explicit),
+                taste,
+                Set.of(),
+                Set.of()
+        );
+    }
+
+    private UserProductSearchPreparation preparation(
+            List<ShoppingFilterResult> filters,
+            List<UserTasteSignalResult> taste,
+            Set<UserProductSearchQuestionTarget> explicitAnyTargets,
+            Set<UserProductSearchQuestionTarget> profileSuppressionTargets
+    ) {
+        UserSettingsResult settings = filters.isEmpty() ? null : new UserSettingsResult(
+                null, null, null, List.of(), filters, List.of(), List.of(), List.of(), NOW, NOW);
         return new UserProductSearchPreparation(
                 "shirt", null, settings, new UserTasteProfileResult("hash", taste, List.of()),
                 new UserProductSearchCatalogInput("shirt", "shirt", null, null, null),
-                "shirt", "hash", NOW, 0, 20, 100);
+                "shirt", "hash", NOW, 0, 20, 100,
+                explicitAnyTargets, profileSuppressionTargets);
+    }
+
+    private ShoppingFilterResult filter(String id, String label) {
+        return new ShoppingFilterResult(id, label, null, "test", "include", 1);
     }
 
     private UserTasteSignalResult taste(String key, String label, double weight) {
+        return taste(UserTasteSignalType.FILTER, key, label, weight);
+    }
+
+    private UserTasteSignalResult taste(
+            UserTasteSignalType type,
+            String key,
+            String label,
+            double weight
+    ) {
         return new UserTasteSignalResult(
-                UUID.randomUUID(), UserTasteSignalType.FILTER, key, label, weight, 1, 0, null, null,
+                UUID.randomUUID(), type, key, label, weight, 1, 0, null, null,
                 UserTasteSuggestionStatus.ACCEPTED, UserTasteSignalStatus.ACTIVE, NOW, NOW);
     }
 

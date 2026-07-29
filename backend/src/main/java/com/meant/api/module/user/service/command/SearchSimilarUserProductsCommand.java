@@ -1,5 +1,6 @@
 package com.meant.api.module.user.service.command;
 
+import com.meant.api.common.util.AcceptLanguageParser;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -17,6 +18,7 @@ public record SearchSimilarUserProductsCommand(
         @Size(max = 500)
         String query,
 
+        @NotNull
         UUID qualificationId,
 
         UUID merchantId,
@@ -25,7 +27,10 @@ public record SearchSimilarUserProductsCommand(
         String buyerIp,
 
         @Size(max = 512)
-        String userAgent
+        String userAgent,
+
+        @Size(max = AcceptLanguageParser.MAXIMUM_LANGUAGE_TAG_LENGTH)
+        String language
 ) {
 
     public SearchSimilarUserProductsCommand {
@@ -33,6 +38,7 @@ public record SearchSimilarUserProductsCommand(
         query = query == null ? null : query.trim();
         buyerIp = buyerIp == null || buyerIp.isBlank() ? null : buyerIp.trim();
         userAgent = userAgent == null || userAgent.isBlank() ? null : userAgent.trim();
+        language = AcceptLanguageParser.canonicalLanguageTag(language);
     }
 
     public SearchSimilarUserProductsCommand(
@@ -43,16 +49,19 @@ public record SearchSimilarUserProductsCommand(
             String buyerIp,
             String userAgent
     ) {
-        this(userId, canonicalProductKey, query, qualificationId, null, buyerIp, userAgent);
+        this(userId, canonicalProductKey, query, qualificationId, null, buyerIp, userAgent, null);
     }
 
     public SearchSimilarUserProductsCommand(
             UUID userId,
             String canonicalProductKey,
             String query,
+            UUID qualificationId,
+            UUID merchantId,
             String buyerIp,
             String userAgent
     ) {
-        this(userId, canonicalProductKey, query, null, null, buyerIp, userAgent);
+        this(userId, canonicalProductKey, query, qualificationId, merchantId, buyerIp, userAgent, null);
     }
+
 }

@@ -156,6 +156,8 @@ class AgentConversationControllerTest {
         );
         HttpServletRequest request = mock(HttpServletRequest.class);
         when(request.getRemoteAddr()).thenReturn("203.0.113.42");
+        when(request.getHeader("User-Agent")).thenReturn("  Meant Browser/1.0  ");
+        when(request.getHeader("Accept-Language")).thenReturn("en-US;q=0.6, cs-CZ;q=0.9");
         AgentMessageResult message = new AgentMessageResult(
                 UUID.randomUUID(),
                 runId,
@@ -210,6 +212,8 @@ class AgentConversationControllerTest {
         verify(userActionService).perform(actionCommand.capture());
         verify(runCoordinator).schedule(runId);
         assertThat(turnCommand.getValue().buyerIp()).isEqualTo("203.0.113.42");
+        assertThat(turnCommand.getValue().userAgent()).isEqualTo("Meant Browser/1.0");
+        assertThat(turnCommand.getValue().language()).isEqualTo("cs-CZ");
         assertThat(turnCommand.getValue().visibleProductContext().sourceMessageId()).isEqualTo(productMessageId);
         assertThat(turnCommand.getValue().visibleProductContext().orderedCanonicalProductKeys())
                 .containsExactly("product-5", "product-6", "product-7", "product-8");

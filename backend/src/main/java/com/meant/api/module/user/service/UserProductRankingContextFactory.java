@@ -20,6 +20,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /** Maps existing settings, taste, and one-shot inventory facts into the neutral ranking contract. */
@@ -31,9 +32,19 @@ public class UserProductRankingContextFactory {
     private static final int MAX_PREFERENCE_SIGNALS = 40;
 
     private final UserInventoryService userInventoryService;
+    private final UserProductSearchProfileSuppressionPolicy profileSuppressionPolicy;
 
     public UserProductRankingContextFactory(UserInventoryService userInventoryService) {
+        this(userInventoryService, new UserProductSearchProfileSuppressionPolicy());
+    }
+
+    @Autowired
+    public UserProductRankingContextFactory(
+            UserInventoryService userInventoryService,
+            UserProductSearchProfileSuppressionPolicy profileSuppressionPolicy
+    ) {
         this.userInventoryService = userInventoryService;
+        this.profileSuppressionPolicy = profileSuppressionPolicy;
     }
 
     public ProductRankingContext create(
@@ -80,6 +91,12 @@ public class UserProductRankingContextFactory {
                 if (filter == null || filter.id() == null || filter.id().isBlank()) {
                     continue;
                 }
+                if (profileSuppressionPolicy.suppressed(
+                        filter,
+                        preparation.profileSuppressionTargets()
+                )) {
+                    continue;
+                }
                 explicitFilterIds.add(filter.id());
                 String value = normalized(firstText(filter.label(), filter.description(), filter.id()));
                 if (value != null) {
@@ -101,6 +118,10 @@ public class UserProductRankingContextFactory {
             preparation.tasteProfile().signals().stream()
                     .filter(Objects::nonNull)
                     .filter(signal -> signal.status() == UserTasteSignalStatus.ACTIVE)
+                    .filter(signal -> !profileSuppressionPolicy.suppressed(
+                            signal,
+                            preparation.profileSuppressionTargets()
+                    ))
                     .filter(signal -> !explicitFilterIds.contains(signal.signalKey()))
                     .map(this::preference)
                     .filter(Objects::nonNull)

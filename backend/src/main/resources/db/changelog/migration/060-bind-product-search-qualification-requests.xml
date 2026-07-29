@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="001-bind-product-search-qualification-requests" author="meant">
+        <comment>
+            Bind every trusted buyer request to the multi-turn qualification it advanced so an
+            answer-turn retry cannot be reinterpreted as a new product search.
+        </comment>
+        <createTable tableName="user_product_search_qualification_requests">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="qualification_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="user_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="conversation_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="merchant_id" type="uuid"/>
+            <column name="message" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addForeignKeyConstraint
+                baseTableName="user_product_search_qualification_requests"
+                baseColumnNames="qualification_id"
+                referencedTableName="user_product_search_qualifications"
+                referencedColumnNames="id"
+                onDelete="CASCADE"
+                constraintName="fk_product_search_qualification_requests_qualification"/>
+        <addForeignKeyConstraint
+                baseTableName="user_product_search_qualification_requests"
+                baseColumnNames="user_id"
+                referencedTableName="users"
+                referencedColumnNames="id"
+                onDelete="CASCADE"
+                constraintName="fk_product_search_qualification_requests_user"/>
+        <addForeignKeyConstraint
+                baseTableName="user_product_search_qualification_requests"
+                baseColumnNames="conversation_id"
+                referencedTableName="agent_conversation"
+                referencedColumnNames="id"
+                onDelete="CASCADE"
+                constraintName="fk_product_search_qualification_requests_conversation"/>
+        <createIndex
+                tableName="user_product_search_qualification_requests"
+                indexName="idx_product_search_qualification_requests_qualification">
+            <column name="qualification_id"/>
+            <column name="created_at"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

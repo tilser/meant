@@ -6,13 +6,16 @@ import com.meant.api.common.service.OpenRouterChatClient;
 import com.meant.api.common.service.OpenRouterJsonExtractor;
 import com.meant.api.common.service.dto.OpenRouterJsonSchemaDefinition;
 import com.meant.api.common.util.CountryCodeNormalizer;
+import com.meant.api.module.catalog.service.port.CatalogSearchParameterContractProvider;
 import com.meant.api.module.user.constant.UserProductCondition;
 import com.meant.api.module.user.constant.UserProductPriceTier;
 import com.meant.api.module.user.constant.UserProductSearchAttributeName;
 import com.meant.api.module.user.constant.UserProductSearchDecisionSource;
 import com.meant.api.module.user.constant.UserProductSearchFilterState;
 import com.meant.api.module.user.constant.UserProductSearchQuestionTarget;
+import com.meant.api.module.user.constant.UserTasteSignalStatus;
 import com.meant.api.module.user.properties.UserProductSearchProperties;
+import com.meant.api.module.user.service.dto.UserLocationResult;
 import com.meant.api.module.user.service.dto.UserProductSearchQualificationModelResult;
 import com.meant.api.module.user.service.dto.UserProductSearchQualificationPlan;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
@@ -51,7 +54,13 @@ public class UserProductSearchQualificationModelService {
     private static final int MAX_DURABLE_VALUES = 10;
     private static final String SYSTEM_PROMPT = """
             You assess a product search before any catalog request is made. The server, not you, authorizes READY.
-            Use the shopping request, latest user turn, prior verified plan, profile facts, and durable preferences.
+            Use the shopping request, ordered trusted conversation, latest user turn, prior verified plan, profile
+            facts, durable preferences, and active taste signals.
+            A trusted server-resolved similarity-anchor label may be supplied separately. When present, it governs
+            product category and category-specific filter relevance even if buyer wording contains a different
+            descriptive product phrase. It is not buyer-authored evidence: never use it as hard-filter provenance,
+            infer a filter value from it, or copy its terms into effectiveQuery unless those terms also occur in
+            trusted buyer, profile, durable-preference, or active-taste evidence.
 
             For every user-answerable filter, return:
             - relevant: true when the filter materially helps this request; false only when it clearly does not apply.
@@ -60,25 +69,45 @@ public class UserProductSearchQualificationModelService {
             - provenance: the source and an exact short evidence snippet copied from that source.
             - typed values, when known. Do not invent values.
 
-            Provenance source must be ORIGINAL_QUERY, CURRENT_USER_TURN, PROFILE, DURABLE_PREFERENCE, or NONE.
-            Use NONE with empty evidence when no value or explicit indifference is available. PROFILE and durable
-            evidence must quote the supplied context. Explicit indifference may only use ORIGINAL_QUERY or
-            CURRENT_USER_TURN. A generic yes is valid only when the prior question targeted exactly one filter.
-            PROFILE may resolve only SHIPS_TO from saved locations and TARGET_GENDER from clothing fit. A stored
+            Provenance source must be ORIGINAL_QUERY, CURRENT_USER_TURN, CONVERSATION, PROFILE,
+            DURABLE_PREFERENCE, or NONE. CONVERSATION may quote exact evidence from a prior USER transcript message
+            only; never use an ASSISTANT message as factual evidence. The latest user message is
+            CURRENT_USER_TURN, not CONVERSATION. Use NONE with empty evidence when no value or explicit indifference
+            is available. PROFILE and durable evidence must quote the supplied context. Explicit indifference may
+            use ORIGINAL_QUERY, CURRENT_USER_TURN, or prior USER CONVERSATION evidence. A generic yes is valid only
+            when the prior question targeted exactly one filter.
+            Prior conversation is context, not automatic carry-over: never apply a constraint from an unrelated
+            earlier shopping request unless the current request explicitly refers back to it or the buyer clearly
+            stated it as a stable personal fact. Prefer PROFILE or a matching DURABLE_PREFERENCE for stored facts.
+            When the previous verified question asked for multiple targets and explicitly offered a bare “I don’t
+            care” answer for all of them, that bare answer resolves every target in that question to ANY. If the user
+            names only one target, apply ANY only to that named target.
+            PROFILE may resolve only SHIPS_TO from primaryLocation and TARGET_GENDER from clothing fit. Other saved
+            locations are reference context only and must never be used as PROFILE provenance. A stored
             DURABLE_PREFERENCE may resolve only SIZE and only when its scope clearly matches the current product noun.
-            When PROFILE resolves SHIPS_TO, copy country, region, and postalCode exactly from one supplied saved
-            location. The city and regionName fields are display evidence only; never put a city name into region
+            When PROFILE resolves SHIPS_TO, copy country, region, and postalCode exactly from primaryLocation.
+            The city and regionName fields are display evidence only; never put a city name into region
             and never invent a postal code.
+
+            Active taste signals are soft personalization context only. They may improve effectiveQuery/intent, but
+            must never provide provenance for a hard-filter value, explicit indifference, or durable attribute.
+            The profile budget is non-authoritative/default context because this version has no budget provenance;
+            never resolve PRICE from it.
 
             The server always searches sale-ready products, so AVAILABLE is fixed to true and is not your decision.
             SHOPS and CATEGORIES require trusted IDs and have no resolver in this version. Never ask the user for
             IDs and never output these filters. Preserve natural-language shop, brand, and category constraints in
             effectiveQuery instead.
 
-            Decide CONDITION, SHIPS_TO, SHIPS_FROM, PRICE, RATING, and PRICE_TIER independently. PRICE is USD only;
-            one valid bound is sufficient. RATING may contain min, minCount, or both. A missing optional bound does
-            not make an otherwise valid filter unresolved. CONDITION supports NEW and SECONDHAND. Location countries
-            use ISO 3166-1 alpha-2. PRICE_TIER supports LOW, MEDIUM, and HIGH.
+            Decide CONDITION, SHIPS_TO, SHIPS_FROM, PRICE, RATING, and PRICE_TIER independently. PRICE is USD only
+            and one valid bound is sufficient, but never infer USD from an unqualified number, a bare “$” symbol,
+            or the generic word “dollar(s)”. A price value requires an explicit USD, US dollar(s), or U.S. dollar(s)
+            denomination in trusted user evidence. If the denomination is ambiguous, keep PRICE missing and ask
+            which currency they mean, noting that this search currently supports USD. A later explicit “USD” answer
+            may qualify a numeric bound only from this same pending search, never from an older search in the
+            conversation. RATING may contain min, minCount, or both. A missing optional bound does not make an
+            otherwise valid filter unresolved. CONDITION supports NEW and SECONDHAND. Location countries use ISO
+            3166-1 alpha-2. PRICE_TIER supports LOW, MEDIUM, and HIGH.
 
             Relevance and criticality are category-specific. A filter is relevant only when it would materially
             improve this particular search, and a missing relevant value should block search only when results would
@@ -87,10 +116,11 @@ public class UserProductSearchQualificationModelService {
             - Every physical product search requires a SHIPS_TO decision before search. Use a saved destination when
               available. Otherwise ask where the order should ship and explicitly allow the user to say location does
               not matter. Only explicit user indifference may produce ANY; ANY intentionally omits the provider
-              shipping filter.
-            - Fit-sensitive footwear such as football boots also normally requires SIZE before search. Use a matching
-              durable size when available; otherwise ask one concise combined question for size and destination.
-            - Apparel can require SIZE or TARGET_GENDER when fit is central, but COLOR, CONDITION, RATING, origin, and
+              shipping filter. An explicit country statement such as “I live in the United States”, “I am in…”,
+              “I’m based in…”, or “I’m located in…” may supply SHIPS_TO. Never infer a country from a city name.
+            - Footwear and sized apparel require SIZE before search. Use a matching durable size when available;
+              otherwise ask one concise combined question for size and destination.
+            - TARGET_GENDER can matter for apparel when fit is central, but COLOR, CONDITION, RATING, origin, and
               price are optional unless the request makes them material.
             - Food never uses SIZE or TARGET_GENDER. Preserve dietary, ingredient, format, quantity, and delivery
               constraints in effectiveQuery and context.
@@ -117,7 +147,12 @@ public class UserProductSearchQualificationModelService {
             effective SIZE value.
 
             effectiveQuery must be a concise catalog query containing the product noun and non-filter keyword
-            constraints. Do not include conversational wrapper text.
+            constraints. Every content term must be copied from the supplied trusted buyer, profile, durable-preference,
+            or active-taste evidence; do not add synonyms or inferred product terms. Do not include conversational
+            wrapper text. When a filter is explicitAny, omit profile and durable-preference values for that filter from
+            effectiveQuery. Earlier original-query, conversation, profile, durable-preference, and previous-plan
+            wording is overridden chronologically. Keep an overridden value as semantic query wording only when the
+            latest user turn explicitly instructs you to keep that exact value in the product query.
             """;
 
     private final OpenRouterChatClient openRouterChatClient;
@@ -125,6 +160,7 @@ public class UserProductSearchQualificationModelService {
     private final UserProductSearchProperties searchProperties;
     private final ObjectMapper objectMapper;
     private final UserProductSearchQualificationPlanResolver planResolver;
+    private final CatalogSearchParameterContractProvider catalogSearchParameterContractProvider;
 
     public UserProductSearchQualificationModelResult generate(
             @NotNull @Valid GenerateUserProductSearchQualificationQuery query
@@ -176,7 +212,7 @@ public class UserProductSearchQualificationModelService {
             UserProductSearchQualificationPlan fallback = firstResolution != null
                     && (!firstResolution.plan().missingFilters().isEmpty()
                     || !firstResolution.plan().missingTargets().isEmpty())
-                    ? planResolver.safeFallback(firstResolution.plan())
+                    ? planResolver.safeFallback(firstResolution.plan(), query)
                     : planResolver.safeFallback(query, exception);
             return result(fallback, repairModel);
         }
@@ -193,7 +229,7 @@ public class UserProductSearchQualificationModelService {
         );
         if (!repairedResolution.plan().missingFilters().isEmpty()
                 || !repairedResolution.plan().missingTargets().isEmpty()) {
-            return result(planResolver.safeFallback(repairedResolution.plan()), repairModel);
+            return result(planResolver.safeFallback(repairedResolution.plan(), query), repairModel);
         }
         return result(planResolver.safeFallback(query, initialFailure), repairModel);
     }
@@ -244,10 +280,20 @@ public class UserProductSearchQualificationModelService {
     private String userPrompt(GenerateUserProductSearchQualificationQuery query, String repairFeedback) {
         try {
             String prompt = """
+                    Supported Shopify/UCP search-parameter contract:
+                    %s
+
+                    Trusted conversation transcript, ordered oldest to newest:
+                    %s
+
                     Original shopping request:
                     %s
 
                     Latest user turn:
+                    %s
+
+                    Trusted server-resolved similarity anchor label (category/relevance context only; never
+                    hard-filter provenance or independent effective-query evidence):
                     %s
 
                     Previous verified qualification plan (null means first turn or legacy plan):
@@ -258,14 +304,21 @@ public class UserProductSearchQualificationModelService {
 
                     Existing durable scoped product-search preferences:
                     %s
+
+                    Active taste signals (soft query/intent context only; never hard-filter provenance):
+                    %s
                     """.formatted(
+                    catalogSearchParameterContractProvider.currentSearchParameterContract(),
+                    objectMapper.writeValueAsString(query.conversation()),
                     query.originalQuery().trim(),
                     query.message().trim(),
+                    objectMapper.writeValueAsString(query.trustedReferenceProductText()),
                     query.previousPlan() == null || !query.previousPlan().currentSchema()
                             ? "null"
                             : objectMapper.writeValueAsString(query.previousPlan()),
                     objectMapper.writeValueAsString(settingsPrompt(query.settings())),
-                    objectMapper.writeValueAsString(query.durablePreferences())
+                    objectMapper.writeValueAsString(query.durablePreferences()),
+                    objectMapper.writeValueAsString(tastePrompt(query))
             );
             if (repairFeedback == null || repairFeedback.isBlank()) {
                 return prompt;
@@ -285,21 +338,48 @@ public class UserProductSearchQualificationModelService {
     }
 
     private SettingsPrompt settingsPrompt(UserSettingsResult settings) {
+        UserLocationResult primaryLocation = settings.location();
         return new SettingsPrompt(
+                new BudgetPrompt(
+                        settings.budget(),
+                        "NON_AUTHORITATIVE_DEFAULT_NO_PROVENANCE"
+                ),
                 blankToNull(settings.clothingFit()),
+                locationPrompt(primaryLocation),
                 safe(settings.locations()).stream()
-                        .map(location -> new LocationPrompt(
-                                location.country(),
-                                location.code(),
-                                location.region(),
-                                location.postalCode(),
-                                location.regionName(),
-                                location.city()))
+                        .filter(location -> !location.equals(primaryLocation))
+                        .map(this::locationPrompt)
                         .toList(),
                 safe(settings.filters()).stream()
                         .map(filter -> new FilterPrompt(filter.id(), filter.label(), filter.description()))
                         .toList()
         );
+    }
+
+    private LocationPrompt locationPrompt(UserLocationResult location) {
+        if (location == null) {
+            return null;
+        }
+        return new LocationPrompt(
+                location.country(),
+                location.code(),
+                location.region(),
+                location.postalCode(),
+                location.regionName(),
+                location.city()
+        );
+    }
+
+    private List<TasteSignalPrompt> tastePrompt(GenerateUserProductSearchQualificationQuery query) {
+        return safe(query.tasteProfile().signals()).stream()
+                .filter(signal -> signal.status() == UserTasteSignalStatus.ACTIVE)
+                .map(signal -> new TasteSignalPrompt(
+                        signal.signalType(),
+                        signal.label(),
+                        signal.signalKey(),
+                        signal.weight()
+                ))
+                .toList();
     }
 
     private OpenRouterJsonSchemaDefinition responseSchema() {
@@ -414,6 +494,7 @@ public class UserProductSearchQualificationModelService {
                         "source", OpenRouterJsonSchemaDefinition.stringEnum(List.of(
                                 UserProductSearchDecisionSource.ORIGINAL_QUERY.name(),
                                 UserProductSearchDecisionSource.CURRENT_USER_TURN.name(),
+                                UserProductSearchDecisionSource.CONVERSATION.name(),
                                 UserProductSearchDecisionSource.PROFILE.name(),
                                 UserProductSearchDecisionSource.DURABLE_PREFERENCE.name(),
                                 UserProductSearchDecisionSource.NONE.name()
@@ -544,7 +625,7 @@ public class UserProductSearchQualificationModelService {
                 raw.relevant(), raw.explicitAny(), hasValue, "shipsFrom");
         List<UserProductSearchQualificationPlan.Location> values = state == UserProductSearchFilterState.VALUE
                 ? safe(raw.values()).stream()
-                        .map(value -> location(value.country(), value.region(), value.postalCode(), "shipsFrom"))
+                        .map(value -> location(value.country(), null, null, "shipsFrom"))
                         .distinct()
                         .limit(MAX_FILTER_VALUES)
                         .toList()
@@ -851,8 +932,10 @@ public class UserProductSearchQualificationModelService {
     }
 
     private record SettingsPrompt(
+            BudgetPrompt budget,
             String clothingFit,
-            List<LocationPrompt> locations,
+            LocationPrompt primaryLocation,
+            List<LocationPrompt> otherSavedLocations,
             List<FilterPrompt> shoppingPreferences
     ) {
     }
@@ -867,7 +950,18 @@ public class UserProductSearchQualificationModelService {
     ) {
     }
 
+    private record BudgetPrompt(Integer value, String authority) {
+    }
+
     private record FilterPrompt(String id, String label, String description) {
+    }
+
+    private record TasteSignalPrompt(
+            com.meant.api.module.user.constant.UserTasteSignalType type,
+            String label,
+            String key,
+            double weight
+    ) {
     }
 
     private record ModelResponse(

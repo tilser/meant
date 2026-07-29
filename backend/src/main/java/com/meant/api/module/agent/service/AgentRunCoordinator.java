@@ -46,6 +46,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.PageRequest;
@@ -67,6 +68,8 @@ public class AgentRunCoordinator {
             "I couldn't complete that requested change, so I left it unchanged. Please try again.";
     private static final String MUTATION_NOT_CONFIRMED_MESSAGE =
             "I couldn't confirm that requested change. Please check the current state before trying again.";
+    private static final String SEARCH_CATALOG_TOOL = "search_catalog";
+    private static final int MAXIMUM_READ_ATTEMPTS_PER_BATCH = 2;
     private static final int QUEUED_RUN_PAGE_SIZE = 100;
 
     private final AgentRunRepository runRepository;
@@ -247,7 +250,9 @@ public class AgentRunCoordinator {
                 .withPendingProductClarification(context.pendingProductClarification())
                 .withMerchantId(context.merchantId())
                 .withExecutionOwner(executionOwner)
-                .withBuyerIp(run.getBuyerIp());
+                .withBuyerIp(run.getBuyerIp())
+                .withUserAgent(run.getUserAgent())
+                .withLanguage(run.getLanguage());
         Map<String, Integer> perToolCounts = new HashMap<>();
         Map<String, Integer> repeatedCalls = new HashMap<>();
         int totalToolCalls = 0;
@@ -256,26 +261,40 @@ public class AgentRunCoordinator {
         boolean mutationSucceeded = false;
         boolean outstandingMutationFailure = false;
         boolean mutationCorrectionIssued = false;
+        boolean deterministicSearchFollowOnInProgress = false;
 
         for (int iteration = 0; iteration < properties.maximumModelIterations(); iteration++) {
             requireActive(runId, executionOwner, deadline);
-            if (!mutationAttempted) {
-                Optional<AgentProductClarification> unresolvedIntent =
-                        productClarificationService.unresolvedIntent(toolContext);
-                if (unresolvedIntent.isPresent()) {
-                    waitForProductClarification(runId, executionOwner, unresolvedIntent.get());
-                    return;
-                }
-            }
             if (iteration == 0) {
                 Optional<AgentResolvedReadIntent> resolvedReadIntent = readIntentResolver.resolve(toolContext);
                 if (resolvedReadIntent.isPresent()) {
-                    executeResolvedReadIntent(
+                    ResolvedReadExecution resolvedRead = executeResolvedReadIntent(
                             toolContext,
                             resolvedReadIntent.get(),
                             executionOwner,
                             deadline
                     );
+                    if (!resolvedRead.continueWithModel()) {
+                        return;
+                    }
+                    deterministicSearchFollowOnInProgress = true;
+                    toolContext = toolContext.withTriggeringUserText(resolvedRead.trustedFollowOnAction());
+                    totalToolCalls += 1;
+                    perToolCounts.merge(resolvedRead.call().name(), 1, Integer::sum);
+                    repeatedCalls.merge(fingerprint(resolvedRead.call()), 1, Integer::sum);
+                    modelMessages.add(AgentModelMessage.assistant(
+                            "",
+                            List.of(resolvedRead.call())
+                    ));
+                    modelMessages.add(AgentModelMessage.tools(List.of(resolvedRead.modelResult())));
+                    continue;
+                }
+            }
+            if (!mutationAttempted && !deterministicSearchFollowOnInProgress) {
+                Optional<AgentProductClarification> unresolvedIntent =
+                        productClarificationService.unresolvedIntent(toolContext);
+                if (unresolvedIntent.isPresent()) {
+                    waitForProductClarification(runId, executionOwner, unresolvedIntent.get());
                     return;
                 }
             }
@@ -361,7 +380,11 @@ public class AgentRunCoordinator {
                 }
                 String fingerprint = fingerprint(call);
                 int repeatCount = repeatedCalls.merge(fingerprint, 1, Integer::sum);
-                if (repeatCount >= properties.repeatedIdenticalToolCallThreshold()) {
+                boolean repeatedMutation = risk(call) != AgentToolRisk.READ
+                        && repeatCount >= properties.repeatedIdenticalToolCallThreshold();
+                boolean exhaustedReadRetry = risk(call) == AgentToolRisk.READ
+                        && repeatCount > properties.repeatedIdenticalToolCallThreshold();
+                if (repeatedMutation || exhaustedReadRetry) {
                     log.warn(
                             "Agent repeated tool-call guard triggered. runId={}, iteration={}, toolName={}, "
                                     + "repeatCount={}, threshold={}, argumentsFingerprint={}",
@@ -523,7 +546,7 @@ public class AgentRunCoordinator {
         }
     }
 
-    private void executeResolvedReadIntent(
+    private ResolvedReadExecution executeResolvedReadIntent(
             AgentToolExecutionContext context,
             AgentResolvedReadIntent intent,
             UUID executionOwner,
@@ -544,12 +567,21 @@ public class AgentRunCoordinator {
                     executed.waitingForUserMessage(),
                     true
             );
-            return;
+            return ResolvedReadExecution.terminal();
+        }
+        if (executed.successful() && intent.continueWithModelAfterSuccess()) {
+            return new ResolvedReadExecution(
+                    call,
+                    executed.modelResult(),
+                    intent.trustedFollowOnAction(),
+                    true
+            );
         }
         String message = executed.successful()
                 ? readIntentResolver.completionMessage(intent, executed.modelResult().resultJson())
                 : readIntentResolver.failureMessage(intent);
         finish(context.runId(), executionOwner, message);
+        return ResolvedReadExecution.terminal();
     }
 
     private AgentModelRequest request(
@@ -596,21 +628,28 @@ public class AgentRunCoordinator {
                 .filter(call -> risk(call) != AgentToolRisk.READ)
                 .toList();
 
+        List<List<AgentModelToolCall>> readGroups = new ArrayList<>(reads.stream()
+                .collect(Collectors.groupingBy(
+                        this::readGroupKey,
+                        LinkedHashMap::new,
+                        Collectors.toList()
+                ))
+                .values());
         int maximumParallel = properties.maximumParallelReadTools();
-        for (int offset = 0; offset < reads.size(); offset += maximumParallel) {
+        for (int offset = 0; offset < readGroups.size(); offset += maximumParallel) {
             requireActive(context.runId(), executionOwner, deadline);
-            List<AgentModelToolCall> batch = reads.subList(offset, Math.min(reads.size(), offset + maximumParallel));
-            List<CompletableFuture<AgentExecutedToolCall>> futures = batch.stream()
-                    .map(call -> CompletableFuture.supplyAsync(
-                            () -> toolCallExecutor.execute(context, call),
+            List<List<AgentModelToolCall>> batch =
+                    readGroups.subList(offset, Math.min(readGroups.size(), offset + maximumParallel));
+            List<CompletableFuture<Map<String, AgentExecutedToolCall>>> futures = batch.stream()
+                    .map(group -> CompletableFuture.supplyAsync(
+                            () -> executeReadGroup(context, group, executionOwner, deadline),
                             parallelReadExecutor
                     ))
                     .toList();
             for (int index = 0; index < futures.size(); index++) {
                 long remainingNanos = Math.max(1, deadline - System.nanoTime());
                 try {
-                    AgentExecutedToolCall executed = futures.get(index).get(remainingNanos, TimeUnit.NANOSECONDS);
-                    results.put(batch.get(index).id(), executed);
+                    results.putAll(futures.get(index).get(remainingNanos, TimeUnit.NANOSECONDS));
                 } catch (java.util.concurrent.TimeoutException exception) {
                     futures.forEach(future -> future.cancel(true));
                     throw new AgentException(
@@ -644,6 +683,48 @@ public class AgentRunCoordinator {
                         .findFirst()
                         .orElse(null)
         );
+    }
+
+    private Map<String, AgentExecutedToolCall> executeReadGroup(
+            AgentToolExecutionContext context,
+            List<AgentModelToolCall> calls,
+            UUID executionOwner,
+            long deadline
+    ) {
+        Map<String, AgentExecutedToolCall> results = new LinkedHashMap<>();
+        Map<String, AgentExecutedToolCall> previousByFingerprint = new LinkedHashMap<>();
+        Map<String, Integer> attemptsByFingerprint = new HashMap<>();
+        for (AgentModelToolCall call : calls) {
+            String callFingerprint = fingerprint(call);
+            AgentExecutedToolCall previous = previousByFingerprint.get(callFingerprint);
+            int attempts = attemptsByFingerprint.getOrDefault(callFingerprint, 0);
+            boolean retryableFailure = previous != null
+                    && !previous.successful()
+                    && previous.waitingForUserMessage() == null
+                    && attempts < MAXIMUM_READ_ATTEMPTS_PER_BATCH;
+            if (previous == null || retryableFailure) {
+                requireActive(context.runId(), executionOwner, deadline);
+                previous = toolCallExecutor.execute(context, call);
+                previousByFingerprint.put(callFingerprint, previous);
+                attemptsByFingerprint.put(callFingerprint, attempts + 1);
+            } else {
+                AgentModelToolResult previousResult = previous.modelResult();
+                previous = new AgentExecutedToolCall(
+                        new AgentModelToolResult(call.id(), call.name(), previousResult.resultJson()),
+                        previous.successful(),
+                        previous.waitingForUserMessage()
+                );
+            }
+            results.put(call.id(), previous);
+        }
+        return results;
+    }
+
+    private String readGroupKey(AgentModelToolCall call) {
+        if (SEARCH_CATALOG_TOOL.equals(call.name())) {
+            return "single-flight:" + SEARCH_CATALOG_TOOL;
+        }
+        return "fingerprint:" + fingerprint(call);
     }
 
     private AgentToolRisk risk(AgentModelToolCall call) {
@@ -766,6 +847,18 @@ public class AgentRunCoordinator {
             boolean allAttemptedMutationsSucceeded,
             String waitingForUserMessage
     ) {
+    }
+
+    private record ResolvedReadExecution(
+            AgentModelToolCall call,
+            AgentModelToolResult modelResult,
+            String trustedFollowOnAction,
+            boolean continueWithModel
+    ) {
+
+        private static ResolvedReadExecution terminal() {
+            return new ResolvedReadExecution(null, null, null, false);
+        }
     }
 
     private final class DeltaWriter {

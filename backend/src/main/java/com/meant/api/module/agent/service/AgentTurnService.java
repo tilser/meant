@@ -95,6 +95,8 @@ public class AgentTurnService {
                 properties.model(),
                 properties.promptVersion(),
                 command.buyerIp(),
+                command.userAgent(),
+                command.language(),
                 now
         ));
         userMessage.linkRun(run.getId());

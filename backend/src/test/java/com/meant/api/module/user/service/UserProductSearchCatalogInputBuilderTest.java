@@ -7,6 +7,8 @@ import com.meant.api.module.catalog.service.dto.CatalogDiscoveryAttributeFilter;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryAttributeName;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryFilters;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryLocation;
+import com.meant.api.module.catalog.service.dto.CatalogDiscoveryPrice;
+import com.meant.api.module.user.constant.UserProductSearchQuestionTarget;
 import com.meant.api.module.user.exception.UnsupportedProductSearchCurrencyException;
 import com.meant.api.module.user.properties.UserProductSearchProperties;
 import com.meant.api.module.user.service.dto.ShoppingFilterResult;
@@ -17,6 +19,7 @@ import com.meant.api.module.user.service.dto.UserSettingsResult;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class UserProductSearchCatalogInputBuilderTest {
@@ -35,7 +38,7 @@ class UserProductSearchCatalogInputBuilderTest {
 
         assertThat(input.searchQuery()).isEqualTo("t-shirt");
         assertThat(input.context().addressCountry()).isEqualTo("US");
-        assertThat(input.context().language()).isEqualTo("en");
+        assertThat(input.context().language()).isNull();
         assertThat(input.context().currency()).isEqualTo("USD");
         assertThat(input.context().intent())
                 .contains("Original request: T-shirt under 100 USD")
@@ -63,6 +66,28 @@ class UserProductSearchCatalogInputBuilderTest {
         assertThat(input.context().addressCountry()).isEqualTo("US");
         assertThat(input.context().addressRegion()).isEqualTo("NY");
         assertThat(input.context().postalCode()).isEqualTo("10001");
+        assertThat(input.context().language()).isNull();
+        assertThat(input.context().currency()).isNull();
+        assertThat(input.context().intent()).doesNotContain("USD");
+        assertThat(input.cacheKey())
+                .contains("language=\n", "currency=\n")
+                .doesNotContain("language=en", "currency=USD");
+    }
+
+    @Test
+    void copiesOnlyTheExplicitCanonicalRequestLanguageIntoCatalogContextAndCacheKey() {
+        UserProductSearchCatalogInput input = builder.build(
+                "running shoes",
+                intent("running shoes"),
+                settings(new UserLocationResult("Czechia", "CZ", "Prague")),
+                null,
+                null,
+                "cs-cz",
+                null
+        );
+
+        assertThat(input.context().language()).isEqualTo("cs-CZ");
+        assertThat(input.cacheKey()).contains("language=cs-CZ");
     }
 
     @Test
@@ -90,6 +115,46 @@ class UserProductSearchCatalogInputBuilderTest {
         assertThat(input.searchQuery()).isEqualTo("linen shirt");
         assertThat(input.context().currency()).isEqualTo("USD");
         assertThat(input.filters().price().max()).isEqualTo(123456L);
+    }
+
+    @Test
+    void acceptsOnlyUnambiguouslyNamedUsdDenominations() {
+        for (String denomination : List.of("USD", "US dollars", "U.S. dollars")) {
+            String request = "linen shirt under 100 " + denomination;
+            UserProductSearchCatalogInput input = builder.build(
+                    request,
+                    intent(request),
+                    settings(new UserLocationResult("United States", "US", "New York"))
+            );
+
+            assertThat(input.context().currency()).as(denomination).isEqualTo("USD");
+            assertThat(input.filters().price().max()).as(denomination).isEqualTo(10_000L);
+        }
+    }
+
+    @Test
+    void doesNotManufactureUsdForAmbiguousUnqualifiedPriceBounds() {
+        for (String request : List.of(
+                "linen shirt under 100",
+                "linen shirt under $100",
+                "linen shirt under 100 dollars"
+        )) {
+            UserProductSearchCatalogInput input = builder.build(
+                    request,
+                    intent(request),
+                    settings(new UserLocationResult("United States", "US", "New York"))
+            );
+
+            assertThat(input.context().currency()).as(request).isNull();
+            assertThat(input.filters()).as(request).isNull();
+            assertThat(input.searchQuery()).as(request).isEqualTo(request.toLowerCase());
+            assertThat(input.context().intent())
+                    .as(request)
+                    .doesNotContain("Hard price filter");
+            assertThat(input.cacheKey())
+                    .as(request)
+                    .contains("currency=\n", "priceMin=\n", "priceMax=");
+        }
     }
 
     @Test
@@ -188,21 +253,30 @@ class UserProductSearchCatalogInputBuilderTest {
 
         assertThat(input.searchQuery()).isEqualTo("throw pillow");
         assertThat(input.context().addressCountry()).isEqualTo("CZ");
-        assertThat(input.context().currency()).isEqualTo("USD");
+        assertThat(input.context().language()).isNull();
+        assertThat(input.context().currency()).isNull();
         assertThat(input.context().intent())
                 .contains("User delivery location signals: Prague, Czechia (CZ)")
                 .contains("Hard apparel audience filter: men's sizing")
-                .contains("Organic - Prefer organic materials.");
+                .contains("Organic - Prefer organic materials.")
+                .doesNotContain("USD");
         assertThat(input.signals().buyerIp()).isEqualTo("203.0.113.4");
         assertThat(input.signals().userAgent()).isEqualTo("Meant Test");
         assertThat(input.filters()).isNull();
         assertThat(input.cacheKey())
-                .contains("country=CZ", "currency=USD", "priceMax=")
-                .doesNotContain("buyerIp", "userAgent", "203.0.113.4", "Meant Test");
+                .contains("country=CZ", "language=\n", "currency=\n", "priceMax=")
+                .doesNotContain(
+                        "language=en",
+                        "currency=USD",
+                        "buyerIp",
+                        "userAgent",
+                        "203.0.113.4",
+                        "Meant Test"
+                );
     }
 
     @Test
-    void qualifiedSearchUsesTypedLocationAndKeepsNonHardProfilePreferencesInIntent() {
+    void qualifiedSearchUsesTypedLocationAndKeepsUnrelatedSoftProfileFilters() {
         CatalogDiscoveryFilters qualifiedFilters = new CatalogDiscoveryFilters(
                 true,
                 List.of(),
@@ -231,15 +305,188 @@ class UserProductSearchCatalogInputBuilderTest {
         assertThat(input.context().addressCountry()).isEqualTo("US");
         assertThat(input.context().addressRegion()).isEqualTo("NY");
         assertThat(input.context().postalCode()).isEqualTo("10001");
+        assertThat(input.context().language()).isNull();
+        assertThat(input.context().currency()).isNull();
         assertThat(input.context().intent())
                 .contains("Catalog query: trail running shoes")
                 .contains("Organic - Prefer organic materials.")
+                .doesNotContain("USD")
                 .doesNotContain(
                         "Prague",
                         "Czechia",
                         "men's sizing"
                 );
         assertThat(input.discoveryFilters()).isSameAs(qualifiedFilters);
+    }
+
+    @Test
+    void qualifiedSearchUsesRequestSanitizedSettingsWithoutReintroducingClearedDimensions() {
+        CatalogDiscoveryFilters qualifiedFilters = new CatalogDiscoveryFilters(
+                true,
+                List.of(),
+                new CatalogDiscoveryLocation("US", null, null),
+                List.of(),
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                null,
+                List.of()
+        );
+        UserSettingsResult base = settings(new UserLocationResult("United States", "US", "New York"));
+        UserSettingsResult persistedSettings = new UserSettingsResult(
+                base.budget(),
+                base.clothingFit(),
+                base.location(),
+                base.locations(),
+                List.of(
+                        new ShoppingFilterResult(
+                                "premium-quality",
+                                "Premium quality",
+                                "Prefer premium products.",
+                                "shopping",
+                                "prefer",
+                                1
+                        ),
+                        new ShoppingFilterResult(
+                                "highly-rated",
+                                "Highly rated",
+                                "Prefer strong reviews.",
+                                "shopping",
+                                "prefer",
+                                2
+                        )
+                ),
+                base.availableFilters(),
+                base.parsedFilterIds(),
+                base.unmappedPreferences(),
+                base.createdAt(),
+                base.updatedAt()
+        );
+        UserSettingsResult settings = new UserProductSearchProfileSuppressionPolicy().settings(
+                persistedSettings,
+                Set.of(
+                        UserProductSearchQuestionTarget.RATING,
+                        UserProductSearchQuestionTarget.PRICE_TIER
+                )
+        );
+
+        UserProductSearchCatalogInput input = builder.build(
+                "running shoes",
+                intent("running shoes"),
+                settings,
+                null,
+                null,
+                qualifiedFilters
+        );
+
+        assertThat(input.context().intent())
+                .contains("Catalog query: running shoes")
+                .doesNotContain(
+                        "Premium quality",
+                        "premium products",
+                        "Highly rated",
+                        "strong reviews"
+                );
+        assertThat(input.discoveryFilters().rating()).isNull();
+        assertThat(input.discoveryFilters().priceTiers()).isEmpty();
+    }
+
+    @Test
+    void qualifiedUsdPriceSuppliesCurrencyOnlyForTheActivePriceFilter() {
+        CatalogDiscoveryFilters qualifiedFilters = new CatalogDiscoveryFilters(
+                true,
+                List.of(),
+                new CatalogDiscoveryLocation("CZ", null, null),
+                List.of(),
+                new CatalogDiscoveryPrice(5000L, 15000L),
+                List.of(),
+                List.of(),
+                List.of(),
+                null,
+                List.of()
+        );
+
+        UserProductSearchCatalogInput input = builder.build(
+                "trail running shoes",
+                intent("trail running shoes"),
+                settings(new UserLocationResult("Czechia", "CZ", "Prague")),
+                null,
+                null,
+                qualifiedFilters
+        );
+
+        assertThat(input.context().addressCountry()).isEqualTo("CZ");
+        assertThat(input.context().language()).isNull();
+        assertThat(input.context().currency()).isEqualTo("USD");
+        assertThat(input.context().intent()).contains(
+                "Hard price filter: between 50.00 and 150.00 USD"
+        );
+        assertThat(input.filters().price().min()).isEqualTo(5000L);
+        assertThat(input.filters().price().max()).isEqualTo(15000L);
+        assertThat(input.cacheKey()).contains("language=\n", "currency=USD");
+    }
+
+    @Test
+    void qualifiedSearchDoesNotRestoreSavedDestinationAfterExplicitOmission() {
+        CatalogDiscoveryFilters qualifiedFilters = new CatalogDiscoveryFilters(
+                true,
+                List.of(),
+                null,
+                List.of(),
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                null,
+                List.of()
+        );
+
+        UserProductSearchCatalogInput input = builder.build(
+                "digital running guide",
+                intent("digital running guide"),
+                settings(new UserLocationResult("Czechia", "CZ", "Prague")),
+                null,
+                null,
+                qualifiedFilters
+        );
+
+        assertThat(input.context().addressCountry()).isNull();
+        assertThat(input.context().addressRegion()).isNull();
+        assertThat(input.context().postalCode()).isNull();
+        assertThat(input.context().language()).isNull();
+        assertThat(input.context().currency()).isNull();
+        assertThat(input.discoveryFilters()).isSameAs(qualifiedFilters);
+    }
+
+    @Test
+    void qualifiedSearchCannotSilentlyStripAnUnrepresentedUsdPriceConstraint() {
+        CatalogDiscoveryFilters qualifiedFilters = new CatalogDiscoveryFilters(
+                true,
+                List.of(),
+                new CatalogDiscoveryLocation("US", null, null),
+                List.of(),
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                null,
+                List.of()
+        );
+
+        UserProductSearchCatalogInput input = builder.build(
+                "desk lamp under 100 USD",
+                intent("desk lamp under 100 usd"),
+                settings(new UserLocationResult("United States", "US", "New York")),
+                null,
+                null,
+                qualifiedFilters
+        );
+
+        assertThat(input.searchQuery()).isEqualTo("desk lamp under 100 usd");
+        assertThat(input.context().currency()).isNull();
+        assertThat(input.filters()).isNull();
+        assertThat(input.context().intent()).doesNotContain("Hard price filter");
     }
 
     @Test

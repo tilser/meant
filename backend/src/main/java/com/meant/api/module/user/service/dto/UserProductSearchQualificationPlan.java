@@ -9,8 +9,10 @@ import com.meant.api.module.user.constant.UserProductSearchFilterState;
 import com.meant.api.module.user.constant.UserProductSearchQuestionTarget;
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 /** Server-owned, provider-neutral filter plan produced before catalog discovery. */
 public record UserProductSearchQualificationPlan(
@@ -32,7 +34,7 @@ public record UserProductSearchQualificationPlan(
         List<DurableAttribute> durableAttributes
 ) {
 
-    public static final int CURRENT_SCHEMA_VERSION = 2;
+    public static final int CURRENT_SCHEMA_VERSION = 3;
 
     public UserProductSearchQualificationPlan {
         schemaVersion = schemaVersion == null || schemaVersion <= 0 ? 1 : schemaVersion;
@@ -157,6 +159,103 @@ public record UserProductSearchQualificationPlan(
         return List.copyOf(missing);
     }
 
+    /** Request-scoped dimensions the buyer explicitly cleared with an ANY decision. */
+    public Set<UserProductSearchQuestionTarget> explicitAnyTargets() {
+        Set<UserProductSearchQuestionTarget> targets = new LinkedHashSet<>();
+        addExplicitAny(
+                targets,
+                condition.state(),
+                condition.provenance(),
+                UserProductSearchQuestionTarget.CONDITION
+        );
+        addExplicitAny(
+                targets,
+                shipsTo.state(),
+                shipsTo.provenance(),
+                UserProductSearchQuestionTarget.SHIPS_TO
+        );
+        addExplicitAny(
+                targets,
+                shipsFrom.state(),
+                shipsFrom.provenance(),
+                UserProductSearchQuestionTarget.SHIPS_FROM
+        );
+        addExplicitAny(
+                targets,
+                price.state(),
+                price.provenance(),
+                UserProductSearchQuestionTarget.PRICE
+        );
+        attributes.values().forEach(attribute -> {
+            if (isExplicitAny(attribute.state(), attribute.provenance())) {
+                targets.add(questionTarget(attribute.name()));
+            }
+        });
+        addExplicitAny(
+                targets,
+                rating.state(),
+                rating.provenance(),
+                UserProductSearchQuestionTarget.RATING
+        );
+        addExplicitAny(
+                targets,
+                priceTier.state(),
+                priceTier.provenance(),
+                UserProductSearchQuestionTarget.PRICE_TIER
+        );
+        return Set.copyOf(targets);
+    }
+
+    /**
+     * Profile-derived dimensions that must not compete with an authoritative, buyer-grounded
+     * request decision. This includes explicit ANY decisions and current request values.
+     */
+    public Set<UserProductSearchQuestionTarget> profileSuppressionTargets() {
+        Set<UserProductSearchQuestionTarget> targets = new LinkedHashSet<>();
+        addBuyerOverride(
+                targets,
+                condition.state(),
+                condition.provenance(),
+                UserProductSearchQuestionTarget.CONDITION
+        );
+        addBuyerOverride(
+                targets,
+                shipsTo.state(),
+                shipsTo.provenance(),
+                UserProductSearchQuestionTarget.SHIPS_TO
+        );
+        addBuyerOverride(
+                targets,
+                shipsFrom.state(),
+                shipsFrom.provenance(),
+                UserProductSearchQuestionTarget.SHIPS_FROM
+        );
+        addBuyerOverride(
+                targets,
+                price.state(),
+                price.provenance(),
+                UserProductSearchQuestionTarget.PRICE
+        );
+        attributes.values().forEach(attribute -> {
+            if (isBuyerOverride(attribute.state(), attribute.provenance())) {
+                targets.add(questionTarget(attribute.name()));
+            }
+        });
+        addBuyerOverride(
+                targets,
+                rating.state(),
+                rating.provenance(),
+                UserProductSearchQuestionTarget.RATING
+        );
+        addBuyerOverride(
+                targets,
+                priceTier.state(),
+                priceTier.provenance(),
+                UserProductSearchQuestionTarget.PRICE_TIER
+        );
+        return Set.copyOf(targets);
+    }
+
     public UserProductSearchFilterState state(UserProductSearchFilterKind kind) {
         return switch (kind) {
             case AVAILABLE -> available.state();
@@ -205,6 +304,56 @@ public record UserProductSearchQualificationPlan(
         if (state == UserProductSearchFilterState.MISSING) {
             missing.add(target);
         }
+    }
+
+    private static void addExplicitAny(
+            Set<UserProductSearchQuestionTarget> targets,
+            UserProductSearchFilterState state,
+            Provenance provenance,
+            UserProductSearchQuestionTarget target
+    ) {
+        if (isExplicitAny(state, provenance)) {
+            targets.add(target);
+        }
+    }
+
+    private static boolean isExplicitAny(
+            UserProductSearchFilterState state,
+            Provenance provenance
+    ) {
+        return state == UserProductSearchFilterState.ANY && isBuyerGrounded(provenance);
+    }
+
+    private static void addBuyerOverride(
+            Set<UserProductSearchQuestionTarget> targets,
+            UserProductSearchFilterState state,
+            Provenance provenance,
+            UserProductSearchQuestionTarget target
+    ) {
+        if (isBuyerOverride(state, provenance)) {
+            targets.add(target);
+        }
+    }
+
+    private static boolean isBuyerOverride(
+            UserProductSearchFilterState state,
+            Provenance provenance
+    ) {
+        return (state == UserProductSearchFilterState.ANY
+                || state == UserProductSearchFilterState.VALUE)
+                && isBuyerGrounded(provenance);
+    }
+
+    private static boolean isBuyerGrounded(Provenance provenance) {
+        if (provenance == null
+                || provenance.evidence() == null
+                || provenance.evidence().isBlank()) {
+            return false;
+        }
+        return switch (provenance.source()) {
+            case ORIGINAL_QUERY, CURRENT_USER_TURN, CONVERSATION -> true;
+            case PROFILE, DURABLE_PREFERENCE, NONE, SYSTEM_POLICY -> false;
+        };
     }
 
     private static UserProductSearchQuestionTarget questionTarget(UserProductSearchAttributeName name) {

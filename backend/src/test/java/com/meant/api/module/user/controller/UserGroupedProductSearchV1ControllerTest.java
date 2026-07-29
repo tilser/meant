@@ -19,12 +19,15 @@ import com.meant.api.module.user.service.dto.UserCanonicalProductsRehydrationRes
 import com.meant.api.module.user.service.dto.UserGroupedProductSearchResult;
 import com.meant.api.module.user.service.dto.UserQualifiedProductSearchInput;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryFilters;
+import com.meant.api.module.user.constant.UserProductSearchQuestionTarget;
 import com.meant.api.module.user.service.query.GetUserCanonicalProductDetailQuery;
 import com.meant.api.module.user.service.query.RehydrateUserCanonicalProductsQuery;
 import com.meant.api.module.user.exception.UserException;
+import jakarta.validation.Validation;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -32,6 +35,19 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.oauth2.jwt.Jwt;
 
 class UserGroupedProductSearchV1ControllerTest {
+
+    @Test
+    void requiresAReadyQualificationIdAtThePublicSimilarityBoundary() {
+        try (var factory = Validation.buildDefaultValidatorFactory()) {
+            var violations = factory.getValidator().validate(
+                    new UserSimilarProductSearchRequest("trail running shoes", null)
+            );
+
+            assertThat(violations)
+                    .extracting(violation -> violation.getPropertyPath().toString())
+                    .containsExactly("qualificationId");
+        }
+    }
 
     @Test
     void mapsTheVersionedRequestToValidatedServiceCommandsAndResponse() {
@@ -48,6 +64,7 @@ class UserGroupedProductSearchV1ControllerTest {
         MockHttpServletRequest httpRequest = new MockHttpServletRequest();
         httpRequest.setRemoteAddr("192.0.2.10");
         httpRequest.addHeader("User-Agent", " grouped-client ");
+        httpRequest.addHeader("Accept-Language", "en;q=0.7, cs-CZ;q=0.9");
         UserGroupedProductSearchV1Controller controller = new UserGroupedProductSearchV1Controller(
                 service, null, null, null, null, null, new FixedQualifiedSearchResolver());
 
@@ -74,6 +91,7 @@ class UserGroupedProductSearchV1ControllerTest {
                 .containsExactly(userId, "shopper@example.com", "Ada", "Shopper");
         assertThat(service.searchCommand.buyerIp()).isEqualTo("192.0.2.10");
         assertThat(service.searchCommand.userAgent()).isEqualTo("grouped-client");
+        assertThat(service.searchCommand.language()).isEqualTo("cs-CZ");
         assertThat(service.searchCommand.merchantId()).isEqualTo(FixedQualifiedSearchResolver.MERCHANT_ID);
         assertThat(service.searchCommand.offset()).isEqualTo(5);
         assertThat(service.searchCommand.limit()).isEqualTo(10);
@@ -146,6 +164,7 @@ class UserGroupedProductSearchV1ControllerTest {
         MockHttpServletRequest httpRequest = new MockHttpServletRequest();
         httpRequest.setRemoteAddr("192.0.2.20");
         httpRequest.addHeader("User-Agent", " similarity-client ");
+        httpRequest.addHeader("Accept-Language", "*;q=1, de-DE;q=0.8");
         UserGroupedProductSearchV1Controller controller = new UserGroupedProductSearchV1Controller(
                 null, service, null, null, null, null, null);
 
@@ -165,6 +184,7 @@ class UserGroupedProductSearchV1ControllerTest {
             assertThat(command.qualificationId()).isEqualTo(qualificationId);
             assertThat(command.buyerIp()).isEqualTo("192.0.2.20");
             assertThat(command.userAgent()).isEqualTo("similarity-client");
+            assertThat(command.language()).isEqualTo("de-DE");
         });
     }
 
@@ -180,7 +200,9 @@ class UserGroupedProductSearchV1ControllerTest {
         public UserGroupedProductSearchResult search(
                 EnsureUserProfileCommand profileCommand,
                 SearchUserProductsCommand searchCommand,
-                CatalogDiscoveryFilters discoveryFilters
+                CatalogDiscoveryFilters discoveryFilters,
+                Set<UserProductSearchQuestionTarget> explicitAnyTargets,
+                Set<UserProductSearchQuestionTarget> profileSuppressionTargets
         ) {
             this.profileCommand = profileCommand;
             this.searchCommand = searchCommand;

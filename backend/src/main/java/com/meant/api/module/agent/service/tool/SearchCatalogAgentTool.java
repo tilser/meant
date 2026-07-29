@@ -5,13 +5,18 @@ import com.meant.api.module.agent.service.AgentContextProfileService;
 import com.meant.api.module.agent.service.AgentJsonSupport;
 import com.meant.api.module.agent.service.AgentProductSearchQualificationService;
 import com.meant.api.module.agent.service.AgentProductReadResultService;
+import com.meant.api.module.agent.service.AgentSimilaritySearchQualificationService;
 import com.meant.api.module.agent.service.dto.AgentArtifact;
 import com.meant.api.module.agent.service.dto.AgentProductListResult;
 import com.meant.api.module.agent.service.dto.AgentProductReferenceResult;
+import com.meant.api.module.agent.service.dto.AgentSimilarityAnchorResult;
+import com.meant.api.module.agent.service.dto.AgentSimilaritySearchQualificationContext;
 import com.meant.api.module.agent.service.dto.AgentToolDescriptor;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionResult;
 import com.meant.api.module.agent.service.dto.SearchCatalogAgentToolInput;
+import com.meant.api.module.agent.service.command.QualifyAgentProductSearchCommand;
+import com.meant.api.module.agent.service.query.GetAgentSimilaritySearchQualificationQuery;
 import com.meant.api.module.catalog.service.dto.CanonicalProduct;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryAttributeFilter;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryAttributeName;
@@ -24,6 +29,8 @@ import com.meant.api.module.catalog.service.dto.CatalogDiscoveryRating;
 import com.meant.api.module.user.constant.UserProductSearchPagination;
 import com.meant.api.module.user.constant.UserProductSearchQuestionTarget;
 import com.meant.api.module.user.service.UserGroupedProductSearchService;
+import com.meant.api.module.user.service.UserSimilarProductSearchService;
+import com.meant.api.module.user.service.command.SearchSimilarUserProductsCommand;
 import com.meant.api.module.user.service.command.SearchUserProductsCommand;
 import com.meant.api.module.user.service.dto.UserGroupedProductSearchResult;
 import java.math.BigDecimal;
@@ -32,6 +39,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.IntStream;
 import lombok.RequiredArgsConstructor;
@@ -43,23 +51,21 @@ public class SearchCatalogAgentTool implements AgentTool {
 
     private static final AgentToolDescriptor DESCRIPTOR = new AgentToolDescriptor(
             "search_catalog",
-            "Search and rank the grouped commerce catalog with optional documented UCP and Shopify Global Catalog filters. "
-                    + "Pass only hard constraints grounded in the request or known profile; keep soft preferences in query. "
-                    + "When answering a qualification question, pass back its exact qualificationId. "
-                    + "Omit qualificationId for a new shopping request.",
+            "Start or resume server-owned product-search qualification, then search and rank the commerce catalog. "
+                    + "Call this immediately for a shopping request instead of asking search-filter questions yourself. "
+                    + "The server supplies the conversation, profile, supported Shopify parameters, and validated filters. "
+                    + "Pass qualificationId only when it came from trusted server context.",
             """
             {
               "type":"object",
-              "properties":{
+                "properties":{
                 "query":{"type":"string","minLength":1,"maxLength":500},
                 "qualificationId":{"type":"string","format":"uuid"},
-                "shipsTo":{"type":"object","properties":{"country":{"type":"string","pattern":"^[A-Za-z]{2}$"},"region":{"type":"string","minLength":1,"maxLength":100},"postalCode":{"type":"string","minLength":1,"maxLength":32}},"required":["country"],"additionalProperties":false},
-                "shipsFrom":{"type":"array","maxItems":20,"items":{"type":"object","properties":{"country":{"type":"string","pattern":"^[A-Za-z]{2}$"}},"required":["country"],"additionalProperties":false}},
-                "price":{"type":"object","properties":{"minUsd":{"type":"number","minimum":0,"maximum":1000000},"maxUsd":{"type":"number","minimum":0,"maximum":1000000}},"additionalProperties":false},
-                "conditions":{"type":"array","uniqueItems":true,"items":{"type":"string","enum":["new","secondhand"]}},
-                "attributes":{"type":"array","maxItems":3,"items":{"type":"object","properties":{"name":{"type":"string","enum":["Color","Size","Target gender"]},"values":{"type":"array","minItems":1,"maxItems":20,"uniqueItems":true,"items":{"type":"string","minLength":1,"maxLength":120}}},"required":["name","values"],"additionalProperties":false}},
-                "rating":{"type":"object","properties":{"variantMinimum":{"type":"number","minimum":0,"maximum":5},"variantMinimumCount":{"type":"integer","minimum":0}},"additionalProperties":false},
-                "priceTiers":{"type":"array","uniqueItems":true,"items":{"type":"string","enum":["low","medium","high"]}},
+                "qualificationUpdatedAt":{
+                  "type":"string",
+                  "format":"date-time",
+                  "description":"Server-issued pending qualification revision; never invent this value"
+                },
                 "offset":{"type":"integer","minimum":0,"maximum":99},
                 "limit":{"type":"integer","minimum":1,"maximum":20}
               },
@@ -75,7 +81,9 @@ public class SearchCatalogAgentTool implements AgentTool {
     private final AgentContextProfileService profileService;
     private final AgentProductReadResultService resultService;
     private final AgentProductSearchQualificationService qualificationService;
+    private final AgentSimilaritySearchQualificationService similarityQualificationService;
     private final UserGroupedProductSearchService searchService;
+    private final UserSimilarProductSearchService similarProductSearchService;
 
     @Override
     public AgentToolDescriptor descriptor() {
@@ -100,13 +108,37 @@ public class SearchCatalogAgentTool implements AgentTool {
                 || context.triggeringUserText().isBlank()
                 ? query
                 : context.triggeringUserText().trim();
-        var qualification = qualificationService.qualify(
+        var qualificationCommand = new QualifyAgentProductSearchCommand(
                 profile,
                 context.conversationId(),
                 context.merchantId(),
                 input.qualificationId(),
-                authoritativeUserText
+                context.triggeringMessageId(),
+                authoritativeUserText,
+                input.qualificationUpdatedAt(),
+                null
         );
+        java.util.UUID similarityLookupId = input.qualificationId() == null
+                ? qualificationCommand.requestQualificationId()
+                : input.qualificationId();
+        var preboundSimilarityContext = similarityContext(context, similarityLookupId);
+        qualificationCommand = new QualifyAgentProductSearchCommand(
+                profile,
+                context.conversationId(),
+                context.merchantId(),
+                input.qualificationId(),
+                context.triggeringMessageId(),
+                authoritativeUserText,
+                input.qualificationUpdatedAt(),
+                preboundSimilarityContext
+                        .map(value -> bounded(value.anchorLabel(), 500))
+                        .orElse(null)
+        );
+        var qualification = qualificationService.qualify(qualificationCommand);
+        requireMatchingSimilarityQualification(preboundSimilarityContext, qualification.qualificationId());
+        var resolvedSimilarityContext = preboundSimilarityContext.or(() ->
+                similarityContext(context, qualification.qualificationId()));
+        requireMatchingSimilarityQualification(resolvedSimilarityContext, qualification.qualificationId());
         if (!qualification.ready()) {
             return qualificationRequired(
                     qualification.qualificationId(),
@@ -116,22 +148,108 @@ public class SearchCatalogAgentTool implements AgentTool {
         }
         CatalogDiscoveryFilters filters = qualification.filters();
         requireRequestedFiltersAuthorized(requestedFilters, filters);
-        if (context.merchantId() != null && !merchantSupports(filters)) {
-            throw AgentProductReadToolException.invalid(
-                    "This merchant-scoped catalog cannot enforce one or more qualified hard constraints. "
-                            + "Remove the merchant scope or ask the user before broadening the request.");
+        if (resolvedSimilarityContext.isPresent()) {
+            var bound = resolvedSimilarityContext.get();
+            AgentSimilarityAnchorResult similarityAnchor = new AgentSimilarityAnchorResult(
+                    bound.canonicalProductKey(),
+                    bound.inventoryItemId(),
+                    bound.anchorLabel(),
+                    qualification.authoritativeQuery()
+            );
+            UserGroupedProductSearchResult result = similarProductSearchService.search(
+                    profile,
+                    new SearchSimilarUserProductsCommand(
+                            context.userId(),
+                            bound.canonicalProductKey(),
+                            qualification.authoritativeQuery(),
+                            qualification.qualificationId(),
+                            context.merchantId(),
+                            context.buyerIp(),
+                            context.userAgent(),
+                            context.language()
+                    )
+            );
+            return similarityResponse(result, similarityAnchor);
         }
+
         SearchUserProductsCommand command = new SearchUserProductsCommand(
                 context.userId(),
                 qualification.authoritativeQuery(),
                 context.merchantId(),
-                null,
-                null,
+                context.buyerIp(),
+                context.userAgent(),
+                context.language(),
                 offset,
                 limit
         );
-        UserGroupedProductSearchResult result = searchService.search(profile, command, filters);
+        UserGroupedProductSearchResult result = searchService.search(
+                profile,
+                command,
+                filters,
+                qualification.explicitAnyTargets(),
+                qualification.profileSuppressionTargets()
+        );
         return response(result, List.of());
+    }
+
+    private void requireMatchingSimilarityQualification(
+            Optional<AgentSimilaritySearchQualificationContext> similarityContext,
+            java.util.UUID qualificationId
+    ) {
+        if (similarityContext.isPresent()
+                && !similarityContext.get().qualificationId().equals(qualificationId)) {
+            throw AgentProductReadToolException.invalid(
+                    "The similarity anchor does not belong to this product-search qualification.");
+        }
+    }
+
+    private Optional<AgentSimilaritySearchQualificationContext> similarityContext(
+            AgentToolExecutionContext context,
+            java.util.UUID qualificationId
+    ) {
+        if (qualificationId == null) {
+            return Optional.empty();
+        }
+        return similarityQualificationService.find(new GetAgentSimilaritySearchQualificationQuery(
+                qualificationId,
+                context.userId(),
+                context.conversationId(),
+                context.merchantId()
+        ));
+    }
+
+    private AgentToolExecutionResult similarityResponse(
+            UserGroupedProductSearchResult result,
+            AgentSimilarityAnchorResult similarityAnchor
+    ) {
+        List<CanonicalProduct> products = result.products();
+        List<AgentProductReferenceResult> references = IntStream.range(0, products.size())
+                .mapToObj(index -> resultService.reference(products.get(index), index + 1))
+                .toList();
+        List<AgentArtifact> artifacts = IntStream.range(0, products.size())
+                .mapToObj(index -> resultService.discoveryArtifacts(
+                        products.get(index),
+                        index + 1,
+                        result.productRankingExplanations().get(products.get(index).key()),
+                        result.productPersonalizations().get(products.get(index).key()),
+                        result.offerRankingExplanations(),
+                        similarityAnchor
+                ))
+                .flatMap(List::stream)
+                .toList();
+        AgentProductListResult output = new AgentProductListResult(
+                references,
+                null,
+                false,
+                result.upstreamTruncated(),
+                List.of(),
+                similarityAnchor
+        );
+        return AgentToolExecutionResult.read(
+                json.write(output),
+                "Found " + products.size() + " similar product(s).",
+                artifacts
+        );
     }
 
     private AgentToolExecutionResult response(
@@ -236,6 +354,12 @@ public class SearchCatalogAgentTool implements AgentTool {
         return AgentToolExecutionResult.waitingForUser(json.write(output), question);
     }
 
+    private String bounded(String value, int maximumLength) {
+        return value == null || value.length() <= maximumLength
+                ? value
+                : value.substring(0, maximumLength);
+    }
+
     private void requireRequestedFiltersAuthorized(
             CatalogDiscoveryFilters requested,
             CatalogDiscoveryFilters authorized
@@ -258,18 +382,6 @@ public class SearchCatalogAgentTool implements AgentTool {
             throw AgentProductReadToolException.invalid(
                     "One or more typed catalog constraints were not validated from the request or stored profile.");
         }
-    }
-
-    private boolean merchantSupports(CatalogDiscoveryFilters filters) {
-        return filters != null
-                && !Boolean.FALSE.equals(filters.available())
-                && filters.conditions().isEmpty()
-                && filters.shipsTo() == null
-                && filters.shipsFrom().isEmpty()
-                && filters.shopIds().isEmpty()
-                && filters.attributes().isEmpty()
-                && filters.rating() == null
-                && filters.priceTiers().isEmpty();
     }
 
     private List<CatalogDiscoveryAttributeFilter> attributes(

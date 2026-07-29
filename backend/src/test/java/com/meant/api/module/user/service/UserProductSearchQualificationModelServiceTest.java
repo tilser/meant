@@ -12,17 +12,24 @@ import com.meant.api.module.user.constant.UserProductSearchDecisionSource;
 import com.meant.api.module.user.constant.UserProductSearchFilterKind;
 import com.meant.api.module.user.constant.UserProductSearchFilterState;
 import com.meant.api.module.user.constant.UserProductSearchQuestionTarget;
+import com.meant.api.module.user.constant.UserTasteSignalStatus;
+import com.meant.api.module.user.constant.UserTasteSignalType;
+import com.meant.api.module.user.constant.UserTasteSuggestionStatus;
 import com.meant.api.module.user.properties.UserProductSearchProperties;
 import com.meant.api.module.user.service.dto.ShoppingFilterResult;
 import com.meant.api.module.user.service.dto.UserLocationResult;
+import com.meant.api.module.user.service.dto.UserProductSearchConversationMessage;
 import com.meant.api.module.user.service.dto.UserProductSearchQualificationPlan;
 import com.meant.api.module.user.service.dto.UserProductSearchPreferenceResult;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
+import com.meant.api.module.user.service.dto.UserTasteProfileResult;
+import com.meant.api.module.user.service.dto.UserTasteSignalResult;
 import com.meant.api.module.user.service.query.GenerateUserProductSearchQualificationQuery;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.boot.test.system.CapturedOutput;
@@ -51,8 +58,12 @@ class UserProductSearchQualificationModelServiceTest {
                         .toList());
         assertThat(new ObjectMapper().writeValueAsString(client.schema)).doesNotContain("minItems", "maxItems");
         assertThat(client.userPrompts.getFirst())
-                .contains("blue jeans", "United States", "men")
-                .doesNotContain("budget", "999");
+                .contains(
+                        "blue jeans",
+                        "United States",
+                        "men",
+                        "\"budget\":{\"value\":999,\"authority\":\"NON_AUTHORITATIVE_DEFAULT_NO_PROVENANCE\"}"
+                );
 
         var plan = result.plan();
         assertThat(plan.currentSchema()).isTrue();
@@ -98,13 +109,94 @@ class UserProductSearchQualificationModelServiceTest {
     }
 
     @Test
+    void labelsThePrimaryAndSecondarySavedLocationsSeparatelyInTheModelPrompt() {
+        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient(combinedQuestionResponse());
+        UserLocationResult primary = new UserLocationResult("United States", "US", "San Francisco");
+        UserLocationResult secondary = new UserLocationResult("Czech Republic", "CZ", "Prague");
+        UserSettingsResult base = settings();
+        UserSettingsResult settings = new UserSettingsResult(
+                base.budget(),
+                base.clothingFit(),
+                primary,
+                List.of(primary, secondary),
+                base.filters(),
+                base.availableFilters(),
+                base.parsedFilterIds(),
+                base.unmappedPreferences(),
+                base.createdAt(),
+                base.updatedAt()
+        );
+        GenerateUserProductSearchQualificationQuery query =
+                new GenerateUserProductSearchQualificationQuery(
+                        "blue jeans", "blue jeans", null, settings, List.of());
+
+        service(client).generate(query);
+
+        assertThat(client.userPrompts.getFirst())
+                .contains(
+                        "\"primaryLocation\":{\"country\":\"United States\",\"code\":\"US\"",
+                        "\"otherSavedLocations\":[{\"country\":\"Czech Republic\",\"code\":\"CZ\""
+                );
+    }
+
+    @Test
+    void suppliesTrustedConversationCompleteSearchContractAndActiveTasteAsSoftContext() throws Exception {
+        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient(combinedQuestionResponse());
+        var conversation = new ArrayList<>(List.of(
+                new UserProductSearchConversationMessage(
+                        UserProductSearchConversationMessage.Role.USER,
+                        "I prefer understated designs."
+                ),
+                new UserProductSearchConversationMessage(
+                        UserProductSearchConversationMessage.Role.ASSISTANT,
+                        "I will keep that in mind."
+                ),
+                new UserProductSearchConversationMessage(
+                        UserProductSearchConversationMessage.Role.USER,
+                        "blue jeans"
+                )
+        ));
+        var request = new GenerateUserProductSearchQualificationQuery(
+                "blue jeans",
+                "blue jeans",
+                null,
+                settings(),
+                List.of(),
+                conversation,
+                new UserTasteProfileResult(
+                        "taste-profile",
+                        List.of(
+                                tasteSignal("minimal", "Minimal", 1.5d, UserTasteSignalStatus.ACTIVE),
+                                tasteSignal("hidden", "Disabled taste", 9.0d, UserTasteSignalStatus.DISABLED)
+                        ),
+                        List.of()
+                )
+        );
+        conversation.clear();
+
+        service(client).generate(request);
+
+        String prompt = client.userPrompts.getFirst();
+        assertThat(prompt).contains(
+                "Supported Shopify/UCP search-parameter contract",
+                "TEST_RUNTIME_VERIFIED_SEARCH_CONTRACT",
+                "I prefer understated designs.",
+                "\"role\":\"ASSISTANT\",\"text\":\"I will keep that in mind.\"",
+                "\"type\":\"BRAND\",\"label\":\"Minimal\",\"key\":\"minimal\",\"weight\":1.5"
+        ).doesNotContain("Disabled taste", "positiveCount", "lastBehavior");
+        assertThat(new ObjectMapper().writeValueAsString(client.schema))
+                .contains(UserProductSearchDecisionSource.CONVERSATION.name());
+        assertThat(request.conversation()).hasSize(3);
+    }
+
+    @Test
     void repairsAnyThatHasNoExplicitUserEvidenceInsteadOfAuthorizingReady() {
         FakeOpenRouterChatClient client = new FakeOpenRouterChatClient(
                 unsupportedRatingAnyResponse(),
                 missingRatingRepairResponse()
         );
 
-        String request = "new desk lamp under $100 shipped to US from CA, low price tier";
+        String request = "new desk lamp under 100 USD shipped to US from CA, low price tier";
         var plan = service(client).generate(query(request, request, null)).plan();
 
         assertThat(client.calls).isEqualTo(2);
@@ -130,10 +222,25 @@ class UserProductSearchQualificationModelServiceTest {
 
         var plan = service(client).generate(query("blue jeans", "blue jeans", null)).plan();
 
-        assertThat(client.calls).isEqualTo(2);
+        assertThat(client.calls).isEqualTo(1);
         assertThat(plan.condition().state()).isEqualTo(UserProductSearchFilterState.NOT_APPLICABLE);
         assertThat(plan.missingTargets()).doesNotContain(UserProductSearchQuestionTarget.CONDITION);
         assertThat(plan.missingFilters()).doesNotContain(UserProductSearchFilterKind.CONDITION);
+    }
+
+    @Test
+    void keepsBuyerOriginDetailInEffectiveQueryButSanitizesShipsFromToCountryOnly() throws Exception {
+        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient(originCountryOnlyResponse());
+        String request = "new desk lamp under 100 USD shipped to US from CA BC 90210, low price tier";
+
+        var plan = service(client).generate(query(request, request, null)).plan();
+
+        assertThat(plan.effectiveQuery()).contains("from CA BC 90210");
+        assertThat(plan.shipsFrom().values()).singleElement().satisfies(origin -> {
+            assertThat(origin.country()).isEqualTo("CA");
+            assertThat(origin.region()).isNull();
+            assertThat(origin.postalCode()).isNull();
+        });
     }
 
     @Test
@@ -160,25 +267,14 @@ class UserProductSearchQualificationModelServiceTest {
     }
 
     @Test
-    void modelFailureForAnUnclassifiedSearchFailsClosedWithBothAttemptFailures(CapturedOutput output) {
+    void modelFailureForAnUnclassifiedSearchFallsBackToAConservativeClarification(CapturedOutput output) {
         FakeOpenRouterChatClient client = new FakeOpenRouterChatClient("not-json", "still-not-json");
 
-        assertThatThrownBy(() -> service(client).generate(query("desk lamp", "desk lamp", null)))
-                .isInstanceOfSatisfying(OpenRouterException.class, exception -> {
-                    assertThat(exception)
-                            .hasMessageContaining("no conservative category fallback")
-                            .hasMessageContaining("category=HOME")
-                            .hasCauseInstanceOf(OpenRouterException.class);
-                    assertThat(exception.getCause())
-                            .hasMessageContaining("invalid product-search qualification JSON");
-                    assertThat(exception.getCause().getSuppressed())
-                            .singleElement()
-                            .satisfies(suppressed -> assertThat(suppressed)
-                                    .isInstanceOf(OpenRouterException.class)
-                                    .hasMessageContaining("invalid product-search qualification JSON"));
-                });
+        var plan = service(client).generate(query("desk lamp", "desk lamp", null)).plan();
 
         assertThat(client.calls).isEqualTo(2);
+        assertThat(plan.missingTargets()).isEmpty();
+        assertThat(plan.shipsTo().value().country()).isEqualTo("US");
         assertThat(output)
                 .contains(
                         "attempt=initial",
@@ -186,6 +282,19 @@ class UserProductSearchQualificationModelServiceTest {
                         "failureType=com.meant.api.common.exception.OpenRouterException",
                         "failureMessage=OpenRouter returned invalid product-search qualification JSON"
                 );
+    }
+
+    @Test
+    void modelOutageFailsClosedBeforeReturningAnOversizedSearchQuery() {
+        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient("not-json", "still-not-json");
+        String request = "desk lamp " + "with carefully described requirements ".repeat(20);
+
+        assertThat(request.length()).isGreaterThan(500);
+        assertThatThrownBy(() -> service(client).generate(query(request, request, null)))
+                .isInstanceOf(OpenRouterException.class)
+                .hasMessageContaining("500")
+                .hasMessageContaining("restate");
+        assertThat(client.calls).isEqualTo(2);
     }
 
     @Test
@@ -220,21 +329,25 @@ class UserProductSearchQualificationModelServiceTest {
                 UserProductSearchQuestionTarget.SIZE,
                 UserProductSearchQuestionTarget.SHIPS_TO
         );
-        assertThat(plan.assistantMessage()).contains("boot size", "ship to");
+        assertThat(plan.assistantMessage()).contains("product size", "ship to");
     }
 
     @Test
-    void modelFailureNeverDropsExplicitColorOrTargetGenderConstraints() {
+    void modelFailureForExplicitFootwearConstraintsStillFailsSafeOnRequiredSize() {
         FakeOpenRouterChatClient client = new FakeOpenRouterChatClient("not-json", "still-not-json");
 
-        assertThatThrownBy(() -> service(client).generate(query(
+        var plan = service(client).generate(query(
                 "black mens football boots",
                 "black mens football boots",
                 null
-        )))
-                .isInstanceOf(OpenRouterException.class)
-                .hasMessageContaining("no conservative category fallback");
+        )).plan();
+
         assertThat(client.calls).isEqualTo(2);
+        assertThat(plan.missingTargets()).containsExactlyInAnyOrder(
+                UserProductSearchQuestionTarget.COLOR,
+                UserProductSearchQuestionTarget.SIZE,
+                UserProductSearchQuestionTarget.TARGET_GENDER
+        );
     }
 
     @Test
@@ -301,7 +414,8 @@ class UserProductSearchQualificationModelServiceTest {
                 properties(),
                 searchProperties(),
                 new ObjectMapper(),
-                new UserProductSearchQualificationPlanResolver()
+                new UserProductSearchQualificationPlanResolver(),
+                () -> "TEST_RUNTIME_VERIFIED_SEARCH_CONTRACT"
         );
     }
 
@@ -378,6 +492,29 @@ class UserProductSearchQualificationModelServiceTest {
         );
     }
 
+    private UserTasteSignalResult tasteSignal(
+            String key,
+            String label,
+            double weight,
+            UserTasteSignalStatus status
+    ) {
+        return new UserTasteSignalResult(
+                UUID.randomUUID(),
+                UserTasteSignalType.BRAND,
+                key,
+                label,
+                weight,
+                1,
+                0,
+                "SAVE",
+                null,
+                UserTasteSuggestionStatus.PENDING,
+                status,
+                Instant.parse("2026-07-17T10:00:00Z"),
+                Instant.parse("2026-07-17T10:00:00Z")
+        );
+    }
+
     private String combinedQuestionResponse() {
         return """
                 {
@@ -445,7 +582,7 @@ class UserProductSearchQualificationModelServiceTest {
                     "provenance": {"source": "ORIGINAL_QUERY", "evidence": "from CA"},
                     "values": [{"country": "CA", "region": null, "postalCode": null}]},
                   "price": {"relevant": true, "explicitAny": false,
-                    "provenance": {"source": "ORIGINAL_QUERY", "evidence": "under $100"},
+                    "provenance": {"source": "ORIGINAL_QUERY", "evidence": "under 100 USD"},
                     "minUsd": null, "maxUsd": 100},
                   "attributes": [
                     {"name": "COLOR", "relevant": false, "explicitAny": false,
@@ -472,6 +609,22 @@ class UserProductSearchQualificationModelServiceTest {
                 .replace("\"questionTargets\": []", "\"questionTargets\": [\"RATING\"]")
                 .replace("\"rating\": {\"relevant\": true, \"explicitAny\": true",
                         "\"rating\": {\"relevant\": true, \"explicitAny\": false");
+    }
+
+    private String originCountryOnlyResponse() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        var response = (tools.jackson.databind.node.ObjectNode) mapper.readTree(unsupportedRatingAnyResponse());
+        response.put("effectiveQuery", "desk lamp from CA BC 90210");
+        var shipsFrom = (tools.jackson.databind.node.ObjectNode) response.get("shipsFrom");
+        ((tools.jackson.databind.node.ObjectNode) shipsFrom.get("provenance"))
+                .put("evidence", "from CA BC 90210");
+        var origin = (tools.jackson.databind.node.ObjectNode) shipsFrom.get("values").get(0);
+        origin.put("region", "BC");
+        origin.put("postalCode", "90210");
+        var rating = (tools.jackson.databind.node.ObjectNode) response.get("rating");
+        rating.put("relevant", false);
+        rating.put("explicitAny", false);
+        return mapper.writeValueAsString(response);
     }
 
     private String foodResponse() {

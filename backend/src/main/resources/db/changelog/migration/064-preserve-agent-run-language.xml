@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="064-preserve-agent-run-language" author="meant">
+        <comment>
+            Preserve the concrete buyer-declared Accept-Language preference for asynchronous
+            catalog tool execution without consulting servlet or server locale defaults.
+        </comment>
+        <addColumn tableName="agent_run">
+            <column name="language" type="text"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>

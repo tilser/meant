@@ -3,6 +3,8 @@ package com.meant.api.module.user.service;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.command.SearchUserProductsCommand;
 import com.meant.api.module.user.service.dto.UserFederatedProductSearchStreamEvent;
+import com.meant.api.module.user.service.dto.UserProductSearchPreparation;
+import com.meant.api.module.user.constant.UserProductSearchQuestionTarget;
 import com.meant.api.module.catalog.service.dto.CanonicalProduct;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryEvent;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryFilters;
@@ -12,6 +14,7 @@ import com.meant.api.module.catalog.service.FederatedCatalogDiscoveryService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Consumer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -42,6 +45,48 @@ public class UserFederatedProductSearchStreamService {
             @NotNull Consumer<UserFederatedProductSearchStreamEvent> eventConsumer
     ) {
         var preparation = preparationService.prepare(profileCommand, command, discoveryFilters);
+        stream(command, preparation, eventConsumer);
+    }
+
+    public void stream(
+            @NotNull @Valid EnsureUserProfileCommand profileCommand,
+            @NotNull @Valid SearchUserProductsCommand command,
+            CatalogDiscoveryFilters discoveryFilters,
+            Set<UserProductSearchQuestionTarget> explicitAnyTargets,
+            @NotNull Consumer<UserFederatedProductSearchStreamEvent> eventConsumer
+    ) {
+        var preparation = preparationService.prepare(
+                profileCommand,
+                command,
+                discoveryFilters,
+                explicitAnyTargets
+        );
+        stream(command, preparation, eventConsumer);
+    }
+
+    public void stream(
+            @NotNull @Valid EnsureUserProfileCommand profileCommand,
+            @NotNull @Valid SearchUserProductsCommand command,
+            CatalogDiscoveryFilters discoveryFilters,
+            Set<UserProductSearchQuestionTarget> explicitAnyTargets,
+            Set<UserProductSearchQuestionTarget> profileSuppressionTargets,
+            @NotNull Consumer<UserFederatedProductSearchStreamEvent> eventConsumer
+    ) {
+        var preparation = preparationService.prepare(
+                profileCommand,
+                command,
+                discoveryFilters,
+                explicitAnyTargets,
+                profileSuppressionTargets
+        );
+        stream(command, preparation, eventConsumer);
+    }
+
+    private void stream(
+            SearchUserProductsCommand command,
+            UserProductSearchPreparation preparation,
+            Consumer<UserFederatedProductSearchStreamEvent> eventConsumer
+    ) {
         federatedDiscoveryService.search(new CatalogDiscoveryRequest(
                 preparation.catalogInput().searchQuery(),
                 command.merchantId(),

@@ -13,6 +13,7 @@ public record ShopifyUcpRequestOptions(
         Duration connectTimeout,
         Duration readTimeout,
         Duration requestDeadline,
+        boolean unauthenticatedAllowed,
         boolean unauthorizedRefreshAllowed
 ) {
 
@@ -20,7 +21,16 @@ public record ShopifyUcpRequestOptions(
             URI endpoint, Set<String> allowedHosts, Set<String> requiredScopes,
             Duration connectTimeout, Duration readTimeout, Duration requestDeadline
     ) {
-        this(endpoint, allowedHosts, requiredScopes, connectTimeout, readTimeout, requestDeadline, true);
+        this(endpoint, allowedHosts, requiredScopes, connectTimeout, readTimeout, requestDeadline, false, true);
+    }
+
+    public ShopifyUcpRequestOptions(
+            URI endpoint, Set<String> allowedHosts, Set<String> requiredScopes,
+            Duration connectTimeout, Duration readTimeout, Duration requestDeadline,
+            boolean unauthorizedRefreshAllowed
+    ) {
+        this(endpoint, allowedHosts, requiredScopes, connectTimeout, readTimeout, requestDeadline,
+                false, unauthorizedRefreshAllowed);
     }
 
     public ShopifyUcpRequestOptions {

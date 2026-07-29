@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="001-bind-agent-similarity-search-qualifications" author="meant">
+        <comment>
+            Pre-bind the exact server-resolved similarity anchor to the deterministic
+            qualification ID before remote qualification, so a worker retry can never
+            downgrade similarity into an ordinary text search.
+        </comment>
+        <createTable tableName="agent_similarity_search_qualifications">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="user_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="conversation_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="merchant_id" type="uuid"/>
+            <column name="canonical_product_key" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="inventory_item_id" type="uuid"/>
+            <column name="anchor_label" type="text"/>
+            <column name="initial_user_text" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addForeignKeyConstraint
+                baseTableName="agent_similarity_search_qualifications"
+                baseColumnNames="user_id"
+                referencedTableName="users"
+                referencedColumnNames="id"
+                onDelete="CASCADE"
+                constraintName="fk_agent_similarity_qualification_user"/>
+        <addForeignKeyConstraint
+                baseTableName="agent_similarity_search_qualifications"
+                baseColumnNames="conversation_id"
+                referencedTableName="agent_conversation"
+                referencedColumnNames="id"
+                onDelete="CASCADE"
+                constraintName="fk_agent_similarity_qualification_conversation"/>
+        <createIndex
+                tableName="agent_similarity_search_qualifications"
+                indexName="idx_agent_similarity_qualification_owner">
+            <column name="user_id"/>
+            <column name="conversation_id"/>
+            <column name="created_at"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

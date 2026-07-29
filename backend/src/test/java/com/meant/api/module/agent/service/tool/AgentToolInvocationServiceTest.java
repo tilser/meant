@@ -211,6 +211,48 @@ class AgentToolInvocationServiceTest {
     }
 
     @Test
+    void completedWaitingReadReplaysItsPersistedQuestion() {
+        String arguments = "{\"query\":\"running shoes\"}";
+        String question = "What shoe size do you need?";
+        AgentToolDescriptor search = new AgentToolDescriptor(
+                "search_catalog",
+                "Search catalog",
+                "{\"type\":\"object\"}",
+                "v1",
+                AgentToolRisk.READ
+        );
+        AgentToolInvocation invocation = AgentToolInvocation.builder()
+                .runId(run.getId())
+                .modelToolCallId("call-search")
+                .toolName(search.name())
+                .toolVersion(search.version())
+                .riskClass(AgentToolRisk.READ)
+                .status(AgentToolInvocationStatus.COMPLETED)
+                .argumentsJson(arguments)
+                .resultJson("{\"qualificationQuestion\":\"" + question + "\"}")
+                .waitingForUserMessage(question)
+                .idempotencyKey("idem-search")
+                .createdAt(NOW.minusSeconds(1))
+                .startedAt(NOW.minusSeconds(1))
+                .completedAt(NOW)
+                .build();
+        when(invocationRepository.findByIdempotencyKeyForUpdate("idem-search"))
+                .thenReturn(Optional.of(invocation));
+        when(jsonSupport.bounded(arguments)).thenReturn(arguments);
+
+        var reservation = service.reserve(
+                run.getId(),
+                new AgentModelToolCall("call-search", search.name(), arguments),
+                search,
+                arguments,
+                "idem-search"
+        );
+
+        assertThat(reservation.execute()).isFalse();
+        assertThat(reservation.waitingForUserMessage()).isEqualTo(question);
+    }
+
+    @Test
     void completionAcquiresTheConversationAndRunLedgerLocksBeforeMutatingTheInvocation() {
         UUID invocationId = UUID.randomUUID();
         UUID executionOwner = UUID.randomUUID();

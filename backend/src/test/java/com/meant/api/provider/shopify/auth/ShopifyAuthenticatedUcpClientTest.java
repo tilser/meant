@@ -57,7 +57,7 @@ class ShopifyAuthenticatedUcpClientTest {
 
         try {
             UcpToolResponse response = context.client().callTool(
-                    options(Duration.ofSeconds(1)),
+                    keylessCapableOptions(Duration.ofSeconds(1)),
                     "search_catalog",
                     searchArguments(17)
             );
@@ -69,6 +69,39 @@ class ShopifyAuthenticatedUcpClientTest {
         } finally {
             context.client().close();
         }
+    }
+
+    @Test
+    void sendsKeylessGlobalCatalogRequestWithAgentProfileAndWithoutAuthorization() {
+        TestClient context = keylessClient();
+        context.server().expect(requestTo(ENDPOINT))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(headerDoesNotExist(HttpHeaders.AUTHORIZATION))
+                .andExpect(jsonPath("$.params.name").value("search_catalog"))
+                .andExpect(jsonPath("$.params.arguments.meta.ucp-agent.profile").value(PROFILE.toString()))
+                .andRespond(withSuccess(successEnvelope(), MediaType.APPLICATION_JSON));
+        ShopifyUcpRequestOptions keylessOptions = keylessCapableOptions(Duration.ofSeconds(1));
+
+        try {
+            context.client().callTool(keylessOptions, "search_catalog", searchArguments(10));
+
+            context.server().verify();
+        } finally {
+            context.client().close();
+        }
+    }
+
+    private ShopifyUcpRequestOptions keylessCapableOptions(Duration deadline) {
+        return new ShopifyUcpRequestOptions(
+                ENDPOINT,
+                Set.of("catalog.shopify.test"),
+                Set.of(SCOPE),
+                Duration.ofMillis(100),
+                Duration.ofSeconds(1),
+                deadline,
+                true,
+                true
+        );
     }
 
     @Test
@@ -330,9 +363,26 @@ class ShopifyAuthenticatedUcpClientTest {
     }
 
     private TestClient client(ShopifyTokenClient tokenClient) {
+        return client(tokenClient, authProperties());
+    }
+
+    private TestClient keylessClient() {
+        ShopifyAgentAuthProperties properties = authProperties(false);
+        ShopifyTokenClient unusedTokenClient = new ShopifyTokenClient(RestClient.builder(), properties) {
+            @Override
+            public ShopifyTokenResponse exchangeClientCredentials() {
+                throw new AssertionError("Keyless Global Catalog must not request an OAuth token");
+            }
+        };
+        return client(unusedTokenClient, properties);
+    }
+
+    private TestClient client(
+            ShopifyTokenClient tokenClient,
+            ShopifyAgentAuthProperties authProperties
+    ) {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        ShopifyAgentAuthProperties authProperties = authProperties();
         ShopifyTokenProvider tokenProvider = new ShopifyTokenProvider(
                 tokenClient,
                 authProperties,
@@ -370,11 +420,15 @@ class ShopifyAuthenticatedUcpClientTest {
     }
 
     private ShopifyAgentAuthProperties authProperties() {
+        return authProperties(true);
+    }
+
+    private ShopifyAgentAuthProperties authProperties(boolean enabled) {
         return new ShopifyAgentAuthProperties(
-                true,
+                enabled,
                 "test",
-                "client",
-                "secret",
+                enabled ? "client" : "",
+                enabled ? "secret" : "",
                 URI.create("https://api.shopify.test/auth/access_token"),
                 Duration.ofMinutes(5),
                 Duration.ofHours(1)

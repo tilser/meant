@@ -1,5 +1,6 @@
 package com.meant.api.module.user.controller;
 
+import com.meant.api.common.util.AcceptLanguageParser;
 import com.meant.api.module.user.controller.mapper.UserCommandMapper;
 import com.meant.api.module.user.controller.request.UserCanonicalProductRehydrationRequest;
 import com.meant.api.module.user.controller.request.UserSimilarProductSearchRequest;
@@ -86,10 +87,13 @@ public class UserGroupedProductSearchV1Controller {
                         qualified.merchantId(),
                         httpRequest.getRemoteAddr(),
                         userAgent(httpRequest),
+                        language(httpRequest),
                         request.offset(),
                         request.limit()
                 ),
-                qualified.filters()
+                qualified.filters(),
+                qualified.explicitAnyTargets(),
+                qualified.profileSuppressionTargets()
         ));
     }
 
@@ -151,7 +155,7 @@ public class UserGroupedProductSearchV1Controller {
             summary = "Search for products similar to a grouped canonical product",
             description = "Resolves the authenticated user's server-issued canonical product key to a trusted "
                     + "product-level item reference, then narrows provider similarity results with the originating "
-                    + "query and, when supplied, its authenticated READY qualification filters. Returns one fixed "
+                    + "query and its authenticated READY qualification filters. Returns one fixed "
                     + "page of up to 20 products with no continuation. Provider identifiers, merchant routing, "
                     + "endpoints, and image content are never accepted."
     )
@@ -174,8 +178,10 @@ public class UserGroupedProductSearchV1Controller {
                         canonicalProductKey,
                         request.query(),
                         request.qualificationId(),
+                        null,
                         httpRequest.getRemoteAddr(),
-                        userAgent(httpRequest)
+                        userAgent(httpRequest),
+                        language(httpRequest)
                 )
         ));
     }
@@ -205,6 +211,7 @@ public class UserGroupedProductSearchV1Controller {
                 qualified.merchantId(),
                 httpRequest.getRemoteAddr(),
                 userAgent(httpRequest),
+                language(httpRequest),
                 request.offset(),
                 request.limit()
         );
@@ -222,6 +229,8 @@ public class UserGroupedProductSearchV1Controller {
                 UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
                 command,
                 qualified.filters(),
+                qualified.explicitAnyTargets(),
+                qualified.profileSuppressionTargets(),
                 event -> session.send(UserFederatedProductSearchStreamEventResponse.from(event))
         ));
         return emitter;
@@ -230,6 +239,10 @@ public class UserGroupedProductSearchV1Controller {
     private String userAgent(HttpServletRequest request) {
         String userAgent = request.getHeader("User-Agent");
         return userAgent == null || userAgent.isBlank() ? null : userAgent.trim();
+    }
+
+    private String language(HttpServletRequest request) {
+        return AcceptLanguageParser.preferredLanguage(request.getHeader("Accept-Language"));
     }
 
     private UserQualifiedProductSearchInput qualifiedSearch(

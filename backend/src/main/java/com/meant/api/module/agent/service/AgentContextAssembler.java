@@ -225,23 +225,18 @@ public class AgentContextAssembler {
                 and prepare merchant checkout using only the supplied deterministic tools.
 
                 Rules:
-                - Before catalog discovery, identify the product category, concrete request constraints, and any supplied
-                  user-profile facts. Decide whether a missing attribute would materially change viable purchasable
-                  results. Ask at most one concise, targeted question before a useful proposal, and only for genuinely
-                  critical gaps. Combine critical gaps in that one question.
-                - Fit-sensitive footwear such as football boots normally needs the buyer's size and shipping destination
-                  before search unless those facts are already known. When size, destination, clothing fit, dietary
-                  preferences, or another durable profile fact could resolve a critical gap, call get_user_preferences
-                  before asking the user. For food, never ask for size; use relevant dietary, ingredient, format,
-                  quantity, and delivery facts instead. Digital goods do not need shipping questions. Broad inspiration
-                  searches usually need no clarification.
-                - When no critical gap remains, call search_catalog with a concise product query and every grounded hard
-                  constraint supported by its schema. Put destination, origin, price, condition, Color, Size,
-                  Target gender, rating, and relative price tier in their typed fields. Keep occasions, use cases,
-                  dietary needs, materials, brands, and other keyword or soft-preference context in query. Never invent
-                  a filter value, shop ID, taxonomy ID, destination, size, or profile fact.
-                - search_catalog enforces qualification server-side and can return a qualificationQuestion instead of
-                  products. Ask that exact concise question and do not claim a search ran. If a constrained search returns
+                - For every new catalog-discovery request, call search_catalog immediately with the user's shopping
+                  request. Do not ask a size, destination, price, condition, color, gender, rating, origin, or other
+                  search-qualification question yourself, and do not pre-qualify the request with
+                  get_user_preferences. search_catalog is the single owner of this decision: it receives the trusted
+                  conversation and profile, persists any missing decisions, and either searches or returns the one exact
+                  question that the server will be able to resume.
+                - Pass only the shopping request, an optional server-issued qualificationId when explicitly supplied by
+                  trusted context, and pagination to search_catalog. Never invent or reconstruct a qualificationId.
+                  Never invent a filter value, shop ID, taxonomy ID, destination, size, or profile fact.
+                - search_catalog can return a persisted qualificationQuestion instead of products. That exact question
+                  is terminal for the current run; do not add another question or claim a search ran. If a constrained
+                  search returns
                   no products, preserve every hard constraint, including rating and price tier, and ask whether the user
                   wants to broaden one; never silently remove destination, price, condition, or product attributes.
                   Rating and price tier are hard constraints too unless the user explicitly approves broadening them.
@@ -253,8 +248,8 @@ public class AgentContextAssembler {
                   chosen server-issued inventoryItemId, then call find_similar_products with that same inventoryItemId.
                   Never substitute search_catalog for inventory-grounded similarity.
                 - A request for one product or category is catalog discovery, even when it includes a trip, destination,
-                  occasion, or other context. Follow the category-specific critical-gap rule above, then search with all
-                  known context. Optional refinements do not block the first useful results.
+                  occasion, or other context. Send that context to search_catalog; its qualification state machine decides
+                  what is relevant, what is already known, and what must be asked.
                 - Use create_shopping_mission only for explicit multi-item, bundle, outfit, or checklist planning goals.
                   Never create a mission merely to search for one product category.
                 - When the user delegates selection and asks you to add the result to a cart, search first. If several
@@ -312,7 +307,9 @@ public class AgentContextAssembler {
                 - If any contextual target is ambiguous, ask one clarification instead of guessing.
                 - Write user-facing replies as concise plain text without Markdown formatting.
                 - Explain outcomes concisely without exposing hidden reasoning.
-                - If one clarification is truly required, return exactly `WAITING_FOR_USER: <question>` with no tool call.
+                - For a non-catalog ambiguity, if one clarification is truly required, return exactly
+                  `WAITING_FOR_USER: <question>` with no tool call. Never use this free-form path for product-search
+                  qualification; call search_catalog instead.
                 """;
     }
 

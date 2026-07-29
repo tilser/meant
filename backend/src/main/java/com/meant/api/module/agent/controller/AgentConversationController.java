@@ -1,5 +1,6 @@
 package com.meant.api.module.agent.controller;
 
+import com.meant.api.common.util.AcceptLanguageParser;
 import com.meant.api.module.agent.controller.request.AgentUserActionRequest;
 import com.meant.api.module.agent.controller.request.CreateAgentConversationRequest;
 import com.meant.api.module.agent.controller.request.SubmitAgentTurnRequest;
@@ -181,10 +182,21 @@ public class AgentConversationController {
                                         item.relatedProductNames()
                                 ))
                                 .toList()),
-                httpRequest.getRemoteAddr()
+                httpRequest.getRemoteAddr(),
+                userAgent(httpRequest),
+                language(httpRequest)
         ));
         runCoordinator.schedule(accepted.runId());
         return SubmitAgentTurnResponse.from(accepted);
+    }
+
+    private String userAgent(HttpServletRequest request) {
+        String userAgent = request.getHeader("User-Agent");
+        return userAgent == null || userAgent.isBlank() ? null : userAgent.trim();
+    }
+
+    private String language(HttpServletRequest request) {
+        return AcceptLanguageParser.preferredLanguage(request.getHeader("Accept-Language"));
     }
 
     @PostMapping("/{conversationId}/actions")

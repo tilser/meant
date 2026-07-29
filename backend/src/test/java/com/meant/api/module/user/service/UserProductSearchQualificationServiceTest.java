@@ -14,12 +14,15 @@ import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.command.PersistUserProductSearchQualificationCommand;
 import com.meant.api.module.user.service.command.QualifyUserProductSearchCommand;
 import com.meant.api.module.user.service.command.SaveUserProductSearchPreferencesCommand;
+import com.meant.api.module.user.service.dto.UserProductSearchConversationMessage;
 import com.meant.api.module.user.service.dto.UserProductSearchQualificationModelResult;
 import com.meant.api.module.user.service.dto.UserProductSearchQualificationPlan;
 import com.meant.api.module.user.service.dto.UserProductSearchQualificationSnapshot;
 import com.meant.api.module.user.service.dto.UserProductSearchPreferenceResult;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
+import com.meant.api.module.user.service.dto.UserTasteProfileResult;
 import com.meant.api.module.user.service.query.GenerateUserProductSearchQualificationQuery;
+import com.meant.api.module.user.service.query.FindUserProductSearchQualificationByRequestQuery;
 import com.meant.api.module.user.service.query.GetUserProductSearchQualificationQuery;
 import java.time.Duration;
 import java.time.Instant;
@@ -27,6 +30,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DataIntegrityViolationException;
 
 class UserProductSearchQualificationServiceTest {
 
@@ -47,6 +51,7 @@ class UserProductSearchQualificationServiceTest {
         FakePersistenceService persistenceService = new FakePersistenceService();
         UserProductSearchQualificationService service = new UserProductSearchQualificationService(
                 settingsService,
+                new FakeUserTasteProfileService(tasteProfile()),
                 preferenceService,
                 modelService,
                 persistenceService,
@@ -54,8 +59,19 @@ class UserProductSearchQualificationServiceTest {
         );
         EnsureUserProfileCommand profile = profile();
 
+        var conversation = new java.util.ArrayList<>(List.of(
+                new UserProductSearchConversationMessage(
+                        UserProductSearchConversationMessage.Role.USER,
+                        "I usually wear neutral colors."
+                ),
+                new UserProductSearchConversationMessage(
+                        UserProductSearchConversationMessage.Role.USER,
+                        "running shoes"
+                )
+        ));
         var result = service.qualify(profile, new QualifyUserProductSearchCommand(
-                profile.id(), UUID.randomUUID(), null, "running shoes", null));
+                profile.id(), UUID.randomUUID(), null, "running shoes", null, conversation));
+        conversation.clear();
 
         assertThat(result.status()).isEqualTo(UserProductSearchQualificationStatus.NEEDS_INPUT);
         assertThat(result.missingFilters()).containsExactly(UserProductSearchFilterKind.PRICE);
@@ -65,6 +81,10 @@ class UserProductSearchQualificationServiceTest {
         assertThat(modelService.lastQuery.originalQuery()).isEqualTo("running shoes");
         assertThat(modelService.lastQuery.previousPlan()).isNull();
         assertThat(modelService.lastQuery.durablePreferences()).containsExactly(footwearSize);
+        assertThat(modelService.lastQuery.conversation())
+                .extracting(UserProductSearchConversationMessage::text)
+                .containsExactly("I usually wear neutral colors.", "running shoes");
+        assertThat(modelService.lastQuery.tasteProfile().profileHash()).isEqualTo("taste-profile");
         assertThat(persistenceService.persistCalls).isEqualTo(1);
         assertThat(persistenceService.lastPersistedCommand.expectedUpdatedAt()).isNull();
         assertThat(persistenceService.lastPersistedCommand.plan().durableAttributes())
@@ -80,6 +100,7 @@ class UserProductSearchQualificationServiceTest {
         FakePersistenceService persistenceService = new FakePersistenceService();
         UserProductSearchQualificationService service = new UserProductSearchQualificationService(
                 new FakeUserSettingsService(settings()),
+                new FakeUserTasteProfileService(tasteProfile()),
                 new FakePreferenceService(List.of()),
                 new FakeModelService(new UserProductSearchQualificationModelResult(
                         plan(UserProductSearchFilterState.ANY),
@@ -107,6 +128,7 @@ class UserProductSearchQualificationServiceTest {
         FakePersistenceService persistenceService = new FakePersistenceService();
         UserProductSearchQualificationService service = new UserProductSearchQualificationService(
                 settingsService,
+                new FakeUserTasteProfileService(tasteProfile()),
                 preferenceService,
                 modelService,
                 persistenceService,
@@ -144,6 +166,198 @@ class UserProductSearchQualificationServiceTest {
     }
 
     @Test
+    void sameTriggeringRequestReusesReadyQualificationWithoutCallingTheModelAgain() {
+        FakeModelService modelService = new FakeModelService(new UserProductSearchQualificationModelResult(
+                plan(UserProductSearchFilterState.ANY),
+                "qualification-model",
+                "qualification-v1"
+        ));
+        FakePersistenceService persistenceService = new FakePersistenceService();
+        UserProductSearchQualificationService service = new UserProductSearchQualificationService(
+                new FakeUserSettingsService(settings()),
+                new FakeUserTasteProfileService(tasteProfile()),
+                new FakePreferenceService(List.of()),
+                modelService,
+                persistenceService,
+                catalogInputBuilder()
+        );
+        EnsureUserProfileCommand profile = profile();
+        UUID conversationId = UUID.randomUUID();
+        UUID triggeringMessageId = UUID.randomUUID();
+        QualifyUserProductSearchCommand command = new QualifyUserProductSearchCommand(
+                profile.id(),
+                conversationId,
+                null,
+                "running shoes",
+                null,
+                List.of(),
+                triggeringMessageId
+        );
+
+        var first = service.qualify(profile, command);
+        persistenceService.found = Optional.of(snapshot(
+                persistenceService.lastPersistedCommand.qualificationId(),
+                persistenceService.lastPersistedCommand,
+                Instant.parse("2026-07-17T10:00:00Z")
+        ));
+        var retried = service.qualify(profile, command);
+
+        assertThat(retried.qualificationId()).isEqualTo(first.qualificationId());
+        assertThat(modelService.calls).isEqualTo(1);
+        assertThat(persistenceService.persistCalls).isEqualTo(1);
+        assertThat(persistenceService.refreshReadyCalls).isEqualTo(1);
+    }
+
+    @Test
+    void concurrentFirstUseLoserReloadsTheExactWinnerAfterItsWriteTransactionFails() {
+        FakeModelService modelService = new FakeModelService(new UserProductSearchQualificationModelResult(
+                plan(UserProductSearchFilterState.ANY),
+                "loser-model",
+                "qualification-v1"
+        ));
+        FakePersistenceService persistenceService = new FakePersistenceService();
+        UserProductSearchQualificationService service = new UserProductSearchQualificationService(
+                new FakeUserSettingsService(settings()),
+                new FakeUserTasteProfileService(tasteProfile()),
+                new FakePreferenceService(List.of()),
+                modelService,
+                persistenceService,
+                catalogInputBuilder()
+        );
+        EnsureUserProfileCommand profile = profile();
+        UUID conversationId = UUID.randomUUID();
+        QualifyUserProductSearchCommand command = new QualifyUserProductSearchCommand(
+                profile.id(),
+                conversationId,
+                null,
+                "running shoes",
+                null,
+                List.of(),
+                UUID.randomUUID()
+        );
+        Instant winnerRevision = Instant.parse("2026-07-29T12:00:01Z");
+        UserProductSearchQualificationSnapshot winner = new UserProductSearchQualificationSnapshot(
+                command.requestQualificationId(),
+                profile.id(),
+                conversationId,
+                null,
+                "running shoes",
+                UserProductSearchQualificationStatus.READY,
+                plan(UserProductSearchFilterState.ANY),
+                "winner-model",
+                "qualification-v1",
+                winnerRevision,
+                winnerRevision
+        );
+        persistenceService.persistFailure =
+                new DataIntegrityViolationException("concurrent primary-key insert");
+        persistenceService.concurrentRequest = Optional.of(winner);
+
+        var result = service.qualify(profile, command);
+
+        assertThat(result.qualificationId()).isEqualTo(winner.qualificationId());
+        assertThat(result.status()).isEqualTo(UserProductSearchQualificationStatus.READY);
+        assertThat(modelService.calls).isEqualTo(1);
+        assertThat(persistenceService.persistCalls).isEqualTo(1);
+        assertThat(persistenceService.reconcileConcurrentRequestCalls).isEqualTo(1);
+        assertThat(persistenceService.lastReconciledCommand.requestId()).isEqualTo(command.requestId());
+        assertThat(persistenceService.lastReconciledCommand.requestMessage()).isEqualTo("running shoes");
+    }
+
+    @Test
+    void sameRequestIdentityWithDifferentTextIsRejectedInsteadOfCreatingAnotherQualification() {
+        FakeModelService modelService = new FakeModelService(new UserProductSearchQualificationModelResult(
+                plan(UserProductSearchFilterState.ANY),
+                "qualification-model",
+                "qualification-v1"
+        ));
+        FakePersistenceService persistenceService = new FakePersistenceService();
+        UserProductSearchQualificationService service = new UserProductSearchQualificationService(
+                new FakeUserSettingsService(settings()),
+                new FakeUserTasteProfileService(tasteProfile()),
+                new FakePreferenceService(List.of()),
+                modelService,
+                persistenceService,
+                catalogInputBuilder()
+        );
+        EnsureUserProfileCommand profile = profile();
+        UUID conversationId = UUID.randomUUID();
+        UUID requestId = UUID.randomUUID();
+        QualifyUserProductSearchCommand original = new QualifyUserProductSearchCommand(
+                profile.id(), conversationId, null, "running shoes", null, List.of(), requestId);
+        QualifyUserProductSearchCommand conflicting = new QualifyUserProductSearchCommand(
+                profile.id(), conversationId, null, "gaming laptop", null, List.of(), requestId);
+
+        service.qualify(profile, original);
+        persistenceService.found = Optional.of(snapshot(
+                persistenceService.lastPersistedCommand.qualificationId(),
+                persistenceService.lastPersistedCommand,
+                Instant.parse("2026-07-17T10:00:00Z")
+        ));
+
+        assertThat(original.requestQualificationId()).isEqualTo(conflicting.requestQualificationId());
+        assertThatThrownBy(() -> service.qualify(profile, conflicting))
+                .isInstanceOf(UserException.class)
+                .hasMessageContaining("request identity was already used");
+        assertThat(modelService.calls).isEqualTo(1);
+        assertThat(persistenceService.persistCalls).isEqualTo(1);
+    }
+
+    @Test
+    void continuationRequestReplayReusesReadyQualificationWithoutTreatingAnswerAsNewQuery() {
+        FakeUserSettingsService settingsService = new FakeUserSettingsService(settings());
+        FakePreferenceService preferenceService = new FakePreferenceService(List.of());
+        FakeModelService modelService = new FakeModelService(null);
+        FakePersistenceService persistenceService = new FakePersistenceService();
+        UserProductSearchQualificationService service = new UserProductSearchQualificationService(
+                settingsService,
+                new FakeUserTasteProfileService(tasteProfile()),
+                preferenceService,
+                modelService,
+                persistenceService,
+                catalogInputBuilder()
+        );
+        EnsureUserProfileCommand profile = profile();
+        UUID conversationId = UUID.randomUUID();
+        UUID qualificationId = UUID.randomUUID();
+        UUID answerRequestId = UUID.randomUUID();
+        UserProductSearchQualificationSnapshot ready = new UserProductSearchQualificationSnapshot(
+                qualificationId,
+                profile.id(),
+                conversationId,
+                null,
+                "running shoes",
+                UserProductSearchQualificationStatus.READY,
+                plan(UserProductSearchFilterState.ANY),
+                "qualification-model",
+                "qualification-v1",
+                Instant.parse("2026-07-17T10:00:00Z"),
+                Instant.parse("2026-07-17T10:00:00Z")
+        );
+        persistenceService.requestFound = Optional.of(ready);
+        persistenceService.found = Optional.of(ready);
+
+        var replayed = service.qualify(profile, new QualifyUserProductSearchCommand(
+                profile.id(),
+                conversationId,
+                null,
+                "46",
+                null,
+                List.of(),
+                answerRequestId
+        ));
+
+        assertThat(replayed.qualificationId()).isEqualTo(qualificationId);
+        assertThat(replayed.effectiveQuery()).isEqualTo("running shoes");
+        assertThat(persistenceService.findByRequestCalls).isEqualTo(1);
+        assertThat(persistenceService.refreshReadyCalls).isEqualTo(1);
+        assertThat(modelService.calls).isZero();
+        assertThat(settingsService.calls).isZero();
+        assertThat(preferenceService.listCalls).isZero();
+        assertThat(persistenceService.persistCalls).isZero();
+    }
+
+    @Test
     void rejectsAnOutdatedReadyPlanBeforeRefreshingOrCallingTheModel() {
         FakeUserSettingsService settingsService = new FakeUserSettingsService(settings());
         FakePreferenceService preferenceService = new FakePreferenceService(List.of());
@@ -151,6 +365,7 @@ class UserProductSearchQualificationServiceTest {
         FakePersistenceService persistenceService = new FakePersistenceService();
         UserProductSearchQualificationService service = new UserProductSearchQualificationService(
                 settingsService,
+                new FakeUserTasteProfileService(tasteProfile()),
                 preferenceService,
                 modelService,
                 persistenceService,
@@ -188,6 +403,7 @@ class UserProductSearchQualificationServiceTest {
         FakePersistenceService persistenceService = new FakePersistenceService();
         UserProductSearchQualificationService service = new UserProductSearchQualificationService(
                 new FakeUserSettingsService(settings()),
+                new FakeUserTasteProfileService(tasteProfile()),
                 new FakePreferenceService(List.of()),
                 new FakeModelService(null),
                 persistenceService,
@@ -219,6 +435,7 @@ class UserProductSearchQualificationServiceTest {
         FakeModelService modelService = new FakeModelService(null);
         UserProductSearchQualificationService service = new UserProductSearchQualificationService(
                 new FakeUserSettingsService(settings()),
+                new FakeUserTasteProfileService(tasteProfile()),
                 new FakePreferenceService(List.of()),
                 modelService,
                 new FakePersistenceService(),
@@ -255,6 +472,10 @@ class UserProductSearchQualificationServiceTest {
                 now,
                 now
         );
+    }
+
+    private UserTasteProfileResult tasteProfile() {
+        return new UserTasteProfileResult("taste-profile", List.of(), List.of());
     }
 
     private UserProductSearchCatalogInputBuilder catalogInputBuilder() {
@@ -396,7 +617,14 @@ class UserProductSearchQualificationServiceTest {
         private GenerateUserProductSearchQualificationQuery lastQuery;
 
         private FakeModelService(UserProductSearchQualificationModelResult result) {
-            super(null, null, null, null, new UserProductSearchQualificationPlanResolver());
+            super(
+                    null,
+                    null,
+                    null,
+                    null,
+                    new UserProductSearchQualificationPlanResolver(),
+                    () -> "test contract"
+            );
             this.result = result;
         }
 
@@ -406,6 +634,21 @@ class UserProductSearchQualificationServiceTest {
         ) {
             calls++;
             lastQuery = query;
+            return result;
+        }
+    }
+
+    private static final class FakeUserTasteProfileService extends UserTasteProfileService {
+
+        private final UserTasteProfileResult result;
+
+        private FakeUserTasteProfileService(UserTasteProfileResult result) {
+            super(null, null, null, null);
+            this.result = result;
+        }
+
+        @Override
+        public UserTasteProfileResult profile(UUID userId, UserSettingsResult settings) {
             return result;
         }
     }
@@ -438,14 +681,20 @@ class UserProductSearchQualificationServiceTest {
     private final class FakePersistenceService extends UserProductSearchQualificationPersistenceService {
 
         private Optional<UserProductSearchQualificationSnapshot> found = Optional.empty();
+        private Optional<UserProductSearchQualificationSnapshot> requestFound = Optional.empty();
+        private Optional<UserProductSearchQualificationSnapshot> concurrentRequest = Optional.empty();
         private UserProductSearchQualificationSnapshot ready;
         private PersistUserProductSearchQualificationCommand lastPersistedCommand;
+        private PersistUserProductSearchQualificationCommand lastReconciledCommand;
+        private RuntimeException persistFailure;
         private int persistCalls;
+        private int reconcileConcurrentRequestCalls;
         private int getReadyCalls;
         private int refreshReadyCalls;
+        private int findByRequestCalls;
 
         private FakePersistenceService() {
-            super(null, null, null);
+            super(null, null, null, null);
         }
 
         @Override
@@ -456,16 +705,36 @@ class UserProductSearchQualificationServiceTest {
         }
 
         @Override
+        public Optional<UserProductSearchQualificationSnapshot> findByRequest(
+                FindUserProductSearchQualificationByRequestQuery query
+        ) {
+            findByRequestCalls++;
+            return requestFound;
+        }
+
+        @Override
         public UserProductSearchQualificationSnapshot persist(
                 PersistUserProductSearchQualificationCommand command
         ) {
             persistCalls++;
             lastPersistedCommand = command;
+            if (persistFailure != null) {
+                throw persistFailure;
+            }
             return snapshot(
                     command.qualificationId(),
                     command,
                     Instant.parse("2026-07-17T10:00:00Z")
             );
+        }
+
+        @Override
+        public Optional<UserProductSearchQualificationSnapshot> reconcileConcurrentRequest(
+                PersistUserProductSearchQualificationCommand command
+        ) {
+            reconcileConcurrentRequestCalls++;
+            lastReconciledCommand = command;
+            return concurrentRequest;
         }
 
         @Override

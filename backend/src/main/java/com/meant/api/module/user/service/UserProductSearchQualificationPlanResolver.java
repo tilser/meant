@@ -6,6 +6,8 @@ import com.meant.api.module.user.constant.UserProductSearchAttributeName;
 import com.meant.api.module.user.constant.UserProductSearchDecisionSource;
 import com.meant.api.module.user.constant.UserProductSearchFilterState;
 import com.meant.api.module.user.constant.UserProductSearchQuestionTarget;
+import com.meant.api.module.user.constant.UserProductSearchQueryLimits;
+import com.meant.api.module.user.constant.UserTasteSignalStatus;
 import com.meant.api.module.user.service.dto.UserProductSearchPreferenceResult;
 import com.meant.api.module.user.service.dto.UserProductSearchQualificationPlan;
 import com.meant.api.module.user.service.dto.UserLocationResult;
@@ -18,14 +20,153 @@ import java.util.EnumMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /** Applies server-owned policy, provenance checks, and multi-turn accumulation to an LLM candidate plan. */
 @Component
 public class UserProductSearchQualificationPlanResolver {
+
+    private static final Set<String> EFFECTIVE_QUERY_CONNECTORS = Set.of(
+            "a", "an", "and", "for", "from", "in", "made", "of", "on", "or", "the", "to", "with"
+    );
+    private static final Pattern SHIPS_TO_QUERY_PATTERN = Pattern.compile(
+            "(?iu)\\b(?:ship|ships|shipped|shipping|deliver|delivered|delivery)"
+                    + "\\s+(?:it\\s+)?to\\b|\\b(?:shipping\\s+)?destination\\b"
+                    + "|\\b(?:based|located)\\s+in\\b"
+                    + "|\\bi\\s+(?:am|live)\\s+in\\b|\\bi['’]m\\s+in\\b"
+    );
+    private static final Pattern SHIPS_FROM_QUERY_PATTERN = Pattern.compile(
+            "(?iu)\\b(?:ship|ships|shipped|shipping)\\s+from\\b|\\bshipping\\s+origin\\b"
+                    + "|\\bmade\\s+in\\b|\\borigin(?:ating)?\\s+from\\b"
+    );
+    private static final Pattern PRICE_QUERY_PATTERN = Pattern.compile(
+            "(?iu)(?:\\b(?:under|below|less\\s+than|up\\s+to|over|above|more\\s+than|at\\s+least|between)"
+                    + "\\s*\\$?\\s*\\d+(?:\\.\\d{1,2})?"
+                    + "(?:\\s*(?:and|-|to)\\s*\\$?\\s*\\d+(?:\\.\\d{1,2})?)?\\b"
+                    + "|\\$\\s*\\d+(?:\\.\\d{1,2})?\\b"
+                    + "|\\b\\d+(?:\\.\\d{1,2})?\\s*(?:usd|dollars?)\\b)"
+    );
+    private static final Pattern RATING_QUERY_PATTERN = Pattern.compile(
+            "(?iu)\\b(?:at\\s+least\\s+|minimum\\s+|min\\s+)?\\d+(?:\\.\\d+)?\\s*stars?\\b"
+                    + "|\\b\\d+\\s*(?:reviews?|ratings?)\\b"
+                    + "|\\b(?:rated|rating)\\s+(?:at\\s+least\\s+)?\\d+(?:\\.\\d+)?\\b"
+    );
+    private static final Pattern GENERIC_INDIFFERENCE_QUERY_PATTERN = Pattern.compile(
+            "(?iu)\\b(?:i\\s+)?(?:do\\s+not|don['’]?t)\\s+care\\b"
+                    + "|\\bno\\s+preference\\b"
+    );
+    private static final Pattern CONDITION_INDIFFERENCE_QUERY_PATTERN = indifferenceQueryPattern(
+            "condition|new\\s+or\\s+(?:used|secondhand)|(?:used|secondhand)\\s+or\\s+new"
+    );
+    private static final Pattern SHIPS_TO_INDIFFERENCE_QUERY_PATTERN = indifferenceQueryPattern(
+            "shipping\\s+destination|delivery\\s+location|shipping\\s+location|destination|location|country"
+    );
+    private static final Pattern SHIPS_FROM_INDIFFERENCE_QUERY_PATTERN = indifferenceQueryPattern(
+            "shipping\\s+origin|source\\s+country|origin"
+    );
+    private static final Pattern PRICE_INDIFFERENCE_QUERY_PATTERN = indifferenceQueryPattern(
+            "price|budget|cost"
+    );
+    private static final Pattern COLOR_INDIFFERENCE_QUERY_PATTERN = indifferenceQueryPattern(
+            "colou?r"
+    );
+    private static final Pattern SIZE_INDIFFERENCE_QUERY_PATTERN = indifferenceQueryPattern(
+            "(?:(?:product|shoe|clothing)\\s+)?size|sizing"
+    );
+    private static final Pattern TARGET_GENDER_INDIFFERENCE_QUERY_PATTERN = indifferenceQueryPattern(
+            "target\\s+gender|gender"
+    );
+    private static final Pattern RATING_INDIFFERENCE_QUERY_PATTERN = indifferenceQueryPattern(
+            "rating|reviews?|stars?"
+    );
+    private static final Pattern PRICE_TIER_INDIFFERENCE_QUERY_PATTERN = indifferenceQueryPattern(
+            "price\\s+tier|relative\\s+price(?:\\s+tier)?"
+    );
+    private static final Pattern LOCATION_ANYWHERE_QUERY_PATTERN = Pattern.compile(
+            "(?iu)\\b(?:ship(?:ping)?\\s+)?anywhere\\b"
+    );
+    private static final Pattern EXPLICIT_USD_DENOMINATION_PATTERN = Pattern.compile(
+            "(?iu)(?:\\busd\\b|\\bu\\.s\\.\\s+dollars?\\b|\\bus\\s+dollars?\\b)"
+    );
+    private static final String PRICE_AMOUNT_PATTERN =
+            "(?:\\d{1,3}(?:[\\s.,]\\d{3})+|\\d+)(?:[.,]\\d{1,2})?";
+    private static final Pattern PRICE_RANGE_PATTERN = Pattern.compile(
+            "(?iu)\\b(?:between|from)\\b[^\\d]{0,24}(?<min>%s)"
+                    .formatted(PRICE_AMOUNT_PATTERN)
+                    + "\\s+(?:and|to|-)\\s*[^\\d]{0,24}(?<max>%s)"
+                    .formatted(PRICE_AMOUNT_PATTERN)
+    );
+    private static final Pattern PRICE_MAX_PATTERN = Pattern.compile(
+            "(?iu)\\b(?:under|below|less\\s+than|up\\s+to|max(?:imum)?|no\\s+more\\s+than)"
+                    + "\\b[^\\d]{0,24}(?<amount>%s)".formatted(PRICE_AMOUNT_PATTERN)
+    );
+    private static final Pattern PRICE_MIN_PATTERN = Pattern.compile(
+            "(?iu)\\b(?:over|above|more\\s+than|at\\s+least|min(?:imum)?|no\\s+less\\s+than)"
+                    + "\\b[^\\d]{0,24}(?<amount>%s)".formatted(PRICE_AMOUNT_PATTERN)
+    );
+    private static final Pattern STANDALONE_DENOMINATED_PRICE_PATTERN = Pattern.compile(
+            "(?iu)(?:(?<![\\p{L}\\p{N}])\\$\\s*%s"
+                    .formatted(PRICE_AMOUNT_PATTERN)
+                    + "|\\b(?:usd|u\\.s\\.\\s+dollars?|us\\s+dollars?|dollars?)\\b\\s*%s"
+                    .formatted(PRICE_AMOUNT_PATTERN)
+                    + "|%s\\s*(?:usd|u\\.s\\.\\s+dollars?|us\\s+dollars?|dollars?)\\b)"
+                    .formatted(PRICE_AMOUNT_PATTERN)
+    );
+    private static final Pattern PRICE_CONTEXT_PATTERN = Pattern.compile(
+            "(?iu)(?:\\$|\\b(?:usd|u\\.s\\.\\s+dollars?|us\\s+dollars?|dollars?"
+                    + "|price|budget|cost)\\b)"
+    );
+    private static final String NEW_CONDITION_EXPRESSION =
+            "\\b(?:brand\\s+new|new\\s+condition)\\b"
+                    + "|\\bnew\\b(?!\\s+(?:balance|era|york|zealand)\\b)";
+    private static final Pattern NEW_CONDITION_PATTERN =
+            Pattern.compile("(?iu)" + NEW_CONDITION_EXPRESSION);
+    private static final Pattern CONDITION_CONSTRAINT_PATTERN = Pattern.compile(
+            "(?iu)(?:" + NEW_CONDITION_EXPRESSION
+                    + "|\\b(?:used|secondhand|second-hand|preowned|pre-owned)\\b)"
+    );
+    private static final Pattern COLOR_CONSTRAINT_PATTERN = Pattern.compile(
+            "(?iu)\\b(?:colou?r|black|white|red|blue|green|brown|grey|gray|pink|purple|orange|yellow"
+                    + "|beige|navy|teal|gold|silver)\\b"
+    );
+    private static final Pattern SIZE_CONSTRAINT_PATTERN = Pattern.compile(
+            "(?iu)\\b(?:size|sizing|xxs|xs|xl|xxl|xxxl)\\b"
+                    + "|\\bsize\\s+(?:s|m|l|\\d+(?:[.,]\\d+)?)\\b"
+                    + "|\\b(?:s|m|l|\\d+(?:[.,]\\d+)?)\\s+size\\b"
+    );
+    private static final Pattern TARGET_GENDER_CONSTRAINT_PATTERN = Pattern.compile(
+            "(?iu)\\b(?:men['’]?s?|women['’]?s?|male|female|unisex|boys?|girls?|target\\s+gender)\\b"
+    );
+    private static final Pattern PRICE_TIER_CONSTRAINT_PATTERN = Pattern.compile(
+            "(?iu)\\b(?:(?:low|medium|high)\\s+(?:relative\\s+)?price(?:\\s+tier)?"
+                    + "|price\\s+tier)\\b"
+    );
+    private static final Set<String> COLOR_TASTE_TERMS = Set.of(
+            "black", "white", "red", "blue", "green", "brown", "grey", "gray", "pink", "purple",
+            "orange", "yellow", "beige", "navy", "teal", "gold", "silver"
+    );
+    private static final Set<String> SIZE_TASTE_TERMS = Set.of(
+            "plus", "petite", "tall", "extended", "oversize", "oversized"
+    );
+    private static final Set<String> TARGET_GENDER_TASTE_TERMS = Set.of(
+            "men", "mens", "male", "women", "womens", "female", "unisex", "boy", "boys", "girl", "girls"
+    );
+    private static final Set<String> FILTER_DECISION_SUBJECT_TERMS = Set.of(
+            "budget", "color", "colour", "condition", "cost", "country", "delivery", "destination",
+            "filter", "filters", "gender", "include", "keep", "keyword", "leave", "location", "male",
+            "female", "men", "mens", "origin", "price", "query", "rating", "retain", "review", "reviews",
+            "shipping", "size", "sizing", "star", "stars", "target", "term", "tier", "unisex", "women",
+            "womens", "wording"
+    );
+    private static final Pattern PRODUCT_REQUEST_PATTERN = Pattern.compile(
+            "(?iu)\\b(?:buy|find|get|look(?:ing)?\\s+for|search(?:ing)?\\s+for|show\\s+me|switch\\s+to"
+                    + "|want)\\b"
+    );
 
     private final UserProductSearchCategoryPolicy categoryPolicy;
 
@@ -47,53 +188,118 @@ public class UserProductSearchQualificationPlanResolver {
                         && query.previousPlan().currentSchema()
                 ? query.previousPlan()
                 : null;
+        String effectiveQuery = candidate.effectiveQuery();
 
-        var condition = merge(
-                previous == null ? null : previous.condition(),
-                condition(candidate.condition(), query, violations),
-                UserProductSearchQualificationPlan.ConditionFilter::state,
-                UserProductSearchQualificationPlan.ConditionFilter::provenance
-        );
-        var shipsTo = merge(
-                previous == null ? null : previous.shipsTo(),
-                shipsTo(candidate.shipsTo(), query, violations),
-                UserProductSearchQualificationPlan.LocationFilter::state,
-                UserProductSearchQualificationPlan.LocationFilter::provenance
-        );
-        var shipsFrom = merge(
-                previous == null ? null : previous.shipsFrom(),
-                shipsFrom(candidate.shipsFrom(), query, violations),
-                UserProductSearchQualificationPlan.LocationsFilter::state,
-                UserProductSearchQualificationPlan.LocationsFilter::provenance
-        );
-        var price = merge(
-                previous == null ? null : previous.price(),
-                price(candidate.price(), query, violations),
-                UserProductSearchQualificationPlan.PriceFilter::state,
-                UserProductSearchQualificationPlan.PriceFilter::provenance
-        );
-        var rating = merge(
-                previous == null ? null : previous.rating(),
-                rating(candidate.rating(), query, violations),
-                UserProductSearchQualificationPlan.RatingFilter::state,
-                UserProductSearchQualificationPlan.RatingFilter::provenance
-        );
-        var priceTier = merge(
-                previous == null ? null : previous.priceTier(),
-                priceTier(candidate.priceTier(), query, violations),
-                UserProductSearchQualificationPlan.PriceTierFilter::state,
-                UserProductSearchQualificationPlan.PriceTierFilter::provenance
-        );
+        var condition = unchanged(previous == null ? null : previous.condition(), candidate.condition())
+                ? previous.condition()
+                : merge(
+                        previous == null ? null : previous.condition(),
+                        condition(candidate.condition(), query, violations),
+                        UserProductSearchQualificationPlan.ConditionFilter::state,
+                        UserProductSearchQualificationPlan.ConditionFilter::provenance
+                );
+        var shipsTo = unchanged(previous == null ? null : previous.shipsTo(), candidate.shipsTo())
+                ? previous.shipsTo()
+                : merge(
+                        previous == null ? null : previous.shipsTo(),
+                        shipsTo(candidate.shipsTo(), query, violations),
+                        UserProductSearchQualificationPlan.LocationFilter::state,
+                        UserProductSearchQualificationPlan.LocationFilter::provenance
+                );
+        var shipsFrom = unchanged(previous == null ? null : previous.shipsFrom(), candidate.shipsFrom())
+                ? previous.shipsFrom()
+                : merge(
+                        previous == null ? null : previous.shipsFrom(),
+                        shipsFrom(candidate.shipsFrom(), query, violations),
+                        UserProductSearchQualificationPlan.LocationsFilter::state,
+                        UserProductSearchQualificationPlan.LocationsFilter::provenance
+                );
+        boolean priceUnchanged = unchanged(previous == null ? null : previous.price(), candidate.price());
+        var price = priceUnchanged
+                ? previous.price()
+                : merge(
+                        previous == null ? null : previous.price(),
+                        price(candidate.price(), query, violations),
+                        UserProductSearchQualificationPlan.PriceFilter::state,
+                        UserProductSearchQualificationPlan.PriceFilter::provenance
+                );
+        if (price.state() == UserProductSearchFilterState.VALUE
+                && !explicitUsdDenomination(price.provenance().evidence())) {
+            violations.add("PRICE VALUE requires an explicit USD denomination");
+            price = missingPrice();
+        } else if (!priceUnchanged
+                && price.state() == UserProductSearchFilterState.VALUE
+                && !priceBoundsMatchEvidence(price, query)) {
+            violations.add("PRICE typed bounds do not match the buyer's grounded bound direction and values");
+            price = missingPrice();
+        } else if (price.state() == UserProductSearchFilterState.NOT_APPLICABLE
+                && hasPriceBound(query)) {
+            violations.add(hasCurrencyAmbiguousPriceBound(query)
+                    ? "PRICE cannot be irrelevant while a currency-ambiguous bound is present"
+                    : "PRICE cannot be irrelevant while an explicit USD bound is present");
+            price = missingPrice();
+        }
+        var rating = unchanged(previous == null ? null : previous.rating(), candidate.rating())
+                ? previous.rating()
+                : merge(
+                        previous == null ? null : previous.rating(),
+                        rating(candidate.rating(), query, violations),
+                        UserProductSearchQualificationPlan.RatingFilter::state,
+                        UserProductSearchQualificationPlan.RatingFilter::provenance
+                );
+        var priceTier = unchanged(previous == null ? null : previous.priceTier(), candidate.priceTier())
+                ? previous.priceTier()
+                : merge(
+                        previous == null ? null : previous.priceTier(),
+                        priceTier(candidate.priceTier(), query, violations),
+                        UserProductSearchQualificationPlan.PriceTierFilter::state,
+                        UserProductSearchQualificationPlan.PriceTierFilter::provenance
+                );
         var attributes = attributes(
                 candidate.attributes(),
                 previous == null ? null : previous.attributes(),
                 query,
                 violations
         );
+        ActiveRequirementResolution activeRequirements = enforceActiveRequestRequirements(
+                condition,
+                shipsTo,
+                shipsFrom,
+                price,
+                attributes,
+                rating,
+                priceTier,
+                query,
+                violations
+        );
+        condition = activeRequirements.condition();
+        shipsTo = activeRequirements.shipsTo();
+        shipsFrom = activeRequirements.shipsFrom();
+        price = activeRequirements.price();
+        attributes = activeRequirements.attributes();
+        rating = activeRequirements.rating();
+        priceTier = activeRequirements.priceTier();
+        EffectiveQueryDecisions queryDecisions = new EffectiveQueryDecisions(
+                condition,
+                shipsTo,
+                shipsFrom,
+                price,
+                attributes,
+                rating,
+                priceTier
+        );
+        effectiveQuery = sanitizeExplicitAnyTerms(effectiveQuery, queryDecisions, query);
+        if (!validateEffectiveQuery(effectiveQuery, query, queryDecisions, violations)) {
+            effectiveQuery = sanitizeExplicitAnyTerms(
+                    query.originalQuery(),
+                    queryDecisions,
+                    query
+            );
+        }
 
         UserProductSearchQualificationPlan resolved = new UserProductSearchQualificationPlan(
                 UserProductSearchQualificationPlan.CURRENT_SCHEMA_VERSION,
-                candidate.effectiveQuery(),
+                effectiveQuery,
                 candidate.assistantMessage(),
                 candidate.suggestedReplies(),
                 candidate.questionTargets(),
@@ -119,14 +325,552 @@ public class UserProductSearchQualificationPlanResolver {
                 attributes,
                 rating,
                 priceTier,
-                durableAttributes(candidate.durableAttributes(), candidate.attributes(), attributes, query, violations)
+                unchanged(
+                        previous == null ? null : previous.durableAttributes(),
+                        candidate.durableAttributes()
+                )
+                        ? previous.durableAttributes()
+                        : durableAttributes(
+                                candidate.durableAttributes(),
+                                candidate.attributes(),
+                                attributes,
+                                query,
+                                violations
+                        )
         );
         resolved = categoryPolicy.enforce(resolved, query);
         validateQuestionCoverage(resolved, violations);
         return new Resolution(resolved, List.copyOf(violations));
     }
 
+    private boolean validateEffectiveQuery(
+            String effectiveQuery,
+            GenerateUserProductSearchQualificationQuery query,
+            EffectiveQueryDecisions decisions,
+            List<String> violations
+    ) {
+        int initialViolationCount = violations.size();
+        if (effectiveQuery.length() > UserProductSearchQueryLimits.MAX_SEARCH_QUERY_LENGTH) {
+            violations.add("effectiveQuery exceeds the downstream product-search query limit");
+        }
+        Set<String> userTokens = new LinkedHashSet<>();
+        addTokens(userTokens, query.originalQuery());
+        if (currentTurnBelongsToActiveProduct(query)) {
+            addTokens(userTokens, query.message());
+        }
+        activeUserConversationMessages(query)
+                .forEach(message -> addTokens(userTokens, message.text()));
+        Set<String> trustedTokens = new LinkedHashSet<>(userTokens);
+        addTokens(trustedTokens, query.settings().clothingFit());
+        safe(query.settings().filters()).forEach(filter -> {
+            addTokens(trustedTokens, filter.label());
+            addTokens(trustedTokens, filter.description());
+        });
+        query.durablePreferences().forEach(preference -> {
+            addTokens(trustedTokens, preference.scope());
+            preference.values().forEach(value -> addTokens(trustedTokens, value));
+        });
+        query.tasteProfile().signals().stream()
+                .filter(signal -> signal.status() == UserTasteSignalStatus.ACTIVE)
+                .forEach(signal -> addTokens(trustedTokens, signal.label()));
+
+        List<String> effectiveTokens = tokens(effectiveQuery);
+        List<String> unsupported = effectiveTokens.stream()
+                .filter(token -> !EFFECTIVE_QUERY_CONNECTORS.contains(token))
+                .filter(token -> trustedTokens.stream().noneMatch(trusted -> sameWord(token, trusted)))
+                .distinct()
+                .toList();
+        if (!unsupported.isEmpty()) {
+            violations.add("effectiveQuery contains unsupported terms: " + unsupported);
+        }
+        validateExplicitAnyDoesNotRestoreSavedTerms(
+                effectiveQuery,
+                effectiveTokens,
+                decisions,
+                query,
+                violations
+        );
+
+        String semanticOriginalQuery = sanitizeExplicitAnyTerms(
+                query.originalQuery(),
+                decisions,
+                query
+        );
+        var originalSubject = categoryPolicy.productSubject(semanticOriginalQuery);
+        var effectiveSubject = categoryPolicy.productSubject(effectiveQuery);
+        boolean retainsOriginalSubject = originalSubject.isPresent()
+                && effectiveSubject.isPresent()
+                && sameWord(originalSubject.get().head(), effectiveSubject.get().head());
+        if (!retainsOriginalSubject) {
+            violations.add("effectiveQuery must retain a product term from the original request");
+        }
+        return violations.size() == initialViolationCount;
+    }
+
+    private void validateExplicitAnyDoesNotRestoreSavedTerms(
+            String effectiveQuery,
+            List<String> effectiveTokens,
+            EffectiveQueryDecisions decisions,
+            GenerateUserProductSearchQualificationQuery query,
+            List<String> violations
+    ) {
+        for (UserProductSearchQuestionTarget target : explicitAnyTargets(decisions)) {
+            Set<String> overriddenTokens = overriddenQueryTokens(target, query);
+            List<String> restored = effectiveTokens.stream()
+                    .filter(token -> overriddenTokens.stream()
+                            .anyMatch(overridden -> sameWord(token, overridden)))
+                    .distinct()
+                    .toList();
+            boolean retainedSyntax = explicitAnySyntaxPatterns(target).stream()
+                    .anyMatch(pattern -> pattern.matcher(effectiveQuery).find());
+            if (!restored.isEmpty() || retainedSyntax) {
+                violations.add("effectiveQuery reintroduces overridden " + target
+                        + " terms after explicit ANY: " + restored);
+            }
+        }
+    }
+
+    private boolean isExplicitAny(
+            UserProductSearchFilterState state,
+            UserProductSearchQualificationPlan.Provenance provenance
+    ) {
+        if (state != UserProductSearchFilterState.ANY
+                || provenance == null
+                || normalize(provenance.evidence()).isBlank()) {
+            return false;
+        }
+        return switch (provenance.source()) {
+            case ORIGINAL_QUERY, CURRENT_USER_TURN, CONVERSATION -> true;
+            case PROFILE, DURABLE_PREFERENCE, NONE, SYSTEM_POLICY -> false;
+        };
+    }
+
+    private boolean isExplicitAny(UserProductSearchQualificationPlan.Attribute attribute) {
+        return isExplicitAny(attribute.state(), attribute.provenance());
+    }
+
+    private String sanitizeExplicitAnyTerms(
+            String value,
+            EffectiveQueryDecisions decisions,
+            GenerateUserProductSearchQualificationQuery query
+    ) {
+        Set<UserProductSearchQuestionTarget> explicitAnyTargets = explicitAnyTargets(decisions);
+        String stripped = value.trim();
+        for (UserProductSearchQuestionTarget target : explicitAnyTargets) {
+            for (Pattern pattern : explicitAnySyntaxPatterns(target)) {
+                stripped = pattern.matcher(stripped).replaceAll(" ");
+            }
+        }
+
+        Set<String> overriddenTokens = new LinkedHashSet<>();
+        explicitAnyTargets.forEach(target ->
+                overriddenTokens.addAll(overriddenQueryTokens(target, query)));
+        if (overriddenTokens.isEmpty()) {
+            return stripped.equals(value.trim()) ? value.trim() : String.join(" ", tokens(stripped));
+        }
+
+        List<String> source = tokens(stripped);
+        List<String> sanitized = new ArrayList<>();
+        boolean removed = !stripped.equals(value.trim());
+        for (int index = 0; index < source.size(); index++) {
+            String token = source.get(index);
+            if (overriddenTokens.stream().noneMatch(overridden -> sameWord(token, overridden))) {
+                sanitized.add(token);
+                continue;
+            }
+            removed = true;
+            if (index + 1 < source.size() && source.get(index + 1).equals("s")) {
+                index++;
+            }
+        }
+        return removed ? String.join(" ", sanitized).trim() : value.trim();
+    }
+
+    private Set<UserProductSearchQuestionTarget> explicitAnyTargets(EffectiveQueryDecisions decisions) {
+        Set<UserProductSearchQuestionTarget> targets =
+                java.util.EnumSet.noneOf(UserProductSearchQuestionTarget.class);
+        if (isExplicitAny(decisions.condition().state(), decisions.condition().provenance())) {
+            targets.add(UserProductSearchQuestionTarget.CONDITION);
+        }
+        if (isExplicitAny(decisions.shipsTo().state(), decisions.shipsTo().provenance())) {
+            targets.add(UserProductSearchQuestionTarget.SHIPS_TO);
+        }
+        if (isExplicitAny(decisions.shipsFrom().state(), decisions.shipsFrom().provenance())) {
+            targets.add(UserProductSearchQuestionTarget.SHIPS_FROM);
+        }
+        if (isExplicitAny(decisions.price().state(), decisions.price().provenance())) {
+            targets.add(UserProductSearchQuestionTarget.PRICE);
+        }
+        decisions.attributes().values().stream()
+                .filter(this::isExplicitAny)
+                .map(attribute -> target(attribute.name()))
+                .forEach(targets::add);
+        if (isExplicitAny(decisions.rating().state(), decisions.rating().provenance())) {
+            targets.add(UserProductSearchQuestionTarget.RATING);
+        }
+        if (isExplicitAny(decisions.priceTier().state(), decisions.priceTier().provenance())) {
+            targets.add(UserProductSearchQuestionTarget.PRICE_TIER);
+        }
+        return targets;
+    }
+
+    private List<Pattern> explicitAnySyntaxPatterns(UserProductSearchQuestionTarget target) {
+        return switch (target) {
+            case CONDITION -> List.of(
+                    CONDITION_INDIFFERENCE_QUERY_PATTERN,
+                    GENERIC_INDIFFERENCE_QUERY_PATTERN
+            );
+            case SHIPS_TO -> List.of(
+                    SHIPS_TO_INDIFFERENCE_QUERY_PATTERN,
+                    GENERIC_INDIFFERENCE_QUERY_PATTERN,
+                    LOCATION_ANYWHERE_QUERY_PATTERN,
+                    SHIPS_TO_QUERY_PATTERN
+            );
+            case SHIPS_FROM -> List.of(
+                    SHIPS_FROM_INDIFFERENCE_QUERY_PATTERN,
+                    GENERIC_INDIFFERENCE_QUERY_PATTERN,
+                    LOCATION_ANYWHERE_QUERY_PATTERN,
+                    SHIPS_FROM_QUERY_PATTERN
+            );
+            case PRICE -> List.of(
+                    PRICE_INDIFFERENCE_QUERY_PATTERN,
+                    GENERIC_INDIFFERENCE_QUERY_PATTERN,
+                    PRICE_QUERY_PATTERN
+            );
+            case COLOR -> List.of(
+                    COLOR_INDIFFERENCE_QUERY_PATTERN,
+                    GENERIC_INDIFFERENCE_QUERY_PATTERN
+            );
+            case SIZE -> List.of(
+                    SIZE_INDIFFERENCE_QUERY_PATTERN,
+                    GENERIC_INDIFFERENCE_QUERY_PATTERN
+            );
+            case TARGET_GENDER -> List.of(
+                    TARGET_GENDER_INDIFFERENCE_QUERY_PATTERN,
+                    GENERIC_INDIFFERENCE_QUERY_PATTERN
+            );
+            case RATING -> List.of(
+                    RATING_INDIFFERENCE_QUERY_PATTERN,
+                    GENERIC_INDIFFERENCE_QUERY_PATTERN,
+                    RATING_QUERY_PATTERN
+            );
+            case PRICE_TIER -> List.of(
+                    PRICE_TIER_INDIFFERENCE_QUERY_PATTERN,
+                    GENERIC_INDIFFERENCE_QUERY_PATTERN
+            );
+        };
+    }
+
+    private static Pattern indifferenceQueryPattern(String targetExpression) {
+        String target = "(?:" + targetExpression + ")";
+        String indifference = "(?:doesn['’]?t\\s+matter|doesnt\\s+matter|does\\s+not\\s+matter"
+                + "|is\\s+irrelevant|is\\s+not\\s+important|can\\s+be\\s+anything"
+                + "|any|whatever)";
+        return Pattern.compile(
+                "(?iu)\\b(?:"
+                        + "(?:any|whatever)\\s+(?:the\\s+)?" + target
+                        + "|(?:the\\s+)?" + target + "\\s+" + indifference
+                        + "|no\\s+" + target + "\\s+preference"
+                        + "|no\\s+preference\\s+(?:for|on)\\s+(?:the\\s+)?" + target
+                        + "|(?:i\\s+)?(?:do\\s+not|don['’]?t)\\s+care\\s+"
+                        + "(?:about\\s+)?(?:the\\s+)?" + target
+                        + ")\\b"
+        );
+    }
+
+    private Set<String> overriddenQueryTokens(
+            UserProductSearchQuestionTarget target,
+            GenerateUserProductSearchQualificationQuery query
+    ) {
+        Set<String> overriddenTokens = new LinkedHashSet<>();
+        Set<String> explicitlyKeptTokens = new LinkedHashSet<>();
+        overriddenQueryValues(target, query).forEach(value -> {
+            if (latestTurnExplicitlyKeepsValue(query.message(), value)) {
+                addTokens(explicitlyKeptTokens, value);
+            } else {
+                addTokens(overriddenTokens, value);
+            }
+        });
+        overriddenTokens.removeIf(overridden -> explicitlyKeptTokens.stream()
+                .anyMatch(kept -> sameWord(overridden, kept)));
+        return overriddenTokens;
+    }
+
+    private List<String> overriddenQueryValues(
+            UserProductSearchQuestionTarget target,
+            GenerateUserProductSearchQualificationQuery query
+    ) {
+        return switch (target) {
+            case COLOR -> overriddenAttributeValues(UserProductSearchAttributeName.COLOR, query);
+            case SIZE -> overriddenAttributeValues(UserProductSearchAttributeName.SIZE, query);
+            case TARGET_GENDER ->
+                    overriddenAttributeValues(UserProductSearchAttributeName.TARGET_GENDER, query);
+            case CONDITION -> overriddenConditionValues(query);
+            case SHIPS_TO -> overriddenLocationValues(query, true);
+            case SHIPS_FROM -> overriddenLocationValues(query, false);
+            case PRICE -> overriddenPriceValues(query);
+            case RATING -> overriddenRatingValues(query);
+            case PRICE_TIER -> overriddenPriceTierValues(query);
+        };
+    }
+
+    private List<String> overriddenAttributeValues(
+            UserProductSearchAttributeName attributeName,
+            GenerateUserProductSearchQualificationQuery query
+    ) {
+        Set<String> values = new LinkedHashSet<>();
+        if (attributeName == UserProductSearchAttributeName.TARGET_GENDER) {
+            values.addAll(TARGET_GENDER_TASTE_TERMS);
+        }
+        query.durablePreferences().stream()
+                .filter(preference -> preference.attributeName() == attributeName)
+                .flatMap(preference -> preference.values().stream())
+                .filter(value -> value != null && !value.isBlank())
+                .forEach(values::add);
+        if (attributeName == UserProductSearchAttributeName.TARGET_GENDER) {
+            String clothingFit = query.settings().clothingFit();
+            if (clothingFit != null && !clothingFit.isBlank()) {
+                values.add(clothingFit);
+            }
+        }
+        activeTasteAttributeValues(attributeName, query).forEach(values::add);
+        UserProductSearchQualificationPlan previous = query.previousPlan();
+        if (previous != null && previous.currentSchema()) {
+            previous.attributes().values().stream()
+                    .filter(attribute -> attribute.name() == attributeName)
+                    .flatMap(attribute -> attribute.values().stream())
+                    .filter(value -> value != null && !value.isBlank())
+                    .forEach(values::add);
+        }
+        return List.copyOf(values);
+    }
+
+    private List<String> activeTasteAttributeValues(
+            UserProductSearchAttributeName attributeName,
+            GenerateUserProductSearchQualificationQuery query
+    ) {
+        Set<String> terms = switch (attributeName) {
+            case COLOR -> COLOR_TASTE_TERMS;
+            case SIZE -> SIZE_TASTE_TERMS;
+            case TARGET_GENDER -> TARGET_GENDER_TASTE_TERMS;
+        };
+        Set<String> values = new LinkedHashSet<>();
+        List<String> labels = query.tasteProfile().signals().stream()
+                .filter(signal -> signal.status() == UserTasteSignalStatus.ACTIVE)
+                .map(signal -> normalize(signal.label()))
+                .toList();
+        labels.stream()
+                .flatMap(label -> java.util.Arrays.stream(label.split(" ")))
+                .filter(terms::contains)
+                .forEach(values::add);
+        if (attributeName == UserProductSearchAttributeName.SIZE
+                && labels.stream().anyMatch(label -> containsPhrase(label, "plus size")
+                        || containsPhrase(label, "extended size"))) {
+            values.add("size");
+        }
+        return List.copyOf(values);
+    }
+
+    private List<String> overriddenConditionValues(GenerateUserProductSearchQualificationQuery query) {
+        Set<String> values = new LinkedHashSet<>(List.of(
+                "new", "used", "secondhand", "second hand", "preowned", "pre owned", "condition"
+        ));
+        UserProductSearchQualificationPlan previous = currentPreviousPlan(query);
+        if (previous != null) {
+            previous.condition().values().forEach(value -> values.add(value.name()));
+        }
+        return List.copyOf(values);
+    }
+
+    private List<String> overriddenLocationValues(
+            GenerateUserProductSearchQualificationQuery query,
+            boolean shipsTo
+    ) {
+        Set<String> values = new LinkedHashSet<>();
+        if (shipsTo) {
+            addLocationValues(values, query.settings().location());
+        }
+        UserProductSearchQualificationPlan previous = currentPreviousPlan(query);
+        if (previous != null) {
+            if (shipsTo && previous.shipsTo().value() != null) {
+                addLocationValues(values, previous.shipsTo().value());
+            } else if (!shipsTo) {
+                previous.shipsFrom().values().forEach(location -> addLocationValues(values, location));
+            }
+        }
+        addMentionedCountryValues(values, query.originalQuery());
+        if (previous != null) {
+            addMentionedCountryValues(values, previous.effectiveQuery());
+        }
+        return List.copyOf(values);
+    }
+
+    private void addLocationValues(Set<String> values, UserLocationResult location) {
+        if (location == null) {
+            return;
+        }
+        addNonBlank(values, location.country());
+        addCountryCodeValues(values, location.code());
+        addNonBlank(values, location.region());
+        addNonBlank(values, location.postalCode());
+        addNonBlank(values, location.regionName());
+        addNonBlank(values, location.city());
+    }
+
+    private void addLocationValues(
+            Set<String> values,
+            UserProductSearchQualificationPlan.Location location
+    ) {
+        addCountryCodeValues(values, location.country());
+        addNonBlank(values, location.region());
+        addNonBlank(values, location.postalCode());
+    }
+
+    private void addCountryCodeValues(Set<String> values, String country) {
+        addNonBlank(values, country);
+        String code = CountryCodeNormalizer.normalizeAlpha2(country);
+        if (code == null) {
+            return;
+        }
+        addNonBlank(values, code);
+        addNonBlank(values, new Locale.Builder()
+                .setRegion(code)
+                .build()
+                .getDisplayCountry(Locale.ENGLISH));
+        if (code.equals("US")) {
+            values.add("USA");
+        } else if (code.equals("GB")) {
+            values.add("UK");
+            values.add("Great Britain");
+        }
+    }
+
+    private void addMentionedCountryValues(Set<String> values, String source) {
+        String normalizedSource = normalize(source);
+        for (String code : Locale.getISOCountries()) {
+            String country = new Locale.Builder()
+                    .setRegion(code)
+                    .build()
+                    .getDisplayCountry(Locale.ENGLISH);
+            if (containsPhrase(normalizedSource, normalize(country))
+                    || containsUppercaseCode(source, code)) {
+                addCountryCodeValues(values, code);
+            }
+        }
+        if (containsPhrase(normalizedSource, "usa")) {
+            addCountryCodeValues(values, "US");
+        }
+        if (containsPhrase(normalizedSource, "uk")
+                || containsPhrase(normalizedSource, "great britain")) {
+            addCountryCodeValues(values, "GB");
+        }
+    }
+
+    private List<String> overriddenPriceValues(GenerateUserProductSearchQualificationQuery query) {
+        Set<String> values = new LinkedHashSet<>(List.of(
+                "price", "budget", "cost", "usd", "dollar", "dollars"
+        ));
+        UserProductSearchQualificationPlan previous = currentPreviousPlan(query);
+        if (previous != null) {
+            if (previous.price().minUsdMinor() != null) {
+                values.add(usdMajor(previous.price().minUsdMinor()));
+            }
+            if (previous.price().maxUsdMinor() != null) {
+                values.add(usdMajor(previous.price().maxUsdMinor()));
+            }
+        }
+        return List.copyOf(values);
+    }
+
+    private List<String> overriddenRatingValues(GenerateUserProductSearchQualificationQuery query) {
+        Set<String> values = new LinkedHashSet<>(List.of(
+                "rating", "rated", "star", "stars", "review", "reviews"
+        ));
+        UserProductSearchQualificationPlan previous = currentPreviousPlan(query);
+        if (previous != null) {
+            if (previous.rating().min() != null) {
+                values.add(previous.rating().min().stripTrailingZeros().toPlainString());
+            }
+            if (previous.rating().minCount() != null) {
+                values.add(previous.rating().minCount().toString());
+            }
+        }
+        return List.copyOf(values);
+    }
+
+    private List<String> overriddenPriceTierValues(GenerateUserProductSearchQualificationQuery query) {
+        Set<String> values = new LinkedHashSet<>(List.of(
+                "price tier", "relative price", "low", "cheap", "budget", "affordable",
+                "medium", "mid range", "midrange", "high", "premium", "luxury"
+        ));
+        UserProductSearchQualificationPlan previous = currentPreviousPlan(query);
+        if (previous != null) {
+            previous.priceTier().values().forEach(value -> {
+                values.add(value.name());
+                switch (value) {
+                    case LOW -> values.addAll(List.of("cheap", "budget", "affordable"));
+                    case MEDIUM -> values.addAll(List.of("mid range", "midrange"));
+                    case HIGH -> values.addAll(List.of("premium", "luxury"));
+                }
+            });
+        }
+        return List.copyOf(values);
+    }
+
+    private UserProductSearchQualificationPlan currentPreviousPlan(
+            GenerateUserProductSearchQualificationQuery query
+    ) {
+        return query.previousPlan() != null && query.previousPlan().currentSchema()
+                ? query.previousPlan()
+                : null;
+    }
+
+    private void addNonBlank(Set<String> values, String value) {
+        if (value != null && !value.isBlank()) {
+            values.add(value);
+        }
+    }
+
+    private boolean latestTurnExplicitlyKeepsValue(String turn, String value) {
+        String normalizedTurn = normalize(turn);
+        String normalizedValue = normalize(value);
+        if (normalizedTurn.isBlank() || normalizedValue.isBlank()) {
+            return false;
+        }
+        String valuePattern = Pattern.quote(normalizedValue) + "(?:\\s+s)?";
+        String instruction = "\\b(?:keep|retain|include|leave)\\s+(?:the\\s+)?"
+                + valuePattern
+                + "\\s+(?:(?:in|inside)\\s+(?:the\\s+)?(?:product\\s+|search\\s+)?"
+                + "(?:query|search)|as\\s+(?:a\\s+)?(?:query\\s+|search\\s+)?"
+                + "(?:term|keyword|wording))\\b";
+        return Pattern.compile(instruction).matcher(normalizedTurn).find();
+    }
+
+    private void addTokens(Set<String> destination, String value) {
+        destination.addAll(tokens(value));
+    }
+
+    private List<String> tokens(String value) {
+        String normalized = normalize(value);
+        return normalized.isBlank() ? List.of() : List.of(normalized.split(" "));
+    }
+
+    private boolean sameWord(String left, String right) {
+        return wordStem(left).equals(wordStem(right));
+    }
+
+    private String wordStem(String value) {
+        if (value.endsWith("ies") && value.length() > 4) {
+            return value.substring(0, value.length() - 3) + "y";
+        }
+        if (value.endsWith("s") && !value.endsWith("ss") && value.length() > 3) {
+            return value.substring(0, value.length() - 1);
+        }
+        return value;
+    }
+
     public UserProductSearchQualificationPlan safeFallback(UserProductSearchQualificationPlan plan) {
+        requireSafeFallbackQuery(plan.effectiveQuery());
         List<UserProductSearchQuestionTarget> missing = plan.missingTargets();
         if (missing.isEmpty()) {
             return plan.withConversation("I have everything I need to search.", List.of(), List.of());
@@ -135,11 +879,16 @@ public class UserProductSearchQualificationPlanResolver {
                 && missing.contains(UserProductSearchQuestionTarget.SIZE)
                 && missing.contains(UserProductSearchQuestionTarget.SHIPS_TO)) {
             return plan.withConversation(
-                    "What boot size do you need, and what country or postal code should they ship to? "
-                            + "You can say location does not matter if it should not filter the search.",
+                    "What product size do you need, and what country should it ship to? "
+                            + "You may also include a region or postal code. "
+                            + "You can answer either one, say which one does not matter, or say “I don’t care” "
+                            + "if neither should filter the search.",
                     List.of(),
                     missing
             );
+        }
+        if (missing.size() == 1 && missing.getFirst() == UserProductSearchQuestionTarget.PRICE) {
+            return priceFallbackQuestion(plan, missing);
         }
         String labels = missing.stream().map(this::label).reduce((left, right) -> left + ", " + right).orElse("");
         return plan.withConversation(
@@ -150,6 +899,15 @@ public class UserProductSearchQualificationPlanResolver {
         );
     }
 
+    public UserProductSearchQualificationPlan safeFallback(
+            UserProductSearchQualificationPlan plan,
+            GenerateUserProductSearchQualificationQuery query
+    ) {
+        UserProductSearchQualificationPlan continuation =
+                conservativeContinuation(query).orElse(plan);
+        return safeFallback(categoryPolicy.enforceConservativeFallback(continuation, query));
+    }
+
     public UserProductSearchQualificationPlan safeFallback(GenerateUserProductSearchQualificationQuery query) {
         return safeFallback(query, null);
     }
@@ -158,6 +916,13 @@ public class UserProductSearchQualificationPlanResolver {
             GenerateUserProductSearchQualificationQuery query,
             Throwable cause
     ) {
+        Optional<UserProductSearchQualificationPlan> continuation = conservativeContinuation(query);
+        if (continuation.isPresent()) {
+            return safeFallback(categoryPolicy.enforceConservativeFallback(
+                    continuation.get(),
+                    query
+            ));
+        }
         String denialReason = categoryPolicy.conservativeFallbackDenialReason(query);
         if (denialReason != null) {
             String message = "Product-search qualification failed and no conservative category fallback was available"
@@ -210,7 +975,371 @@ public class UserProductSearchQualificationPlanResolver {
                         UserProductSearchFilterState.NOT_APPLICABLE, List.of(), none),
                 List.of()
         );
-        return safeFallback(categoryPolicy.enforce(fallback, query));
+        return safeFallback(categoryPolicy.enforceConservativeFallback(fallback, query));
+    }
+
+    private void requireSafeFallbackQuery(String effectiveQuery) {
+        if (effectiveQuery != null
+                && effectiveQuery.length() > UserProductSearchQueryLimits.MAX_SEARCH_QUERY_LENGTH) {
+            throw new OpenRouterException(
+                    "Product-search qualification fallback cannot safely preserve a request longer than "
+                            + UserProductSearchQueryLimits.MAX_SEARCH_QUERY_LENGTH
+                            + " characters; please restate the product request more concisely"
+            );
+        }
+    }
+
+    private UserProductSearchQualificationPlan priceFallbackQuestion(
+            UserProductSearchQualificationPlan plan,
+            List<UserProductSearchQuestionTarget> missing
+    ) {
+        String query = plan.effectiveQuery();
+        boolean directionalBound = directionalPriceBoundMentioned(query);
+        boolean standaloneAmount = STANDALONE_DENOMINATED_PRICE_PATTERN.matcher(query).find()
+                && !directionalBound;
+        if (directionalBound && !explicitUsdDenomination(query)) {
+            return plan.withConversation(
+                    "What currency is your price bound in? Product price filtering currently supports USD.",
+                    List.of("USD"),
+                    missing
+            );
+        }
+        if (standaloneAmount) {
+            String message = explicitUsdDenomination(query)
+                    ? "Should the stated USD amount be a minimum, a maximum, or one end of a range?"
+                    : "What currency is the stated amount in, and should it be a minimum, a maximum, "
+                            + "or one end of a range? Product price filtering currently supports USD.";
+            return plan.withConversation(message, List.of(), missing);
+        }
+        return plan.withConversation(
+                "What minimum, maximum, or price range should I use? "
+                        + "Product price filtering currently supports USD. "
+                        + "You can also say that price does not matter.",
+                List.of("Price does not matter"),
+                missing
+        );
+    }
+
+    private Optional<UserProductSearchQualificationPlan> conservativeContinuation(
+            GenerateUserProductSearchQualificationQuery query
+    ) {
+        UserProductSearchQualificationPlan previous = query.previousPlan();
+        if (previous == null
+                || !previous.currentSchema()
+                || previous.questionTargets().isEmpty()) {
+            return Optional.empty();
+        }
+        String turn = query.message().trim();
+        EnumMap<UserProductSearchQuestionTarget, DirectAnswer> answers =
+                new EnumMap<>(UserProductSearchQuestionTarget.class);
+        Set<UserProductSearchQuestionTarget> conflicts =
+                java.util.EnumSet.noneOf(UserProductSearchQuestionTarget.class);
+        List<String> clauses = answerClauses(turn);
+        for (String clause : clauses) {
+            if (!containsIndifference(clause)) {
+                continue;
+            }
+            previous.questionTargets().stream()
+                    .filter(target -> mentionsTarget(clause, target))
+                    .forEach(target -> addDirectAnswer(
+                            answers, conflicts, target, DirectAnswer.any()));
+        }
+
+        for (String clause : clauses) {
+            directSizeValue(clause)
+                    .filter(ignored -> previous.questionTargets()
+                            .contains(UserProductSearchQuestionTarget.SIZE))
+                    .ifPresent(value -> addDirectAnswer(
+                            answers,
+                            conflicts,
+                            UserProductSearchQuestionTarget.SIZE,
+                            DirectAnswer.value(value)
+                    ));
+            List<UserProductSearchQuestionTarget> locationTargets = previous.questionTargets().stream()
+                    .filter(target -> target == UserProductSearchQuestionTarget.SHIPS_TO
+                            || target == UserProductSearchQuestionTarget.SHIPS_FROM)
+                    .toList();
+            if (locationTargets.size() == 1) {
+                directCountryCode(clause).ifPresent(country -> addDirectAnswer(
+                        answers,
+                        conflicts,
+                        locationTargets.getFirst(),
+                        DirectAnswer.value(country)
+                ));
+            }
+        }
+        boolean namesAskedTarget = previous.questionTargets().stream()
+                .anyMatch(target -> mentionsTarget(turn, target));
+        if (answers.isEmpty() && conflicts.isEmpty()
+                && containsIndifference(turn)
+                && !namesAskedTarget) {
+            previous.questionTargets().forEach(target -> answers.put(target, DirectAnswer.any()));
+        }
+        if (answers.isEmpty()) {
+            return Optional.empty();
+        }
+
+        UserProductSearchQualificationPlan candidate =
+                applyDirectAnswers(previous, turn, answers);
+        Resolution resolution = resolve(candidate, query);
+        return resolution.valid() ? Optional.of(resolution.plan()) : Optional.empty();
+    }
+
+    private List<String> answerClauses(String turn) {
+        return java.util.Arrays.stream(turn.split("(?i)\\s*(?:[,;]|\\b(?:and|but|then|while)\\b)\\s*"))
+                .map(String::trim)
+                .filter(clause -> !clause.isBlank())
+                .toList();
+    }
+
+    private void addDirectAnswer(
+            EnumMap<UserProductSearchQuestionTarget, DirectAnswer> answers,
+            Set<UserProductSearchQuestionTarget> conflicts,
+            UserProductSearchQuestionTarget target,
+            DirectAnswer answer
+    ) {
+        if (conflicts.contains(target)) {
+            return;
+        }
+        DirectAnswer existing = answers.get(target);
+        if (existing != null && !existing.equals(answer)) {
+            answers.remove(target);
+            conflicts.add(target);
+            return;
+        }
+        answers.put(target, answer);
+    }
+
+    private UserProductSearchQualificationPlan applyDirectAnswers(
+            UserProductSearchQualificationPlan previous,
+            String turn,
+            EnumMap<UserProductSearchQuestionTarget, DirectAnswer> answers
+    ) {
+        UserProductSearchQualificationPlan.Provenance current =
+                new UserProductSearchQualificationPlan.Provenance(
+                        UserProductSearchDecisionSource.CURRENT_USER_TURN,
+                        turn
+                );
+        var condition = previous.condition();
+        var shipsTo = previous.shipsTo();
+        var shipsFrom = previous.shipsFrom();
+        var price = previous.price();
+        var rating = previous.rating();
+        var priceTier = previous.priceTier();
+        EnumMap<UserProductSearchAttributeName, UserProductSearchQualificationPlan.Attribute> attributes =
+                byAttributeName(previous.attributes().values());
+
+        for (var entry : answers.entrySet()) {
+            DirectAnswer answer = entry.getValue();
+            UserProductSearchFilterState state = answer.explicitAny()
+                    ? UserProductSearchFilterState.ANY
+                    : UserProductSearchFilterState.VALUE;
+            switch (entry.getKey()) {
+                case CONDITION -> condition = new UserProductSearchQualificationPlan.ConditionFilter(
+                        state,
+                        List.of(),
+                        current
+                );
+                case SHIPS_TO -> shipsTo = new UserProductSearchQualificationPlan.LocationFilter(
+                        state,
+                        answer.explicitAny()
+                                ? null
+                                : new UserProductSearchQualificationPlan.Location(
+                                        answer.value(), null, null),
+                        current
+                );
+                case SHIPS_FROM -> shipsFrom = new UserProductSearchQualificationPlan.LocationsFilter(
+                        state,
+                        answer.explicitAny()
+                                ? List.of()
+                                : List.of(new UserProductSearchQualificationPlan.Location(
+                                        answer.value(), null, null)),
+                        current
+                );
+                case PRICE -> price = new UserProductSearchQualificationPlan.PriceFilter(
+                        state,
+                        null,
+                        null,
+                        current
+                );
+                case COLOR, SIZE, TARGET_GENDER -> {
+                    UserProductSearchAttributeName name = switch (entry.getKey()) {
+                        case COLOR -> UserProductSearchAttributeName.COLOR;
+                        case SIZE -> UserProductSearchAttributeName.SIZE;
+                        case TARGET_GENDER -> UserProductSearchAttributeName.TARGET_GENDER;
+                        default -> throw new IllegalStateException("Unexpected attribute target");
+                    };
+                    attributes.put(name, new UserProductSearchQualificationPlan.Attribute(
+                            name,
+                            state,
+                            answer.explicitAny() ? List.of() : List.of(answer.value()),
+                            current
+                    ));
+                }
+                case RATING -> rating = new UserProductSearchQualificationPlan.RatingFilter(
+                        state,
+                        null,
+                        null,
+                        current
+                );
+                case PRICE_TIER -> priceTier =
+                        new UserProductSearchQualificationPlan.PriceTierFilter(
+                                state,
+                                List.of(),
+                                current
+                        );
+            }
+        }
+
+        List<UserProductSearchQualificationPlan.Attribute> attributeValues =
+                List.copyOf(attributes.values());
+        UserProductSearchFilterState attributeState = attributeValues.stream()
+                .anyMatch(attribute -> attribute.state() == UserProductSearchFilterState.MISSING)
+                ? UserProductSearchFilterState.MISSING
+                : attributeValues.stream()
+                        .anyMatch(attribute -> attribute.state() == UserProductSearchFilterState.VALUE)
+                ? UserProductSearchFilterState.VALUE
+                : attributeValues.stream()
+                        .anyMatch(attribute -> attribute.state() == UserProductSearchFilterState.ANY)
+                ? UserProductSearchFilterState.ANY
+                : UserProductSearchFilterState.NOT_APPLICABLE;
+        List<UserProductSearchQuestionTarget> remaining = previous.questionTargets().stream()
+                .filter(target -> !answers.containsKey(target))
+                .toList();
+        String assistantMessage = remaining.isEmpty()
+                ? "I have everything I need to search."
+                : "Please provide " + remaining.stream()
+                        .map(this::label)
+                        .reduce((left, right) -> left + ", " + right)
+                        .orElseThrow() + " before I search.";
+
+        return new UserProductSearchQualificationPlan(
+                previous.schemaVersion(),
+                previous.effectiveQuery(),
+                assistantMessage,
+                List.of(),
+                remaining,
+                previous.available(),
+                condition,
+                shipsTo,
+                shipsFrom,
+                price,
+                previous.shops(),
+                previous.categories(),
+                new UserProductSearchQualificationPlan.AttributesFilter(
+                        attributeState,
+                        attributeValues
+                ),
+                rating,
+                priceTier,
+                List.of()
+        );
+    }
+
+    private Optional<String> directSizeValue(String turn) {
+        String value = turn.trim();
+        if (value.regionMatches(true, 0, "size ", 0, 5)) {
+            value = value.substring(5).trim();
+        }
+        if (!value.matches(
+                "(?i)(?:x{0,4}[sl]|m|small|medium|large|extra[- ]?(?:small|large)|"
+                        + "one[- ]?size|os|osfa|\\d+x[sl]|(?:uk|us|eu)\\s*\\d{1,3}(?:\\.5)?|"
+                        + "[a-z]?\\d{1,3}(?:[./-]\\d{1,3})?[a-z]?|w\\d{1,3}(?:\\s*l\\d{1,3})?)")) {
+            return Optional.empty();
+        }
+        return Optional.of(value);
+    }
+
+    private Optional<String> directCountryCode(String turn) {
+        String value = normalize(turn);
+        for (String prefix : List.of(
+                "i am in ", "i m in ", "im in ", "i live in ", "based in ", "located in ",
+                "ship to ", "ships to ", "deliver to ", "delivery to "
+        )) {
+            if (value.startsWith(prefix)) {
+                value = value.substring(prefix.length()).trim();
+                break;
+            }
+        }
+        String alpha2 = CountryCodeNormalizer.normalizeAlpha2(value);
+        if (alpha2 != null) {
+            return Optional.of(alpha2);
+        }
+        String alias = switch (value) {
+            case "usa", "united states of america" -> "US";
+            case "uk", "great britain" -> "GB";
+            default -> null;
+        };
+        if (alias != null) {
+            return Optional.of(alias);
+        }
+        for (String countryCode : Locale.getISOCountries()) {
+            String country = new Locale.Builder()
+                    .setRegion(countryCode)
+                    .build()
+                    .getDisplayCountry(Locale.ENGLISH);
+            if (normalize(country).equals(value)) {
+                return Optional.of(countryCode);
+            }
+        }
+        return Optional.empty();
+    }
+
+    private record DirectAnswer(boolean explicitAny, String value) {
+
+        private static DirectAnswer any() {
+            return new DirectAnswer(true, null);
+        }
+
+        private static DirectAnswer value(String value) {
+            return new DirectAnswer(false, value);
+        }
+    }
+
+    private record EffectiveQueryDecisions(
+            UserProductSearchQualificationPlan.ConditionFilter condition,
+            UserProductSearchQualificationPlan.LocationFilter shipsTo,
+            UserProductSearchQualificationPlan.LocationsFilter shipsFrom,
+            UserProductSearchQualificationPlan.PriceFilter price,
+            UserProductSearchQualificationPlan.AttributesFilter attributes,
+            UserProductSearchQualificationPlan.RatingFilter rating,
+            UserProductSearchQualificationPlan.PriceTierFilter priceTier
+    ) {
+    }
+
+    private enum ActiveRequirementKind {
+        NONE,
+        VALUE,
+        ANY
+    }
+
+    private record ActiveTargetRequirement(
+            ActiveRequirementKind kind,
+            UserProductSearchDecisionSource source,
+            String evidence
+    ) {
+
+        private static ActiveTargetRequirement none() {
+            return new ActiveTargetRequirement(ActiveRequirementKind.NONE, null, null);
+        }
+
+        private UserProductSearchQualificationPlan.Provenance provenance() {
+            return new UserProductSearchQualificationPlan.Provenance(source, evidence);
+        }
+    }
+
+    private record ActiveRequirementResolution(
+            UserProductSearchQualificationPlan.ConditionFilter condition,
+            UserProductSearchQualificationPlan.LocationFilter shipsTo,
+            UserProductSearchQualificationPlan.LocationsFilter shipsFrom,
+            UserProductSearchQualificationPlan.PriceFilter price,
+            UserProductSearchQualificationPlan.AttributesFilter attributes,
+            UserProductSearchQualificationPlan.RatingFilter rating,
+            UserProductSearchQualificationPlan.PriceTierFilter priceTier
+    ) {
+    }
+
+    private record ScopedUserMessage(int index, String text) {
     }
 
     private UserProductSearchQualificationPlan.ConditionFilter condition(
@@ -306,19 +1435,21 @@ public class UserProductSearchQualificationPlanResolver {
             UserProductSearchQualificationPlan.Location location,
             UserProductSearchQualificationPlan.Provenance provenance,
             UserProductSearchQuestionTarget target,
-            GenerateUserProductSearchQualificationQuery query
+        GenerateUserProductSearchQualificationQuery query
     ) {
         if (provenance.source() == UserProductSearchDecisionSource.PROFILE) {
-            return safe(query.settings().locations()).stream().anyMatch(saved ->
-                    saved.code().equalsIgnoreCase(location.country())
-                            && java.util.Objects.equals(saved.region(), location.region())
-                            && java.util.Objects.equals(saved.postalCode(), location.postalCode()));
+            UserLocationResult primary = query.settings().location();
+            return primary != null
+                    && primary.code() != null
+                    && primary.code().equalsIgnoreCase(location.country())
+                    && java.util.Objects.equals(primary.region(), location.region())
+                    && java.util.Objects.equals(primary.postalCode(), location.postalCode());
         }
         String evidence = normalize(provenance.evidence());
         return regionMentioned(
                         provenance.evidence(),
                         evidence,
-                        rawSource(provenance.source(), target, query),
+                        rawSource(provenance, target, query),
                         location.region())
                 && optionalPhraseMentioned(evidence, location.postalCode());
     }
@@ -327,22 +1458,15 @@ public class UserProductSearchQualificationPlanResolver {
             UserProductSearchQualificationPlan.LocationFilter filter,
             UserSettingsResult settings
     ) {
-        if (filter.value() == null) {
+        UserLocationResult primary = settings.location();
+        if (filter.value() == null || primary == null || primary.code() == null) {
             return null;
         }
-        String evidence = normalize(filter.provenance().evidence());
-        List<UserLocationResult> countryMatches = safe(settings.locations()).stream()
-                .filter(location -> location.code().equalsIgnoreCase(filter.value().country()))
-                .toList();
-        if (countryMatches.size() <= 1) {
-            return countryMatches.isEmpty() ? null : countryMatches.get(0);
-        }
-        return countryMatches.stream()
-                .filter(location -> containsPhrase(evidence, normalize(location.city()))
-                        || containsPhrase(evidence, normalize(location.regionName()))
-                        || containsPhrase(evidence, normalize(location.postalCode())))
-                .findFirst()
-                .orElse(countryMatches.get(0));
+        return primary.code().equalsIgnoreCase(filter.value().country())
+                        && java.util.Objects.equals(primary.region(), filter.value().region())
+                        && java.util.Objects.equals(primary.postalCode(), filter.value().postalCode())
+                ? primary
+                : null;
     }
 
     private boolean regionMentioned(
@@ -372,6 +1496,23 @@ public class UserProductSearchQualificationPlanResolver {
             GenerateUserProductSearchQualificationQuery query,
             List<String> violations
     ) {
+        if (filter.state() == UserProductSearchFilterState.VALUE
+                && !explicitUsdDenomination(filter.provenance().evidence())) {
+            violations.add("PRICE VALUE requires an explicit USD denomination");
+            return missingPrice();
+        }
+        if (filter.state() == UserProductSearchFilterState.VALUE
+                && !priceBoundsMatchEvidence(filter, query)) {
+            violations.add("PRICE typed bounds do not match the buyer's grounded bound direction and values");
+            return missingPrice();
+        }
+        if (filter.state() == UserProductSearchFilterState.NOT_APPLICABLE
+                && hasPriceBound(query)) {
+            violations.add(hasCurrencyAmbiguousPriceBound(query)
+                    ? "PRICE cannot be irrelevant while a currency-ambiguous bound is present"
+                    : "PRICE cannot be irrelevant while an explicit USD bound is present");
+            return missingPrice();
+        }
         List<String> values = new ArrayList<>();
         if (filter.minUsdMinor() != null) {
             values.add(usdMajor(filter.minUsdMinor()));
@@ -386,6 +1527,124 @@ public class UserProductSearchQualificationPlanResolver {
         return new UserProductSearchQualificationPlan.PriceFilter(
                 UserProductSearchFilterState.MISSING, null, null,
                 UserProductSearchQualificationPlan.Provenance.none());
+    }
+
+    private boolean hasCurrencyAmbiguousPriceBound(GenerateUserProductSearchQualificationQuery query) {
+        return priceConstraintSources(query).stream()
+                .anyMatch(source -> priceExpressionMentioned(source)
+                        && !explicitUsdDenomination(source));
+    }
+
+    private boolean hasPriceBound(GenerateUserProductSearchQualificationQuery query) {
+        return priceConstraintSources(query).stream()
+                .anyMatch(this::priceExpressionMentioned);
+    }
+
+    private List<String> priceConstraintSources(GenerateUserProductSearchQualificationQuery query) {
+        return java.util.stream.Stream.of(query.originalQuery(), query.message())
+                .filter(source -> source != null && !source.isBlank())
+                .distinct()
+                .toList();
+    }
+
+    private boolean priceExpressionMentioned(String source) {
+        return directionalPriceBoundMentioned(source)
+                || STANDALONE_DENOMINATED_PRICE_PATTERN.matcher(source).find();
+    }
+
+    private boolean directionalPriceBoundMentioned(String source) {
+        if (PRICE_MIN_PATTERN.matcher(source).find() || PRICE_MAX_PATTERN.matcher(source).find()) {
+            return true;
+        }
+        java.util.regex.Matcher range = PRICE_RANGE_PATTERN.matcher(source);
+        while (range.find()) {
+            String expression = range.group();
+            if (normalize(expression).startsWith("between")
+                    || PRICE_CONTEXT_PATTERN.matcher(expression).find()) {
+                return true;
+            }
+            int contextStart = Math.max(0, range.start() - 24);
+            int contextEnd = Math.min(source.length(), range.end() + 24);
+            if (PRICE_CONTEXT_PATTERN.matcher(source.substring(contextStart, contextEnd)).find()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean explicitUsdDenomination(String value) {
+        return value != null && EXPLICIT_USD_DENOMINATION_PATTERN.matcher(value).find();
+    }
+
+    private boolean priceBoundsMatchEvidence(
+            UserProductSearchQualificationPlan.PriceFilter filter,
+            GenerateUserProductSearchQualificationQuery query
+    ) {
+        UserProductSearchQualificationPlan.Provenance provenance = filter.provenance();
+        String source = rawSource(provenance, UserProductSearchQuestionTarget.PRICE, query);
+        if (provenance.source() == UserProductSearchDecisionSource.CONVERSATION
+                && priceConstraintSources(query).stream()
+                .noneMatch(candidate -> normalize(candidate).equals(normalize(source)))) {
+            return false;
+        }
+        PriceBounds grounded = parsePriceBounds(source);
+        if (grounded == null
+                && provenance.source() == UserProductSearchDecisionSource.CURRENT_USER_TURN
+                && explicitUsdDenomination(provenance.evidence())
+                && query.previousPlan() != null
+                && query.previousPlan().questionTargets()
+                .contains(UserProductSearchQuestionTarget.PRICE)) {
+            List<String> sources = priceConstraintSources(query);
+            for (int index = sources.size() - 1; index >= 0 && grounded == null; index--) {
+                grounded = parsePriceBounds(sources.get(index));
+            }
+        }
+        return grounded != null
+                && minorUnitsMatch(filter.minUsdMinor(), grounded.min())
+                && minorUnitsMatch(filter.maxUsdMinor(), grounded.max());
+    }
+
+    private PriceBounds parsePriceBounds(String source) {
+        if (source == null || source.isBlank()) {
+            return null;
+        }
+        java.util.regex.Matcher range = PRICE_RANGE_PATTERN.matcher(source);
+        if (range.find()) {
+            BigDecimal min = parseNumber(range.group("min"));
+            BigDecimal max = parseNumber(range.group("max"));
+            return min == null || max == null || min.compareTo(max) > 0
+                    ? null
+                    : new PriceBounds(min, max);
+        }
+        BigDecimal min = lastPriceAmount(PRICE_MIN_PATTERN, source);
+        BigDecimal max = lastPriceAmount(PRICE_MAX_PATTERN, source);
+        return min == null && max == null ? null : new PriceBounds(min, max);
+    }
+
+    private BigDecimal lastPriceAmount(Pattern pattern, String source) {
+        java.util.regex.Matcher matcher = pattern.matcher(source);
+        BigDecimal amount = null;
+        while (matcher.find()) {
+            amount = parseNumber(matcher.group("amount"));
+        }
+        return amount;
+    }
+
+    private boolean minorUnitsMatch(Long actualMinor, BigDecimal expectedMajor) {
+        if (actualMinor == null || expectedMajor == null) {
+            return actualMinor == null && expectedMajor == null;
+        }
+        return BigDecimal.valueOf(actualMinor, 2)
+                .compareTo(expectedMajor) == 0;
+    }
+
+    private UserProductSearchQualificationPlan.PriceFilter missingPrice() {
+        return new UserProductSearchQualificationPlan.PriceFilter(
+                UserProductSearchFilterState.MISSING,
+                null,
+                null,
+                UserProductSearchQualificationPlan.Provenance.none()
+        );
     }
 
     private UserProductSearchQualificationPlan.RatingFilter rating(
@@ -442,6 +1701,7 @@ public class UserProductSearchQualificationPlanResolver {
         List<UserProductSearchQualificationPlan.Attribute> resolved = new ArrayList<>();
         for (UserProductSearchAttributeName name : UserProductSearchAttributeName.values()) {
             UserProductSearchQualificationPlan.Attribute current = currentByName.get(name);
+            UserProductSearchQualificationPlan.Attribute previousAttribute = previousByName.get(name);
             if (current == null) {
                 violations.add("attributes must contain one decision for " + name);
                 current = new UserProductSearchQualificationPlan.Attribute(
@@ -450,6 +1710,10 @@ public class UserProductSearchQualificationPlanResolver {
                         List.of(),
                         UserProductSearchQualificationPlan.Provenance.none()
                 );
+            }
+            if (unchanged(previousAttribute, current)) {
+                resolved.add(previousAttribute);
+                continue;
             }
             UserProductSearchQuestionTarget target = target(name);
             if (!validResolution(current.state(), current.provenance(), target, current.values(), query, violations)) {
@@ -461,7 +1725,7 @@ public class UserProductSearchQualificationPlanResolver {
                 );
             }
             resolved.add(merge(
-                    previousByName.get(name),
+                    previousAttribute,
                     current,
                     UserProductSearchQualificationPlan.Attribute::state,
                     UserProductSearchQualificationPlan.Attribute::provenance
@@ -476,6 +1740,431 @@ public class UserProductSearchQualificationPlanResolver {
                 ? UserProductSearchFilterState.ANY
                 : UserProductSearchFilterState.NOT_APPLICABLE;
         return new UserProductSearchQualificationPlan.AttributesFilter(groupState, resolved);
+    }
+
+    private ActiveRequirementResolution enforceActiveRequestRequirements(
+            UserProductSearchQualificationPlan.ConditionFilter condition,
+            UserProductSearchQualificationPlan.LocationFilter shipsTo,
+            UserProductSearchQualificationPlan.LocationsFilter shipsFrom,
+            UserProductSearchQualificationPlan.PriceFilter price,
+            UserProductSearchQualificationPlan.AttributesFilter attributes,
+            UserProductSearchQualificationPlan.RatingFilter rating,
+            UserProductSearchQualificationPlan.PriceTierFilter priceTier,
+            GenerateUserProductSearchQualificationQuery query,
+            List<String> violations
+    ) {
+        ActiveTargetRequirement conditionRequirement =
+                activeTargetRequirement(UserProductSearchQuestionTarget.CONDITION, query);
+        ActiveTargetRequirement shipsToRequirement =
+                activeTargetRequirement(UserProductSearchQuestionTarget.SHIPS_TO, query);
+        ActiveTargetRequirement shipsFromRequirement =
+                activeTargetRequirement(UserProductSearchQuestionTarget.SHIPS_FROM, query);
+        ActiveTargetRequirement priceRequirement =
+                activeTargetRequirement(UserProductSearchQuestionTarget.PRICE, query);
+        ActiveTargetRequirement colorRequirement =
+                activeTargetRequirement(UserProductSearchQuestionTarget.COLOR, query);
+        ActiveTargetRequirement sizeRequirement =
+                activeTargetRequirement(UserProductSearchQuestionTarget.SIZE, query);
+        ActiveTargetRequirement genderRequirement =
+                activeTargetRequirement(UserProductSearchQuestionTarget.TARGET_GENDER, query);
+        ActiveTargetRequirement ratingRequirement =
+                activeTargetRequirement(UserProductSearchQuestionTarget.RATING, query);
+        ActiveTargetRequirement priceTierRequirement =
+                activeTargetRequirement(UserProductSearchQuestionTarget.PRICE_TIER, query);
+
+        condition = switch (conditionRequirement.kind()) {
+            case ANY -> new UserProductSearchQualificationPlan.ConditionFilter(
+                    UserProductSearchFilterState.ANY,
+                    List.of(),
+                    conditionRequirement.provenance()
+            );
+            case VALUE -> activeValueAccepted(
+                    condition.state(), condition.provenance(), conditionRequirement, query)
+                    ? condition
+                    : missingConditionForActiveRequest(
+                            UserProductSearchQuestionTarget.CONDITION, condition.state(), violations);
+            case NONE -> condition;
+        };
+        shipsTo = switch (shipsToRequirement.kind()) {
+            case ANY -> new UserProductSearchQualificationPlan.LocationFilter(
+                    UserProductSearchFilterState.ANY,
+                    null,
+                    shipsToRequirement.provenance()
+            );
+            case VALUE -> activeValueAccepted(
+                    shipsTo.state(), shipsTo.provenance(), shipsToRequirement, query)
+                    ? shipsTo
+                    : missingShipsToForActiveRequest(shipsTo.state(), violations);
+            case NONE -> shipsTo;
+        };
+        shipsFrom = switch (shipsFromRequirement.kind()) {
+            case ANY -> new UserProductSearchQualificationPlan.LocationsFilter(
+                    UserProductSearchFilterState.ANY,
+                    List.of(),
+                    shipsFromRequirement.provenance()
+            );
+            case VALUE -> activeValueAccepted(
+                    shipsFrom.state(), shipsFrom.provenance(), shipsFromRequirement, query)
+                    ? shipsFrom
+                    : missingShipsFromForActiveRequest(shipsFrom.state(), violations);
+            case NONE -> shipsFrom;
+        };
+        price = switch (priceRequirement.kind()) {
+            case ANY -> new UserProductSearchQualificationPlan.PriceFilter(
+                    UserProductSearchFilterState.ANY,
+                    null,
+                    null,
+                    priceRequirement.provenance()
+            );
+            case VALUE -> activeValueAccepted(
+                    price.state(), price.provenance(), priceRequirement, query)
+                    ? price
+                    : missingPriceForActiveRequest(price.state(), violations);
+            case NONE -> price;
+        };
+        rating = switch (ratingRequirement.kind()) {
+            case ANY -> new UserProductSearchQualificationPlan.RatingFilter(
+                    UserProductSearchFilterState.ANY,
+                    null,
+                    null,
+                    ratingRequirement.provenance()
+            );
+            case VALUE -> activeValueAccepted(
+                    rating.state(), rating.provenance(), ratingRequirement, query)
+                    ? rating
+                    : missingRatingForActiveRequest(rating.state(), violations);
+            case NONE -> rating;
+        };
+        priceTier = switch (priceTierRequirement.kind()) {
+            case ANY -> new UserProductSearchQualificationPlan.PriceTierFilter(
+                    UserProductSearchFilterState.ANY,
+                    List.of(),
+                    priceTierRequirement.provenance()
+            );
+            case VALUE -> activeValueAccepted(
+                    priceTier.state(), priceTier.provenance(), priceTierRequirement, query)
+                    ? priceTier
+                    : missingPriceTierForActiveRequest(priceTier.state(), violations);
+            case NONE -> priceTier;
+        };
+
+        EnumMap<UserProductSearchAttributeName, UserProductSearchQualificationPlan.Attribute> byName =
+                byAttributeName(attributes.values());
+        enforceActiveAttribute(
+                byName,
+                UserProductSearchAttributeName.COLOR,
+                UserProductSearchQuestionTarget.COLOR,
+                colorRequirement,
+                query,
+                violations
+        );
+        enforceActiveAttribute(
+                byName,
+                UserProductSearchAttributeName.SIZE,
+                UserProductSearchQuestionTarget.SIZE,
+                sizeRequirement,
+                query,
+                violations
+        );
+        enforceActiveAttribute(
+                byName,
+                UserProductSearchAttributeName.TARGET_GENDER,
+                UserProductSearchQuestionTarget.TARGET_GENDER,
+                genderRequirement,
+                query,
+                violations
+        );
+        List<UserProductSearchQualificationPlan.Attribute> attributeValues =
+                java.util.Arrays.stream(UserProductSearchAttributeName.values())
+                        .map(byName::get)
+                        .toList();
+        attributes = new UserProductSearchQualificationPlan.AttributesFilter(
+                attributeGroupState(attributeValues),
+                attributeValues
+        );
+        return new ActiveRequirementResolution(
+                condition,
+                shipsTo,
+                shipsFrom,
+                price,
+                attributes,
+                rating,
+                priceTier
+        );
+    }
+
+    private void enforceActiveAttribute(
+            EnumMap<UserProductSearchAttributeName, UserProductSearchQualificationPlan.Attribute> byName,
+            UserProductSearchAttributeName name,
+            UserProductSearchQuestionTarget target,
+            ActiveTargetRequirement requirement,
+            GenerateUserProductSearchQualificationQuery query,
+            List<String> violations
+    ) {
+        UserProductSearchQualificationPlan.Attribute attribute = byName.get(name);
+        if (requirement.kind() == ActiveRequirementKind.ANY) {
+            byName.put(name, new UserProductSearchQualificationPlan.Attribute(
+                    name,
+                    UserProductSearchFilterState.ANY,
+                    List.of(),
+                    requirement.provenance()
+            ));
+        } else if (requirement.kind() == ActiveRequirementKind.VALUE
+                && !activeValueAccepted(attribute.state(), attribute.provenance(), requirement, query)) {
+            addDroppedActiveConstraintViolation(target, attribute.state(), violations);
+            byName.put(name, new UserProductSearchQualificationPlan.Attribute(
+                    name,
+                    UserProductSearchFilterState.MISSING,
+                    List.of(),
+                    UserProductSearchQualificationPlan.Provenance.none()
+            ));
+        }
+    }
+
+    private boolean activeValueAccepted(
+            UserProductSearchFilterState state,
+            UserProductSearchQualificationPlan.Provenance provenance,
+            ActiveTargetRequirement requirement,
+            GenerateUserProductSearchQualificationQuery query
+    ) {
+        if (state == UserProductSearchFilterState.MISSING) {
+            return true;
+        }
+        if (state != UserProductSearchFilterState.VALUE || provenance == null) {
+            return false;
+        }
+        if (requirement.source() == UserProductSearchDecisionSource.CURRENT_USER_TURN) {
+            return provenance.source() == UserProductSearchDecisionSource.CURRENT_USER_TURN;
+        }
+        return provenance.source() == UserProductSearchDecisionSource.ORIGINAL_QUERY
+                || normalize(query.originalQuery()).equals(normalize(query.message()))
+                && provenance.source() == UserProductSearchDecisionSource.CURRENT_USER_TURN;
+    }
+
+    private UserProductSearchQualificationPlan.ConditionFilter missingConditionForActiveRequest(
+            UserProductSearchQuestionTarget target,
+            UserProductSearchFilterState state,
+            List<String> violations
+    ) {
+        addDroppedActiveConstraintViolation(target, state, violations);
+        return new UserProductSearchQualificationPlan.ConditionFilter(
+                UserProductSearchFilterState.MISSING,
+                List.of(),
+                UserProductSearchQualificationPlan.Provenance.none()
+        );
+    }
+
+    private UserProductSearchQualificationPlan.LocationFilter missingShipsToForActiveRequest(
+            UserProductSearchFilterState state,
+            List<String> violations
+    ) {
+        addDroppedActiveConstraintViolation(UserProductSearchQuestionTarget.SHIPS_TO, state, violations);
+        return new UserProductSearchQualificationPlan.LocationFilter(
+                UserProductSearchFilterState.MISSING,
+                null,
+                UserProductSearchQualificationPlan.Provenance.none()
+        );
+    }
+
+    private UserProductSearchQualificationPlan.LocationsFilter missingShipsFromForActiveRequest(
+            UserProductSearchFilterState state,
+            List<String> violations
+    ) {
+        addDroppedActiveConstraintViolation(UserProductSearchQuestionTarget.SHIPS_FROM, state, violations);
+        return new UserProductSearchQualificationPlan.LocationsFilter(
+                UserProductSearchFilterState.MISSING,
+                List.of(),
+                UserProductSearchQualificationPlan.Provenance.none()
+        );
+    }
+
+    private UserProductSearchQualificationPlan.PriceFilter missingPriceForActiveRequest(
+            UserProductSearchFilterState state,
+            List<String> violations
+    ) {
+        addDroppedActiveConstraintViolation(UserProductSearchQuestionTarget.PRICE, state, violations);
+        return missingPrice();
+    }
+
+    private UserProductSearchQualificationPlan.RatingFilter missingRatingForActiveRequest(
+            UserProductSearchFilterState state,
+            List<String> violations
+    ) {
+        addDroppedActiveConstraintViolation(UserProductSearchQuestionTarget.RATING, state, violations);
+        return new UserProductSearchQualificationPlan.RatingFilter(
+                UserProductSearchFilterState.MISSING,
+                null,
+                null,
+                UserProductSearchQualificationPlan.Provenance.none()
+        );
+    }
+
+    private UserProductSearchQualificationPlan.PriceTierFilter missingPriceTierForActiveRequest(
+            UserProductSearchFilterState state,
+            List<String> violations
+    ) {
+        addDroppedActiveConstraintViolation(UserProductSearchQuestionTarget.PRICE_TIER, state, violations);
+        return new UserProductSearchQualificationPlan.PriceTierFilter(
+                UserProductSearchFilterState.MISSING,
+                List.of(),
+                UserProductSearchQualificationPlan.Provenance.none()
+        );
+    }
+
+    private void addDroppedActiveConstraintViolation(
+            UserProductSearchQuestionTarget target,
+            UserProductSearchFilterState state,
+            List<String> violations
+    ) {
+        if (state != UserProductSearchFilterState.MISSING) {
+            violations.add(target + " cannot drop or override an explicit active-request decision");
+        }
+    }
+
+    private UserProductSearchFilterState attributeGroupState(
+            List<UserProductSearchQualificationPlan.Attribute> attributes
+    ) {
+        return attributes.stream().anyMatch(attribute -> attribute.state() == UserProductSearchFilterState.MISSING)
+                ? UserProductSearchFilterState.MISSING
+                : attributes.stream().anyMatch(attribute -> attribute.state() == UserProductSearchFilterState.VALUE)
+                ? UserProductSearchFilterState.VALUE
+                : attributes.stream().anyMatch(attribute -> attribute.state() == UserProductSearchFilterState.ANY)
+                ? UserProductSearchFilterState.ANY
+                : UserProductSearchFilterState.NOT_APPLICABLE;
+    }
+
+    private ActiveTargetRequirement activeTargetRequirement(
+            UserProductSearchQuestionTarget target,
+            GenerateUserProductSearchQualificationQuery query
+    ) {
+        if (!normalize(query.message()).equals(normalize(query.originalQuery()))
+                && currentTurnBelongsToActiveProduct(query)) {
+            ActiveTargetRequirement current = targetRequirement(
+                    target,
+                    query.message(),
+                    UserProductSearchDecisionSource.CURRENT_USER_TURN,
+                    query
+            );
+            if (current.kind() != ActiveRequirementKind.NONE) {
+                return current;
+            }
+        }
+        if (currentTurnBelongsToActiveProduct(query)
+                && previousBuyerCorrection(target, query.previousPlan())) {
+            return ActiveTargetRequirement.none();
+        }
+        return targetRequirement(
+                target,
+                query.originalQuery(),
+                UserProductSearchDecisionSource.ORIGINAL_QUERY,
+                query
+        );
+    }
+
+    private boolean previousBuyerCorrection(
+            UserProductSearchQuestionTarget target,
+            UserProductSearchQualificationPlan previous
+    ) {
+        if (previous == null || !previous.currentSchema()) {
+            return false;
+        }
+        return switch (target) {
+            case CONDITION -> buyerCorrection(previous.condition().state(), previous.condition().provenance());
+            case SHIPS_TO -> buyerCorrection(previous.shipsTo().state(), previous.shipsTo().provenance());
+            case SHIPS_FROM -> buyerCorrection(previous.shipsFrom().state(), previous.shipsFrom().provenance());
+            case PRICE -> buyerCorrection(previous.price().state(), previous.price().provenance());
+            case COLOR -> buyerAttributeCorrection(previous, UserProductSearchAttributeName.COLOR);
+            case SIZE -> buyerAttributeCorrection(previous, UserProductSearchAttributeName.SIZE);
+            case TARGET_GENDER -> buyerAttributeCorrection(previous, UserProductSearchAttributeName.TARGET_GENDER);
+            case RATING -> buyerCorrection(previous.rating().state(), previous.rating().provenance());
+            case PRICE_TIER -> buyerCorrection(previous.priceTier().state(), previous.priceTier().provenance());
+        };
+    }
+
+    private boolean buyerAttributeCorrection(
+            UserProductSearchQualificationPlan previous,
+            UserProductSearchAttributeName name
+    ) {
+        return previous.attributes().values().stream()
+                .filter(attribute -> attribute.name() == name)
+                .findFirst()
+                .map(attribute -> buyerCorrection(attribute.state(), attribute.provenance()))
+                .orElse(false);
+    }
+
+    private boolean buyerCorrection(
+            UserProductSearchFilterState state,
+            UserProductSearchQualificationPlan.Provenance provenance
+    ) {
+        return resolved(state)
+                && provenance != null
+                && provenance.evidence() != null
+                && !provenance.evidence().isBlank()
+                && (provenance.source() == UserProductSearchDecisionSource.CURRENT_USER_TURN
+                || provenance.source() == UserProductSearchDecisionSource.CONVERSATION);
+    }
+
+    private ActiveTargetRequirement targetRequirement(
+            UserProductSearchQuestionTarget target,
+            String source,
+            UserProductSearchDecisionSource decisionSource,
+            GenerateUserProductSearchQualificationQuery query
+    ) {
+        UserProductSearchQualificationPlan.Provenance provenance =
+                new UserProductSearchQualificationPlan.Provenance(decisionSource, source);
+        if (explicitIndifference(provenance, target, query.previousPlan())
+                || target == UserProductSearchQuestionTarget.SHIPS_TO
+                && LOCATION_ANYWHERE_QUERY_PATTERN.matcher(source).find()) {
+            return new ActiveTargetRequirement(ActiveRequirementKind.ANY, decisionSource, source);
+        }
+        return activeValueMentioned(target, source, decisionSource, query)
+                ? new ActiveTargetRequirement(ActiveRequirementKind.VALUE, decisionSource, source)
+                : ActiveTargetRequirement.none();
+    }
+
+    private boolean activeValueMentioned(
+            UserProductSearchQuestionTarget target,
+            String source,
+            UserProductSearchDecisionSource decisionSource,
+            GenerateUserProductSearchQualificationQuery query
+    ) {
+        boolean currentAnswer = decisionSource == UserProductSearchDecisionSource.CURRENT_USER_TURN
+                && query.previousPlan() != null
+                && query.previousPlan().questionTargets().contains(target);
+        return switch (target) {
+            case CONDITION -> CONDITION_CONSTRAINT_PATTERN.matcher(source).find();
+            case SHIPS_TO -> SHIPS_TO_QUERY_PATTERN.matcher(source).find()
+                    || currentAnswer && directLocationAnswerTargets(target, query)
+                    && directCountryCode(source).isPresent();
+            case SHIPS_FROM -> SHIPS_FROM_QUERY_PATTERN.matcher(source).find()
+                    || currentAnswer && directLocationAnswerTargets(target, query)
+                    && directCountryCode(source).isPresent();
+            case PRICE -> priceExpressionMentioned(source)
+                    || currentAnswer && (source.matches("(?iu).*\\d.*")
+                    || explicitUsdDenomination(source));
+            case COLOR -> COLOR_CONSTRAINT_PATTERN.matcher(source).find();
+            case SIZE -> SIZE_CONSTRAINT_PATTERN.matcher(source).find()
+                    || currentAnswer && directSizeValue(source).isPresent();
+            case TARGET_GENDER -> TARGET_GENDER_CONSTRAINT_PATTERN.matcher(source).find();
+            case RATING -> RATING_QUERY_PATTERN.matcher(source).find()
+                    || currentAnswer && source.matches("(?iu).*\\d.*");
+            case PRICE_TIER -> PRICE_TIER_CONSTRAINT_PATTERN.matcher(source).find()
+                    || currentAnswer && normalize(source).matches("low|medium|high");
+        };
+    }
+
+    private boolean directLocationAnswerTargets(
+            UserProductSearchQuestionTarget target,
+            GenerateUserProductSearchQualificationQuery query
+    ) {
+        return query.previousPlan().questionTargets().stream()
+                .filter(asked -> asked == UserProductSearchQuestionTarget.SHIPS_TO
+                        || asked == UserProductSearchQuestionTarget.SHIPS_FROM)
+                .allMatch(asked -> asked == target);
+    }
+
+    private boolean unchanged(Object previous, Object candidate) {
+        return previous != null && previous.equals(candidate);
     }
 
     private EnumMap<UserProductSearchAttributeName, UserProductSearchQualificationPlan.Attribute> byAttributeName(
@@ -514,7 +2203,8 @@ public class UserProductSearchQualificationPlanResolver {
         }
         if (state == UserProductSearchFilterState.ANY
                 && provenance.source() != UserProductSearchDecisionSource.ORIGINAL_QUERY
-                && provenance.source() != UserProductSearchDecisionSource.CURRENT_USER_TURN) {
+                && provenance.source() != UserProductSearchDecisionSource.CURRENT_USER_TURN
+                && provenance.source() != UserProductSearchDecisionSource.CONVERSATION) {
             violations.add(target + " ANY must come from an explicit user turn");
             return false;
         }
@@ -533,13 +2223,13 @@ public class UserProductSearchQualificationPlanResolver {
             violations.add(target + " VALUE cannot be inferred from a generic affirmation");
             return false;
         }
+        if (!evidenceMatches(provenance, target, values, query)) {
+            violations.add(target + " provenance evidence does not match its claimed source");
+            return false;
+        }
         if (state == UserProductSearchFilterState.VALUE
                 && !valuesMatchEvidence(target, values, provenance, query)) {
             violations.add(target + " provenance evidence does not support its typed value");
-            return false;
-        }
-        if (!evidenceMatches(provenance, target, values, query)) {
-            violations.add(target + " provenance evidence does not match its claimed source");
             return false;
         }
         return true;
@@ -557,7 +2247,9 @@ public class UserProductSearchQualificationPlanResolver {
         }
         return switch (provenance.source()) {
             case ORIGINAL_QUERY -> containsNormalized(query.originalQuery(), evidence);
-            case CURRENT_USER_TURN -> containsNormalized(query.message(), evidence);
+            case CURRENT_USER_TURN -> currentTurnBelongsToActiveProduct(query)
+                    && containsNormalized(query.message(), evidence);
+            case CONVERSATION -> priorUserConversationSource(query, evidence) != null;
             case PROFILE -> containsNormalized(profileContext(query.settings(), target), evidence);
             case DURABLE_PREFERENCE -> target == UserProductSearchQuestionTarget.SIZE
                     && containsNormalized(durableContext(
@@ -573,7 +2265,8 @@ public class UserProductSearchQualificationPlanResolver {
             UserProductSearchQuestionTarget target,
             UserProductSearchQualificationPlan previous
     ) {
-        String evidence = normalize(provenance.evidence());
+        String rawEvidence = provenance.evidence() == null ? "" : provenance.evidence();
+        String evidence = normalize(rawEvidence);
         if (isAffirmation(evidence)) {
             return previous != null
                     && previous.questionTargets().size() == 1
@@ -583,14 +2276,18 @@ public class UserProductSearchQualificationPlanResolver {
         if (!containsIndifference(evidence)) {
             return false;
         }
-        if (mentionsTarget(evidence, target)) {
+        boolean targetSpecificIndifference = answerClauses(rawEvidence).stream()
+                .anyMatch(clause -> containsIndifference(clause) && mentionsTarget(clause, target));
+        if (targetSpecificIndifference) {
             return true;
         }
         if (previous == null || !previous.questionTargets().contains(target)
                 || provenance.source() != UserProductSearchDecisionSource.CURRENT_USER_TURN) {
             return false;
         }
-        return previous.questionTargets().size() == 1 || appliesToAll(evidence);
+        boolean namesAnAskedTarget = previous.questionTargets().stream()
+                .anyMatch(asked -> mentionsTarget(evidence, asked));
+        return !namesAnAskedTarget || appliesToAll(evidence);
     }
 
     private String profileContext(UserSettingsResult settings, UserProductSearchQuestionTarget target) {
@@ -598,14 +2295,15 @@ public class UserProductSearchQualificationPlanResolver {
         if (target == UserProductSearchQuestionTarget.TARGET_GENDER) {
             values.add(settings.clothingFit());
         } else if (target == UserProductSearchQuestionTarget.SHIPS_TO) {
-            safe(settings.locations()).forEach(location -> {
+            UserLocationResult location = settings.location();
+            if (location != null) {
                 values.add(location.country());
                 values.add(location.code());
                 values.add(location.region());
                 values.add(location.postalCode());
                 values.add(location.regionName());
                 values.add(location.city());
-            });
+            }
         }
         return String.join(" ", values.stream().filter(java.util.Objects::nonNull).toList());
     }
@@ -733,7 +2431,7 @@ public class UserProductSearchQualificationPlanResolver {
             case CONDITION -> "condition";
             case SHIPS_TO -> "delivery destination";
             case SHIPS_FROM -> "shipping origin";
-            case PRICE -> "price";
+            case PRICE -> "price and currency (USD is currently supported)";
             case COLOR -> "color";
             case SIZE -> "size";
             case TARGET_GENDER -> "target gender";
@@ -754,7 +2452,6 @@ public class UserProductSearchQualificationPlanResolver {
     ) {
         String evidence = provenance.evidence();
         String normalizedEvidence = normalize(evidence);
-        String rawSource = rawSource(provenance.source(), target, query);
         return values.stream().allMatch(value -> switch (target) {
             case CONDITION -> conditionMentioned(normalizedEvidence, value);
             case SHIPS_TO, SHIPS_FROM -> targetBoundLocationMentioned(target, value, provenance, query);
@@ -769,7 +2466,7 @@ public class UserProductSearchQualificationPlanResolver {
 
     private boolean conditionMentioned(String evidence, String value) {
         return switch (value) {
-            case "NEW" -> containsPhrase(evidence, "new");
+            case "NEW" -> NEW_CONDITION_PATTERN.matcher(evidence).find();
             case "SECONDHAND" -> List.of("secondhand", "second hand", "used", "preowned", "pre owned")
                     .stream()
                     .anyMatch(alias -> containsPhrase(evidence, alias));
@@ -792,11 +2489,14 @@ public class UserProductSearchQualificationPlanResolver {
                 .setRegion(countryCode)
                 .build()
                 .getDisplayCountry(Locale.ENGLISH));
+        boolean directAskedCode = source == UserProductSearchDecisionSource.CURRENT_USER_TURN
+                && normalize(rawSource).equals(normalize(countryCode))
+                && normalize(evidence).equals(normalize(countryCode));
         boolean codeMentioned = source == UserProductSearchDecisionSource.PROFILE
                 ? containsPhrase(normalizedEvidence, normalize(countryCode))
                 : containsUppercaseCode(evidence, countryCode)
                         && containsUppercaseCode(rawSource, countryCode);
-        if (codeMentioned || containsPhrase(normalizedEvidence, displayName)) {
+        if (directAskedCode || codeMentioned || containsPhrase(normalizedEvidence, displayName)) {
             return true;
         }
         return switch (countryCode) {
@@ -815,7 +2515,7 @@ public class UserProductSearchQualificationPlanResolver {
             GenerateUserProductSearchQualificationQuery query
     ) {
         String evidence = provenance.evidence();
-        String sourceText = rawSource(provenance.source(), target, query);
+        String sourceText = rawSource(provenance, target, query);
         if (!countryMentioned(
                 evidence, normalize(evidence), sourceText, value, provenance.source())) {
             return false;
@@ -825,8 +2525,11 @@ public class UserProductSearchQualificationPlanResolver {
         }
         if (provenance.source() == UserProductSearchDecisionSource.CURRENT_USER_TURN
                 && query.previousPlan() != null
-                && query.previousPlan().questionTargets().size() == 1
-                && query.previousPlan().questionTargets().getFirst() == target) {
+                && query.previousPlan().questionTargets().contains(target)
+                && query.previousPlan().questionTargets().stream()
+                        .filter(asked -> asked == UserProductSearchQuestionTarget.SHIPS_TO
+                                || asked == UserProductSearchQuestionTarget.SHIPS_FROM)
+                        .allMatch(asked -> asked == target)) {
             return true;
         }
         return locationRelationMentioned(sourceText, target, value);
@@ -846,7 +2549,10 @@ public class UserProductSearchQualificationPlanResolver {
                                 + "|\\borigin(?:ating)?\\s+from\\b|\\bfrom\\b")
                 : java.util.regex.Pattern.compile(
                         "(?i)\\b(?:ships?|shipped|shipping|deliver|delivered|delivery|send|sent)"
-                                + "\\s+(?:it\\s+)?to\\b|\\bto\\b");
+                                + "\\s+(?:it\\s+)?to\\b|\\bto\\b"
+                                + "|\\b(?:based|located)\\s+in\\b"
+                                + "|\\bi\\s+(?:am|live)\\s+in\\b"
+                                + "|\\bi['’]m\\s+in\\b");
         java.util.regex.Matcher matcher = marker.matcher(source);
         while (matcher.find()) {
             int end = Math.min(source.length(), matcher.end() + 80);
@@ -867,17 +2573,167 @@ public class UserProductSearchQualificationPlanResolver {
     }
 
     private String rawSource(
-            UserProductSearchDecisionSource source,
+            UserProductSearchQualificationPlan.Provenance provenance,
             UserProductSearchQuestionTarget target,
             GenerateUserProductSearchQualificationQuery query
     ) {
-        return switch (source) {
+        return switch (provenance.source()) {
             case ORIGINAL_QUERY -> query.originalQuery();
             case CURRENT_USER_TURN -> query.message();
+            case CONVERSATION -> priorUserConversationSource(query, provenance.evidence());
             case PROFILE -> profileContext(query.settings(), target);
             case DURABLE_PREFERENCE -> durableContext(query.durablePreferences(), query.originalQuery());
             case NONE, SYSTEM_POLICY -> "";
         };
+    }
+
+    private String priorUserConversationSource(
+            GenerateUserProductSearchQualificationQuery query,
+            String evidence
+    ) {
+        String normalizedEvidence = normalize(evidence);
+        if (normalizedEvidence.isBlank()) {
+            return null;
+        }
+        int currentMessageIndex = currentTranscriptMessageIndex(query);
+        for (ScopedUserMessage message : activeUserConversationMessages(query)) {
+            if (message.index() != currentMessageIndex
+                    && containsNormalized(message.text(), normalizedEvidence)) {
+                return message.text();
+            }
+        }
+        return null;
+    }
+
+    private boolean currentTurnBelongsToActiveProduct(
+            GenerateUserProductSearchQualificationQuery query
+    ) {
+        Optional<UserProductSearchCategoryPolicy.ProductSubject> active =
+                explicitProductSubject(query.originalQuery());
+        Optional<UserProductSearchCategoryPolicy.ProductSubject> current =
+                explicitProductSubject(query.message());
+        return active.isEmpty()
+                || current.isEmpty()
+                || mentionsProductFamily(query.message(), active.get())
+                || !establishesProductTopic(query.message())
+                || sameProductFamily(active.get(), current.get());
+    }
+
+    private List<ScopedUserMessage> activeUserConversationMessages(
+            GenerateUserProductSearchQualificationQuery query
+    ) {
+        int currentMessageIndex = currentTranscriptMessageIndex(query);
+        if (currentMessageIndex < 0) {
+            return List.of();
+        }
+        String original = normalize(query.originalQuery());
+        int originalMessageIndex = -1;
+        for (int index = currentMessageIndex; index >= 0; index--) {
+            var message = query.conversation().get(index);
+            if (message.role()
+                    == com.meant.api.module.user.service.dto.UserProductSearchConversationMessage.Role.USER
+                    && normalize(message.text()).equals(original)) {
+                originalMessageIndex = index;
+                break;
+            }
+        }
+        if (originalMessageIndex < 0) {
+            return List.of();
+        }
+
+        Optional<UserProductSearchCategoryPolicy.ProductSubject> activeSubject =
+                explicitProductSubject(query.originalQuery());
+        String activeAssistant = query.previousPlan() == null
+                ? ""
+                : normalize(query.previousPlan().assistantMessage());
+        boolean activeTopic = true;
+        List<ScopedUserMessage> scoped = new ArrayList<>();
+        for (int index = originalMessageIndex; index <= currentMessageIndex; index++) {
+            var message = query.conversation().get(index);
+            if (message.role()
+                    == com.meant.api.module.user.service.dto.UserProductSearchConversationMessage.Role.ASSISTANT) {
+                if (!activeAssistant.isBlank()
+                        && normalize(message.text()).equals(activeAssistant)) {
+                    activeTopic = true;
+                }
+                continue;
+            }
+            if (message.role()
+                    != com.meant.api.module.user.service.dto.UserProductSearchConversationMessage.Role.USER) {
+                continue;
+            }
+            if (index == originalMessageIndex) {
+                scoped.add(new ScopedUserMessage(index, message.text()));
+                continue;
+            }
+            Optional<UserProductSearchCategoryPolicy.ProductSubject> messageSubject =
+                    explicitProductSubject(message.text());
+            if (activeSubject.isPresent() && messageSubject.isPresent()) {
+                if (mentionsProductFamily(message.text(), activeSubject.get())) {
+                    activeTopic = true;
+                } else if (establishesProductTopic(message.text())) {
+                    activeTopic = sameProductFamily(activeSubject.get(), messageSubject.get());
+                }
+            }
+            if (activeTopic) {
+                scoped.add(new ScopedUserMessage(index, message.text()));
+            }
+        }
+        return List.copyOf(scoped);
+    }
+
+    private Optional<UserProductSearchCategoryPolicy.ProductSubject> explicitProductSubject(String value) {
+        if (directCountryCode(value).isPresent()) {
+            return Optional.empty();
+        }
+        Optional<UserProductSearchCategoryPolicy.ProductSubject> subject =
+                categoryPolicy.productSubject(value);
+        if (subject.isEmpty()) {
+            return subject;
+        }
+        if (subject.get().terms().stream().allMatch(FILTER_DECISION_SUBJECT_TERMS::contains)) {
+            return Optional.empty();
+        }
+        if (subject.get().terms().size() > 1) {
+            return subject;
+        }
+        UserProductSearchCategoryPolicy.Category category = categoryPolicy.category(value, value);
+        return category == UserProductSearchCategoryPolicy.Category.OTHER
+                ? Optional.empty()
+                : subject;
+    }
+
+    private boolean establishesProductTopic(String value) {
+        return categoryPolicy.category(value, value) != UserProductSearchCategoryPolicy.Category.OTHER
+                || PRODUCT_REQUEST_PATTERN.matcher(value).find();
+    }
+
+    private boolean mentionsProductFamily(
+            String value,
+            UserProductSearchCategoryPolicy.ProductSubject subject
+    ) {
+        return tokens(value).stream().anyMatch(token -> sameWord(token, subject.head()));
+    }
+
+    private boolean sameProductFamily(
+            UserProductSearchCategoryPolicy.ProductSubject left,
+            UserProductSearchCategoryPolicy.ProductSubject right
+    ) {
+        return sameWord(left.head(), right.head());
+    }
+
+    private int currentTranscriptMessageIndex(GenerateUserProductSearchQualificationQuery query) {
+        String current = normalize(query.message());
+        int currentMessageIndex = -1;
+        for (int index = 0; index < query.conversation().size(); index++) {
+            var message = query.conversation().get(index);
+            if (message.role()
+                    == com.meant.api.module.user.service.dto.UserProductSearchConversationMessage.Role.USER
+                    && normalize(message.text()).equals(current)) {
+                currentMessageIndex = index;
+            }
+        }
+        return currentMessageIndex;
     }
 
     private boolean containsUppercaseCode(String evidence, String countryCode) {
@@ -906,7 +2762,7 @@ public class UserProductSearchQualificationPlanResolver {
             GenerateUserProductSearchQualificationQuery query
     ) {
         boolean valuePresent = containsPhrase(evidence, normalize(value));
-        if (!valuePresent) {
+        if (!valuePresent || explicitlyNegatesValue(evidence, value)) {
             return false;
         }
         return containsPhrase(evidence, "color")
@@ -916,6 +2772,21 @@ public class UserProductSearchQualificationPlanResolver {
                 && query.previousPlan().questionTargets().size() == 1
                 && query.previousPlan().questionTargets().getFirst() == UserProductSearchQuestionTarget.COLOR
                 || knownColor(value);
+    }
+
+    private boolean explicitlyNegatesValue(String evidence, String value) {
+        String normalizedValue = normalize(value);
+        if (normalizedValue.isBlank()) {
+            return false;
+        }
+        return Pattern.compile(
+                        "(?iu)\\b(?:without|avoid(?:ing)?|not|no)\\s+"
+                                + "(?:(?:a|an|the)\\s+)?"
+                                + Pattern.quote(normalizedValue)
+                                + "\\b"
+                )
+                .matcher(evidence)
+                .find();
     }
 
     private boolean knownColor(String value) {
@@ -938,8 +2809,7 @@ public class UserProductSearchQualificationPlanResolver {
                 || provenance.source() == UserProductSearchDecisionSource.DURABLE_PREFERENCE
                 || provenance.source() == UserProductSearchDecisionSource.CURRENT_USER_TURN
                 && query.previousPlan() != null
-                && query.previousPlan().questionTargets().size() == 1
-                && query.previousPlan().questionTargets().getFirst() == UserProductSearchQuestionTarget.SIZE;
+                && query.previousPlan().questionTargets().contains(UserProductSearchQuestionTarget.SIZE);
     }
 
     private boolean priceTierMentioned(String evidence, String value) {
@@ -982,21 +2852,31 @@ public class UserProductSearchQualificationPlanResolver {
             UserProductSearchQualificationPlan.Provenance provenance,
             GenerateUserProductSearchQualificationQuery query
     ) {
+        List<String> relationPatterns = List.of(
+                "(?i)[$€£]\\s*([0-9]+(?:[.,][0-9]+)*)",
+                "(?i)\\b(?:usd|eur|gbp)\\s*([0-9]+(?:[.,][0-9]+)*)",
+                "(?i)([0-9]+(?:[.,][0-9]+)*)\\s*(?:usd|eur|gbp)\\b",
+                "(?i)\\b(?:price|budget|cost|under|below|over|above|between)\\b"
+                        + "(?:\\s+(?:is|of|from|around|up\\s+to))?\\s*[$€£]?"
+                        + "\\s*([0-9]+(?:[.,][0-9]+)*)",
+                "(?i)\\bbetween\\b[^0-9]{0,12}[0-9]+(?:[.,][0-9]+)*"
+                        + "\\s+(?:and|to)\\s*[$€£]?\\s*([0-9]+(?:[.,][0-9]+)*)"
+        );
         boolean relationBound = relationNumberMentioned(
                 evidence,
                 expected,
-                List.of(
-                        "(?i)[$€£]\\s*([0-9]+(?:[.,][0-9]+)*)",
-                        "(?i)\\b(?:usd|eur|gbp)\\s*([0-9]+(?:[.,][0-9]+)*)",
-                        "(?i)([0-9]+(?:[.,][0-9]+)*)\\s*(?:usd|eur|gbp)\\b",
-                        "(?i)\\b(?:price|budget|cost|under|below|over|above|between)\\b"
-                                + "(?:\\s+(?:is|of|from|around|up\\s+to))?\\s*[$€£]?"
-                                + "\\s*([0-9]+(?:[.,][0-9]+)*)",
-                        "(?i)\\bbetween\\b[^0-9]{0,12}[0-9]+(?:[.,][0-9]+)*"
-                                + "\\s+(?:and|to)\\s*[$€£]?\\s*([0-9]+(?:[.,][0-9]+)*)"
-                )
+                relationPatterns
         ) || "0".equals(expected) && containsPhrase(normalize(evidence), "free");
+        boolean currencyContinuation = provenance.source()
+                == UserProductSearchDecisionSource.CURRENT_USER_TURN
+                && explicitUsdDenomination(evidence)
+                && query.previousPlan() != null
+                && query.previousPlan().questionTargets()
+                .contains(UserProductSearchQuestionTarget.PRICE)
+                && priceConstraintSources(query).stream()
+                        .anyMatch(source -> relationNumberMentioned(source, expected, relationPatterns));
         return relationBound
+                || currencyContinuation
                 || provenance.source() == UserProductSearchDecisionSource.CURRENT_USER_TURN
                 && query.previousPlan() != null
                 && query.previousPlan().questionTargets().size() == 1
@@ -1010,7 +2890,7 @@ public class UserProductSearchQualificationPlanResolver {
     ) {
         String evidence = filter.provenance().evidence();
         String source = rawSource(
-                filter.provenance().source(), UserProductSearchQuestionTarget.RATING, query);
+                filter.provenance(), UserProductSearchQuestionTarget.RATING, query);
         boolean directAnswer = filter.provenance().source() == UserProductSearchDecisionSource.CURRENT_USER_TURN
                 && query.previousPlan() != null
                 && query.previousPlan().questionTargets().size() == 1
@@ -1098,11 +2978,15 @@ public class UserProductSearchQualificationPlanResolver {
         return BigDecimal.valueOf(minor, 2).stripTrailingZeros().toPlainString();
     }
 
+    private record PriceBounds(BigDecimal min, BigDecimal max) {
+    }
+
     private boolean containsIndifference(String value) {
         String normalized = normalize(value);
         return List.of(
-                        "any", "either is fine", "doesnt matter", "does not matter", "dont care", "do not care",
-                        "no preference", "whatever", "irrelevant", "not important", "all are fine", "all is fine",
+                "any", "either is fine", "doesnt matter", "does not matter", "dont care", "do not care",
+                        "no preference", "whatever", "neither", "none", "irrelevant", "not important",
+                        "all are fine", "all is fine",
                         "je mi to jedno", "je ti to jedno", "je ti opravdu jedno", "je vam to jedno",
                         "je vam opravdu jedno", "nezalezi", "nemam preferenci", "neresim", "libovolny", "libovolna",
                         "libovolne", "jakykoli", "jakakoli", "cokoli"
@@ -1112,13 +2996,45 @@ public class UserProductSearchQualificationPlanResolver {
 
     private boolean mentionsTarget(String value, UserProductSearchQuestionTarget target) {
         String normalized = normalize(value);
+        if (target == UserProductSearchQuestionTarget.SHIPS_TO) {
+            boolean explicitDestination = List.of(
+                            "ships to", "ship to", "delivery", "destination", "deliver to",
+                            "shipping destination", "shipping location", "postal", "postcode",
+                            "doruceni", "dodat"
+                    )
+                    .stream()
+                    .anyMatch(alias -> containsPhrase(normalized, alias));
+            if (explicitDestination) {
+                return true;
+            }
+            boolean explicitOrigin = List.of(
+                            "ships from", "ship from", "shipping origin", "seller location",
+                            "source country", "origin", "odeslani", "odkud"
+                    )
+                    .stream()
+                    .anyMatch(alias -> containsPhrase(normalized, alias));
+            return !explicitOrigin
+                    && List.of("location", "country")
+                    .stream()
+                    .anyMatch(alias -> containsPhrase(normalized, alias));
+        }
+        if (target == UserProductSearchQuestionTarget.PRICE) {
+            String withoutPriceTier = normalized
+                    .replaceAll("\\b(?:relative\\s+)?price\\s+tier\\b", " ")
+                    .replaceAll("\\brelative\\s+price\\b", " ")
+                    .replaceAll("\\bcenova\\s+uroven\\b", " ")
+                    .replaceAll("\\s+", " ")
+                    .trim();
+            return List.of("budget", "cost", "spend", "cena", "rozpocet")
+                    .stream()
+                    .anyMatch(alias -> containsPhrase(normalized, alias))
+                    || containsPhrase(withoutPriceTier, "price");
+        }
         List<String> aliases = switch (target) {
             case CONDITION -> List.of("condition", "new", "used", "secondhand", "stav");
-            case SHIPS_TO -> List.of(
-                    "ships to", "ship to", "delivery", "destination", "deliver to", "doruceni", "dodat");
+            case SHIPS_TO, PRICE -> throw new IllegalStateException("Handled before alias lookup");
             case SHIPS_FROM -> List.of(
                     "ships from", "ship from", "shipping origin", "seller location", "origin", "odeslani", "odkud");
-            case PRICE -> List.of("price", "budget", "cost", "spend", "cena", "rozpocet");
             case COLOR -> List.of("color", "colour", "barva");
             case SIZE -> List.of("size", "sizing", "velikost");
             case TARGET_GENDER -> List.of(
@@ -1131,7 +3047,8 @@ public class UserProductSearchQualificationPlanResolver {
 
     private boolean appliesToAll(String value) {
         return List.of(
-                        "all", "all of them", "any of them", "none of them", "everything", "no filters",
+                        "all", "both", "neither", "all of them", "any of them", "none of them", "everything",
+                        "no filters",
                         "vse", "vsechny", "vsechno", "vsechny filtry"
                 )
                 .stream()

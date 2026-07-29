@@ -49,6 +49,11 @@ final class AgentMutationTargetTextSupport {
             "\\b(?:it|that|this|one|item|product|them|those|these)\\b",
             Pattern.CASE_INSENSITIVE
     );
+    private static final Pattern RANKED_PRODUCT_REFERENCE = Pattern.compile(
+            "\\b(?:best|top|highest[- ](?:ranked|rated)|recommended|recommendation)\\b"
+                    + "(?:\\s+(?:pair|option|result|one|item|product))?",
+            Pattern.CASE_INSENSITIVE
+    );
     private static final Pattern READD_REFERENCE = Pattern.compile(
             "\\bre-?add\\b",
             Pattern.CASE_INSENSITIVE
@@ -240,6 +245,10 @@ final class AgentMutationTargetTextSupport {
 
     static boolean hasContextualReference(String value) {
         return value != null && CONTEXTUAL_REFERENCE.matcher(value).find();
+    }
+
+    static boolean hasRankedProductReference(String value) {
+        return value != null && RANKED_PRODUCT_REFERENCE.matcher(value).find();
     }
 
     static boolean isReaddReference(String turn) {

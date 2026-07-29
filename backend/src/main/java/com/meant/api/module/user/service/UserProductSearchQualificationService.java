@@ -9,6 +9,7 @@ import com.meant.api.module.user.service.dto.UserProductSearchQualificationModel
 import com.meant.api.module.user.service.dto.UserProductSearchQualificationResult;
 import com.meant.api.module.user.service.dto.UserProductSearchQualificationSnapshot;
 import com.meant.api.module.user.service.query.GenerateUserProductSearchQualificationQuery;
+import com.meant.api.module.user.service.query.FindUserProductSearchQualificationByRequestQuery;
 import com.meant.api.module.user.service.query.GetUserProductSearchQualificationQuery;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -16,6 +17,7 @@ import java.util.Objects;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
 
@@ -27,6 +29,7 @@ import org.springframework.validation.annotation.Validated;
 public class UserProductSearchQualificationService {
 
     private final UserSettingsService userSettingsService;
+    private final UserTasteProfileService userTasteProfileService;
     private final UserProductSearchPreferenceService preferenceService;
     private final UserProductSearchQualificationModelService modelService;
     private final UserProductSearchQualificationPersistenceService persistenceService;
@@ -46,6 +49,20 @@ public class UserProductSearchQualificationService {
         );
         if (!profileCommand.id().equals(command.userId())) {
             throw UserException.forbidden("Product-search qualification user does not match authenticated user");
+        }
+        UserProductSearchQualificationSnapshot replay = requestReplay(command);
+        if (replay == null) {
+            replay = idempotentStart(command);
+        }
+        if (replay != null) {
+            if (!replay.plan().currentSchema()) {
+                throw UserException.notFound(
+                        "Product-search qualification uses an outdated plan; start a new qualification");
+            }
+            return replay.status() == UserProductSearchQualificationStatus.READY
+                    ? result(persistenceService.refreshReady(new GetUserProductSearchQualificationQuery(
+                            command.userId(), replay.qualificationId())))
+                    : result(replay);
         }
         UserProductSearchQualificationSnapshot previous = previous(command);
         log.info(
@@ -68,21 +85,29 @@ public class UserProductSearchQualificationService {
         catalogInputBuilder.validateSupportedCurrency(command.message());
         UUID merchantId = previous == null ? command.merchantId() : previous.merchantId();
         var durablePreferences = preferenceService.list(command.userId());
+        var settings = userSettingsService.get(profileCommand);
+        var tasteProfile = userTasteProfileService.profile(command.userId(), settings);
         log.info(
                 "Product-search qualification invoking model. userId={}, conversationId={}, "
-                        + "qualificationId={}, durablePreferenceCount={}",
+                        + "qualificationId={}, durablePreferenceCount={}, conversationMessageCount={}, "
+                        + "tasteSignalCount={}",
                 command.userId(),
                 command.conversationId(),
                 command.qualificationId(),
-                durablePreferences.size()
+                durablePreferences.size(),
+                command.conversation().size(),
+                tasteProfile.signals().size()
         );
         UserProductSearchQualificationModelResult generated = modelService.generate(
                 new GenerateUserProductSearchQualificationQuery(
                         originalQuery,
                         command.message().trim(),
                         previous == null ? null : previous.plan(),
-                        userSettingsService.get(profileCommand),
-                        durablePreferences
+                        settings,
+                        durablePreferences,
+                        command.conversation(),
+                        tasteProfile,
+                        command.trustedReferenceProductText()
                 )
         );
         boolean ready = generated.plan().currentSchema()
@@ -101,21 +126,30 @@ public class UserProductSearchQualificationService {
                 generated.plan().missingFilters(),
                 generated.plan().missingTargets()
         );
-        UUID qualificationId = previous == null ? UUID.randomUUID() : previous.qualificationId();
-        UserProductSearchQualificationSnapshot persisted = persistenceService.persist(
+        UUID qualificationId = previous == null
+                ? startingQualificationId(command)
+                : previous.qualificationId();
+        PersistUserProductSearchQualificationCommand persistCommand =
                 new PersistUserProductSearchQualificationCommand(
-                        qualificationId,
-                        command.userId(),
-                        command.conversationId(),
-                        merchantId,
-                        originalQuery,
-                        previous == null ? null : previous.updatedAt(),
-                        status,
-                        generated.plan(),
-                        generated.model(),
-                        generated.promptVersion()
-                )
+                qualificationId,
+                command.userId(),
+                command.conversationId(),
+                merchantId,
+                originalQuery,
+                previous == null ? null : previous.updatedAt(),
+                status,
+                generated.plan(),
+                generated.model(),
+                generated.promptVersion(),
+                command.requestId(),
+                command.requestId() == null ? null : command.message()
         );
+        UserProductSearchQualificationSnapshot persisted;
+        try {
+            persisted = persistenceService.persist(persistCommand);
+        } catch (DataIntegrityViolationException concurrentInsert) {
+            persisted = reconcileConcurrentRequest(persistCommand, concurrentInsert);
+        }
         log.info(
                 "Product-search qualification persisted. userId={}, conversationId={}, qualificationId={}, status={}",
                 command.userId(),
@@ -144,10 +178,90 @@ public class UserProductSearchQualificationService {
                 || !Objects.equals(snapshot.merchantId(), command.merchantId())) {
             throw UserException.notFound("Product-search qualification not found");
         }
+        if (command.expectedQualificationUpdatedAt() != null
+                && (snapshot.status() != UserProductSearchQualificationStatus.NEEDS_INPUT
+                        || !snapshot.updatedAt().equals(command.expectedQualificationUpdatedAt()))) {
+            throw UserException.conflict(
+                    "Product-search qualification changed before this answer could be applied");
+        }
         if (snapshot.status() == UserProductSearchQualificationStatus.CANCELLED) {
             throw UserException.notFound("Product-search qualification was cancelled");
         }
         return snapshot;
+    }
+
+    private UserProductSearchQualificationSnapshot reconcileConcurrentRequest(
+            PersistUserProductSearchQualificationCommand command,
+            DataIntegrityViolationException concurrentInsert
+    ) {
+        UserProductSearchQualificationSnapshot replay = persistenceService
+                .reconcileConcurrentRequest(command)
+                .orElseThrow(() -> concurrentInsert);
+        if (replay.status() == UserProductSearchQualificationStatus.CANCELLED) {
+            throw UserException.conflict("Product-search qualification request was already cancelled");
+        }
+        if (!replay.plan().currentSchema()) {
+            throw UserException.conflict(
+                    "Product-search qualification request resolved to an outdated plan");
+        }
+        return replay;
+    }
+
+    private UserProductSearchQualificationSnapshot idempotentStart(
+            QualifyUserProductSearchCommand command
+    ) {
+        if (command.qualificationId() != null || command.requestId() == null) {
+            return null;
+        }
+        UUID qualificationId = startingQualificationId(command);
+        UserProductSearchQualificationSnapshot snapshot = persistenceService.find(
+                        new GetUserProductSearchQualificationQuery(command.userId(), qualificationId))
+                .orElse(null);
+        if (snapshot == null) {
+            return null;
+        }
+        if (!snapshot.conversationId().equals(command.conversationId())
+                || !Objects.equals(snapshot.merchantId(), command.merchantId())
+                || !snapshot.originalQuery().equals(command.message().trim())) {
+            throw UserException.conflict("Product-search qualification request identity was already used");
+        }
+        if (snapshot.status() == UserProductSearchQualificationStatus.CANCELLED) {
+            throw UserException.conflict("Product-search qualification request was already cancelled");
+        }
+        return snapshot;
+    }
+
+    private UserProductSearchQualificationSnapshot requestReplay(
+            QualifyUserProductSearchCommand command
+    ) {
+        if (command.requestId() == null) {
+            return null;
+        }
+        UserProductSearchQualificationSnapshot snapshot = persistenceService.findByRequest(
+                        new FindUserProductSearchQualificationByRequestQuery(
+                                command.userId(),
+                                command.conversationId(),
+                                command.merchantId(),
+                                command.requestId(),
+                                command.message()
+                        ))
+                .orElse(null);
+        if (snapshot == null) {
+            return null;
+        }
+        if (command.qualificationId() != null
+                && !command.qualificationId().equals(snapshot.qualificationId())) {
+            throw UserException.conflict("Product-search qualification request identity was already used");
+        }
+        if (snapshot.status() == UserProductSearchQualificationStatus.CANCELLED) {
+            throw UserException.conflict("Product-search qualification request was already cancelled");
+        }
+        return snapshot;
+    }
+
+    private UUID startingQualificationId(QualifyUserProductSearchCommand command) {
+        UUID requestQualificationId = command.requestQualificationId();
+        return requestQualificationId == null ? UUID.randomUUID() : requestQualificationId;
     }
 
     private UserProductSearchQualificationResult result(UserProductSearchQualificationSnapshot snapshot) {

@@ -475,6 +475,62 @@ class AgentMutationTargetPolicyTest {
     }
 
     @Test
+    void bestPairBindsOnlyToTheHighestRankedProductIssuedByTheCurrentRun() {
+        UUID currentMessageId = UUID.randomUUID();
+        UUID oldMessageId = UUID.randomUUID();
+        UUID runId = UUID.randomUUID();
+        AgentArtifactReference currentFirst = withRunId(productWithLabel(
+                currentMessageId, 1, "current-1", "current-offer-1", "Fast road shoe"), runId);
+        AgentArtifactReference currentSecond = withRunId(productWithLabel(
+                currentMessageId, 2, "current-2", "current-offer-2", "Stable road shoe"), runId);
+        AgentArtifactReference oldFirst = productWithLabel(
+                oldMessageId, 1, "old-1", "old-offer-1", "Old road shoe");
+        UUID cartId = UUID.randomUUID();
+        AgentArtifactReference currentCart = cartSnapshot(
+                UUID.randomUUID(),
+                cartId,
+                Instant.parse("2026-07-18T12:01:00Z"),
+                List.of()
+        );
+        when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any()))
+                .thenReturn(List.of(currentCart, currentFirst, currentSecond, oldFirst));
+        AgentToolExecutionContext context = new AgentToolExecutionContext(
+                UUID.randomUUID(),
+                CONVERSATION_ID,
+                runId,
+                UUID.randomUUID(),
+                "add the best pair to my cart"
+        );
+
+        assertThat(policy.requiresProductClarification(context, "prepare_carts")).isFalse();
+        assertThat(policy.matchesMutationTarget(
+                context,
+                "prepare_carts",
+                "{\"offers\":[{\"offerKey\":\"current-offer-1\"}]}"
+        )).isTrue();
+        assertThat(policy.matchesMutationTarget(
+                context,
+                "prepare_carts",
+                "{\"offers\":[{\"offerKey\":\"current-offer-2\"}]}"
+        )).isFalse();
+        assertThat(policy.matchesMutationTarget(
+                context,
+                "prepare_carts",
+                "{\"offers\":[{\"offerKey\":\"old-offer-1\"}]}"
+        )).isFalse();
+        assertThat(policy.matchesMutationTarget(
+                context,
+                "add_cart_line",
+                "{\"cartId\":\"" + cartId + "\",\"offerKey\":\"current-offer-1\",\"quantity\":1}"
+        )).isTrue();
+        assertThat(policy.matchesMutationTarget(
+                context,
+                "add_cart_line",
+                "{\"cartId\":\"" + cartId + "\",\"offerKey\":\"old-offer-1\",\"quantity\":1}"
+        )).isFalse();
+    }
+
+    @Test
     void anExactClarificationReplyDoesNotAskAgainButAConflictingReplyDoes() {
         when(artifacts.findByConversationIdOrderByCreatedAtDescOrdinalAsc(eq(CONVERSATION_ID), any()))
                 .thenReturn(List.of());

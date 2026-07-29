@@ -7,13 +7,16 @@ import com.meant.api.module.user.constant.UserProductSearchAttributeName;
 import com.meant.api.module.user.constant.UserProductSearchFilterState;
 import com.meant.api.module.user.constant.UserProductSearchQualificationStatus;
 import com.meant.api.module.user.entity.UserProductSearchQualification;
+import com.meant.api.module.user.entity.UserProductSearchQualificationRequest;
 import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.repository.UserProductSearchQualificationRepository;
+import com.meant.api.module.user.repository.UserProductSearchQualificationRequestRepository;
 import com.meant.api.module.user.service.command.PersistUserProductSearchQualificationCommand;
 import com.meant.api.module.user.service.command.CancelUserProductSearchQualificationCommand;
 import com.meant.api.module.user.service.command.SaveUserProductSearchPreferencesCommand;
 import com.meant.api.module.user.service.dto.UserProductSearchQualificationPlan;
 import com.meant.api.module.user.service.query.FindPendingUserProductSearchQualificationQuery;
+import com.meant.api.module.user.service.query.FindUserProductSearchQualificationByRequestQuery;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
@@ -24,6 +27,8 @@ import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
 
 class UserProductSearchQualificationPersistenceServiceTest {
@@ -33,9 +38,22 @@ class UserProductSearchQualificationPersistenceServiceTest {
     private final FakePreferenceService preferenceService = new FakePreferenceService(writes);
     private final UserProductSearchQualificationPlanCodec planCodec =
             new UserProductSearchQualificationPlanCodec(new ObjectMapper());
+    private final FakeQualificationRequestRepository requestRepository =
+            new FakeQualificationRequestRepository();
     private final UserProductSearchQualificationPersistenceService service =
             new UserProductSearchQualificationPersistenceService(
-                    repository.proxy(), planCodec, preferenceService);
+                    repository.proxy(), requestRepository.proxy(), planCodec, preferenceService);
+
+    @Test
+    void isolatesTheWriteTransactionSoAConcurrentInsertCanBeReconciledAfterRollback()
+            throws NoSuchMethodException {
+        Transactional transaction = UserProductSearchQualificationPersistenceService.class
+                .getMethod("persist", PersistUserProductSearchQualificationCommand.class)
+                .getAnnotation(Transactional.class);
+
+        assertThat(transaction).isNotNull();
+        assertThat(transaction.propagation()).isEqualTo(Propagation.REQUIRES_NEW);
+    }
 
     @Test
     void appliesDurablePreferencesInsideTheQualificationWriteBoundary() {
@@ -134,6 +152,39 @@ class UserProductSearchQualificationPersistenceServiceTest {
     }
 
     @Test
+    void rejectsCancellationWhenTheObservedPendingQualificationAlreadyBecameReady() {
+        UUID qualificationId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        Instant observedPendingRevision = Instant.parse("2026-07-17T10:00:00Z");
+        UserProductSearchQualification ready = UserProductSearchQualification.create(
+                qualificationId,
+                userId,
+                conversationId,
+                null,
+                "football boots",
+                UserProductSearchQualificationStatus.READY,
+                planCodec.encode(plan(false)),
+                "model",
+                "v1",
+                observedPendingRevision.plusSeconds(1)
+        );
+        repository.found = Optional.of(ready);
+
+        assertThatThrownBy(() -> service.cancel(new CancelUserProductSearchQualificationCommand(
+                qualificationId,
+                userId,
+                conversationId,
+                null,
+                observedPendingRevision
+        )))
+                .isInstanceOfSatisfying(UserException.class, exception ->
+                        assertThat(exception.getStatus()).isEqualTo(HttpStatus.CONFLICT));
+        assertThat(ready.getStatus()).isEqualTo(UserProductSearchQualificationStatus.READY);
+        assertThat(repository.saved).isNull();
+    }
+
+    @Test
     void findsTheLatestPendingQualificationForTheExactConversationScope() {
         UUID qualificationId = UUID.randomUUID();
         UUID userId = UUID.randomUUID();
@@ -165,6 +216,275 @@ class UserProductSearchQualificationPersistenceServiceTest {
         );
     }
 
+    @Test
+    void atomicallyBindsTheTrustedAnswerRequestToTheQualificationItAdvanced() {
+        UUID qualificationId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID requestId = UUID.randomUUID();
+        repository.found = Optional.empty();
+        requestRepository.forUpdate = Optional.empty();
+
+        service.persist(new PersistUserProductSearchQualificationCommand(
+                qualificationId,
+                userId,
+                conversationId,
+                null,
+                "running shoes",
+                null,
+                UserProductSearchQualificationStatus.READY,
+                plan(false),
+                "model",
+                "v1",
+                requestId,
+                "46"
+        ));
+
+        assertThat(requestRepository.saved.getId()).isEqualTo(requestId);
+        assertThat(requestRepository.saved.getQualificationId()).isEqualTo(qualificationId);
+        assertThat(requestRepository.saved.getUserId()).isEqualTo(userId);
+        assertThat(requestRepository.saved.getConversationId()).isEqualTo(conversationId);
+        assertThat(requestRepository.saved.getMessage()).isEqualTo("46");
+    }
+
+    @Test
+    void rejectsADistinctUnboundAnswerWhenAnotherRequestAlreadyMadeTheQualificationReady() {
+        UUID qualificationId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID losingRequestId = UUID.randomUUID();
+        Instant observedPendingRevision = Instant.parse("2026-07-29T12:00:00Z");
+        UserProductSearchQualification ready = UserProductSearchQualification.create(
+                qualificationId,
+                userId,
+                conversationId,
+                null,
+                "running shoes",
+                UserProductSearchQualificationStatus.READY,
+                planCodec.encode(plan(false)),
+                "model",
+                "v1",
+                observedPendingRevision.plusSeconds(1)
+        );
+        repository.found = Optional.of(ready);
+        requestRepository.forUpdate = Optional.empty();
+
+        PersistUserProductSearchQualificationCommand losingAnswer =
+                new PersistUserProductSearchQualificationCommand(
+                        qualificationId,
+                        userId,
+                        conversationId,
+                        null,
+                        "running shoes",
+                        observedPendingRevision,
+                        UserProductSearchQualificationStatus.READY,
+                        plan(false),
+                        "model",
+                        "v1",
+                        losingRequestId,
+                        "US size 10"
+                );
+
+        assertThatThrownBy(() -> service.persist(losingAnswer))
+                .isInstanceOfSatisfying(UserException.class, exception ->
+                        assertThat(exception.getStatus()).isEqualTo(HttpStatus.CONFLICT));
+        assertThat(ready.getUpdatedAt()).isEqualTo(observedPendingRevision.plusSeconds(1));
+        assertThat(requestRepository.saved).isNull();
+        assertThat(repository.saved).isNull();
+        assertThat(preferenceService.calls).isZero();
+    }
+
+    @Test
+    void exactBoundRequestReplayMayReuseTheImmutableReadyQualification() {
+        UUID qualificationId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID requestId = UUID.randomUUID();
+        Instant readyRevision = Instant.parse("2026-07-29T12:00:01Z");
+        UserProductSearchQualification ready = UserProductSearchQualification.create(
+                qualificationId,
+                userId,
+                conversationId,
+                null,
+                "running shoes",
+                UserProductSearchQualificationStatus.READY,
+                planCodec.encode(plan(false)),
+                "winner-model",
+                "winner-v1",
+                readyRevision
+        );
+        UserProductSearchQualificationRequest binding = UserProductSearchQualificationRequest.create(
+                requestId,
+                qualificationId,
+                userId,
+                conversationId,
+                null,
+                "US size 10",
+                readyRevision
+        );
+        repository.found = Optional.of(ready);
+        requestRepository.forUpdate = Optional.of(binding);
+
+        var replay = service.persist(new PersistUserProductSearchQualificationCommand(
+                qualificationId,
+                userId,
+                conversationId,
+                null,
+                "running shoes",
+                readyRevision.minusSeconds(1),
+                UserProductSearchQualificationStatus.READY,
+                plan(false),
+                "loser-model",
+                "loser-v1",
+                requestId,
+                "US size 10"
+        ));
+
+        assertThat(replay.status()).isEqualTo(UserProductSearchQualificationStatus.READY);
+        assertThat(replay.updatedAt()).isEqualTo(readyRevision);
+        assertThat(replay.model()).isEqualTo("winner-model");
+        assertThat(ready.getUpdatedAt()).isEqualTo(readyRevision);
+        assertThat(preferenceService.calls).isZero();
+        assertThat(requestRepository.saved).isNull();
+    }
+
+    @Test
+    void resolvesAReadyQualificationByItsAnswerRequestIdentity() {
+        UUID qualificationId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID requestId = UUID.randomUUID();
+        UserProductSearchQualification ready = UserProductSearchQualification.create(
+                qualificationId,
+                userId,
+                conversationId,
+                null,
+                "running shoes",
+                UserProductSearchQualificationStatus.READY,
+                planCodec.encode(plan(false)),
+                "model",
+                "v1",
+                Instant.parse("2026-07-29T12:00:00Z")
+        );
+        repository.found = Optional.of(ready);
+        requestRepository.found = Optional.of(
+                UserProductSearchQualificationRequest.create(
+                        requestId,
+                        qualificationId,
+                        userId,
+                        conversationId,
+                        null,
+                        "46",
+                        Instant.parse("2026-07-29T12:00:00Z")
+                )
+        );
+
+        var replay = service.findByRequest(new FindUserProductSearchQualificationByRequestQuery(
+                userId,
+                conversationId,
+                null,
+                requestId,
+                "46"
+        ));
+
+        assertThat(replay).hasValueSatisfying(snapshot -> {
+            assertThat(snapshot.qualificationId()).isEqualTo(qualificationId);
+            assertThat(snapshot.status()).isEqualTo(UserProductSearchQualificationStatus.READY);
+            assertThat(snapshot.originalQuery()).isEqualTo("running shoes");
+        });
+    }
+
+    @Test
+    void reconcilesAConcurrentFirstInsertOnlyThroughTheExactWinningRequestBinding() {
+        UUID qualificationId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID requestId = UUID.randomUUID();
+        Instant readyRevision = Instant.parse("2026-07-29T12:00:01Z");
+        UserProductSearchQualification ready = UserProductSearchQualification.create(
+                qualificationId,
+                userId,
+                conversationId,
+                null,
+                "running shoes",
+                UserProductSearchQualificationStatus.READY,
+                planCodec.encode(plan(false)),
+                "winner-model",
+                "winner-v1",
+                readyRevision
+        );
+        requestRepository.found = Optional.of(UserProductSearchQualificationRequest.create(
+                requestId,
+                qualificationId,
+                userId,
+                conversationId,
+                null,
+                "running shoes",
+                readyRevision
+        ));
+        repository.found = Optional.of(ready);
+        PersistUserProductSearchQualificationCommand losingWrite =
+                new PersistUserProductSearchQualificationCommand(
+                        qualificationId,
+                        userId,
+                        conversationId,
+                        null,
+                        "running shoes",
+                        null,
+                        UserProductSearchQualificationStatus.READY,
+                        plan(false),
+                        "loser-model",
+                        "loser-v1",
+                        requestId,
+                        "running shoes"
+                );
+
+        var reconciled = service.reconcileConcurrentRequest(losingWrite);
+
+        assertThat(reconciled).hasValueSatisfying(snapshot -> {
+            assertThat(snapshot.qualificationId()).isEqualTo(qualificationId);
+            assertThat(snapshot.status()).isEqualTo(UserProductSearchQualificationStatus.READY);
+            assertThat(snapshot.model()).isEqualTo("winner-model");
+        });
+    }
+
+    @Test
+    void rejectsConcurrentInsertRecoveryWhenTheWinningBindingHasDifferentText() {
+        UUID qualificationId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID requestId = UUID.randomUUID();
+        requestRepository.found = Optional.of(UserProductSearchQualificationRequest.create(
+                requestId,
+                qualificationId,
+                userId,
+                conversationId,
+                null,
+                "gaming laptop",
+                Instant.parse("2026-07-29T12:00:01Z")
+        ));
+
+        PersistUserProductSearchQualificationCommand losingWrite =
+                new PersistUserProductSearchQualificationCommand(
+                        qualificationId,
+                        userId,
+                        conversationId,
+                        null,
+                        "running shoes",
+                        null,
+                        UserProductSearchQualificationStatus.READY,
+                        plan(false),
+                        "loser-model",
+                        "loser-v1",
+                        requestId,
+                        "running shoes"
+                );
+
+        assertThatThrownBy(() -> service.reconcileConcurrentRequest(losingWrite))
+                .isInstanceOfSatisfying(UserException.class, exception ->
+                        assertThat(exception.getStatus()).isEqualTo(HttpStatus.CONFLICT));
+    }
+
     private PersistUserProductSearchQualificationCommand command(
             UUID qualificationId,
             UUID userId,
@@ -183,7 +503,9 @@ class UserProductSearchQualificationPersistenceServiceTest {
                 status,
                 plan,
                 "model",
-                "v1"
+                "v1",
+                null,
+                null
         );
     }
 
@@ -268,6 +590,7 @@ class UserProductSearchQualificationPersistenceServiceTest {
         public Object invoke(Object proxy, Method method, Object[] arguments) {
             return switch (method.getName()) {
                 case "findByIdForUpdate" -> found;
+                case "findByIdAndUserId" -> found;
                 case "findFirstByUserIdAndConversationIdAndMerchantIdAndStatusOrderByUpdatedAtDesc" -> {
                     pendingLookupArguments = new ArrayList<>(java.util.Arrays.asList(arguments));
                     yield pending;
@@ -275,6 +598,34 @@ class UserProductSearchQualificationPersistenceServiceTest {
                 case "save" -> {
                     saved = (UserProductSearchQualification) arguments[0];
                     writes.add("qualification");
+                    yield saved;
+                }
+                default -> throw new UnsupportedOperationException(method.getName());
+            };
+        }
+    }
+
+    private static final class FakeQualificationRequestRepository implements InvocationHandler {
+
+        private Optional<UserProductSearchQualificationRequest> found = Optional.empty();
+        private Optional<UserProductSearchQualificationRequest> forUpdate = Optional.empty();
+        private UserProductSearchQualificationRequest saved;
+
+        private UserProductSearchQualificationRequestRepository proxy() {
+            return (UserProductSearchQualificationRequestRepository) Proxy.newProxyInstance(
+                    UserProductSearchQualificationRequestRepository.class.getClassLoader(),
+                    new Class<?>[]{UserProductSearchQualificationRequestRepository.class},
+                    this
+            );
+        }
+
+        @Override
+        public Object invoke(Object proxy, Method method, Object[] arguments) {
+            return switch (method.getName()) {
+                case "findById" -> found;
+                case "findByIdForUpdate" -> forUpdate;
+                case "save" -> {
+                    saved = (UserProductSearchQualificationRequest) arguments[0];
                     yield saved;
                 }
                 default -> throw new UnsupportedOperationException(method.getName());

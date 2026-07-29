@@ -1,9 +1,11 @@
 package com.meant.api.module.agent.service.tool;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -16,20 +18,29 @@ import com.meant.api.module.agent.service.AgentInventoryProductAnchorService;
 import com.meant.api.module.agent.service.AgentJsonSupport;
 import com.meant.api.module.agent.service.AgentProductReadReferenceService;
 import com.meant.api.module.agent.service.AgentProductReadResultService;
+import com.meant.api.module.agent.service.AgentProductSearchQualificationService;
+import com.meant.api.module.agent.service.AgentSimilaritySearchQualificationService;
+import com.meant.api.module.agent.service.command.BindAgentSimilaritySearchQualificationCommand;
+import com.meant.api.module.agent.service.command.QualifyAgentProductSearchCommand;
 import com.meant.api.module.agent.service.dto.AgentArtifact;
 import com.meant.api.module.agent.service.dto.AgentInventoryProductAnchor;
 import com.meant.api.module.agent.service.dto.AgentProductReferenceResult;
+import com.meant.api.module.agent.service.dto.AgentProductSearchQualificationResult;
 import com.meant.api.module.agent.service.dto.AgentSimilarityAnchorResult;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
 import com.meant.api.module.catalog.service.dto.CanonicalProduct;
+import com.meant.api.module.catalog.service.dto.CatalogDiscoveryFilters;
+import com.meant.api.module.user.constant.UserProductSearchQuestionTarget;
 import com.meant.api.module.user.service.UserSimilarProductSearchService;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
+import com.meant.api.module.user.service.command.QualifyUserProductSearchCommand;
 import com.meant.api.module.user.service.command.SearchSimilarUserProductsCommand;
 import com.meant.api.module.user.service.dto.UserGroupedProductSearchResult;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import tools.jackson.databind.JsonNode;
@@ -49,6 +60,10 @@ class FindSimilarProductsAgentToolTest {
     private final AgentInventoryProductAnchorService inventoryAnchors =
             mock(AgentInventoryProductAnchorService.class);
     private final AgentProductReadResultService productResults = mock(AgentProductReadResultService.class);
+    private final AgentProductSearchQualificationService qualifications =
+            mock(AgentProductSearchQualificationService.class);
+    private final AgentSimilaritySearchQualificationService similarityQualifications =
+            mock(AgentSimilaritySearchQualificationService.class);
     private final UserSimilarProductSearchService searches = mock(UserSimilarProductSearchService.class);
     private final FindSimilarProductsAgentTool tool = new FindSimilarProductsAgentTool(
             json,
@@ -56,8 +71,28 @@ class FindSimilarProductsAgentToolTest {
             references,
             inventoryAnchors,
             productResults,
+            qualifications,
+            similarityQualifications,
             searches
     );
+
+    @BeforeEach
+    void qualifySearch() {
+        when(qualifications.qualify(any())).thenAnswer(invocation -> {
+            QualifyAgentProductSearchCommand command = invocation.getArgument(0);
+            String effectiveQuery = command.trustedReferenceProductText() != null
+                            && command.trustedReferenceProductText().contains("Swim Shorts")
+                    ? "more shorts like these"
+                    : "similar black jackets";
+            return new AgentProductSearchQualificationResult(
+                    command.requestQualificationId(),
+                    effectiveQuery,
+                    "Ready",
+                    List.of(),
+                    availableOnly()
+            );
+        });
+    }
 
     @Test
     void inventorySimilarityResultCarriesTheExactResolvedInventoryAnchor() throws Exception {
@@ -113,8 +148,9 @@ class FindSimilarProductsAgentToolTest {
                 any()
         )).thenReturn(List.of(productArtifact));
 
+        AgentToolExecutionContext executionContext = context();
         var result = tool.execute(
-                context(),
+                executionContext,
                 "{\"inventoryItemId\":\"" + INVENTORY_ITEM_ID
                         + "\",\"query\":\"similar black jackets\"}"
         );
@@ -136,7 +172,12 @@ class FindSimilarProductsAgentToolTest {
         verify(searches).search(eq(profile), command.capture());
         assertThat(command.getValue().canonicalProductKey()).isEqualTo("canonical:owned-black-jacket");
         assertThat(command.getValue().query()).isEqualTo("similar black jackets");
+        assertThat(command.getValue().qualificationId())
+                .isEqualTo(expectedQualificationId(executionContext));
         assertThat(command.getValue().merchantId()).isEqualTo(MERCHANT_ID);
+        assertThat(command.getValue().buyerIp()).isEqualTo("203.0.113.42");
+        assertThat(command.getValue().userAgent()).isEqualTo("Meant Browser/1.0");
+        assertThat(command.getValue().language()).isEqualTo("cs-CZ");
     }
 
     @Test
@@ -241,6 +282,94 @@ class FindSimilarProductsAgentToolTest {
         verifyNoInteractions(inventoryAnchors);
     }
 
+    @Test
+    void bindsTheExactFootwearAnchorAndMakesNoSearchCallUntilSizeAndDestinationAreQualified()
+            throws Exception {
+        EnsureUserProfileCommand profile = profile();
+        AgentArtifactReference productReference = AgentArtifactReference.builder()
+                .label("Cool Running Shoes")
+                .canonicalProductKey("canonical:running-shoes")
+                .build();
+        when(profiles.profile(USER_ID)).thenReturn(profile);
+        when(references.requireProduct(any(), eq("canonical:running-shoes"))).thenReturn(productReference);
+        org.mockito.Mockito.doAnswer(invocation -> {
+            QualifyAgentProductSearchCommand command = invocation.getArgument(0);
+            return new AgentProductSearchQualificationResult(
+                    command.requestQualificationId(),
+                    "find similar products",
+                    "What shoe size do you need, and what country should it ship to?",
+                    List.of(
+                            UserProductSearchQuestionTarget.SIZE,
+                            UserProductSearchQuestionTarget.SHIPS_TO
+                    ),
+                    null
+            );
+        }).when(qualifications).qualify(any());
+
+        AgentToolExecutionContext executionContext = context();
+        UUID qualificationId = expectedQualificationId(executionContext);
+        var result = tool.execute(
+                executionContext,
+                "{\"canonicalProductKey\":\"canonical:running-shoes\","
+                        + "\"query\":\"find similar products\"}"
+        );
+
+        assertThat(result.waitingForUserMessage())
+                .isEqualTo("What shoe size do you need, and what country should it ship to?");
+        JsonNode output = objectMapper.readTree(result.resultJson());
+        assertThat(output.get("qualificationId").asText()).isEqualTo(qualificationId.toString());
+        assertThat(output.get("qualificationTargets")).extracting(JsonNode::asText)
+                .containsExactly("SIZE", "SHIPS_TO");
+        verifyNoInteractions(searches);
+
+        ArgumentCaptor<QualifyAgentProductSearchCommand> qualificationCommand =
+                ArgumentCaptor.forClass(QualifyAgentProductSearchCommand.class);
+        verify(qualifications).qualify(qualificationCommand.capture());
+        assertThat(qualificationCommand.getValue().authoritativeUserText())
+                .isEqualTo("check my black jacket in inventory and find me some new that are similar");
+        assertThat(qualificationCommand.getValue().trustedReferenceProductText())
+                .isEqualTo("Cool Running Shoes");
+
+        ArgumentCaptor<BindAgentSimilaritySearchQualificationCommand> bindingCommand =
+                ArgumentCaptor.forClass(BindAgentSimilaritySearchQualificationCommand.class);
+        verify(similarityQualifications).bind(bindingCommand.capture());
+        assertThat(bindingCommand.getValue().qualificationId()).isEqualTo(qualificationId);
+        assertThat(bindingCommand.getValue().canonicalProductKey()).isEqualTo("canonical:running-shoes");
+        assertThat(bindingCommand.getValue().anchorLabel()).isEqualTo("Cool Running Shoes");
+        var ordering = inOrder(similarityQualifications, qualifications);
+        ordering.verify(similarityQualifications).bind(any());
+        ordering.verify(qualifications).qualify(any());
+    }
+
+    @Test
+    void keepsTheExactAnchorReservedWhenQualificationFailsAfterStartingDurableWork() {
+        AgentArtifactReference productReference = AgentArtifactReference.builder()
+                .label("Cool Running Shoes")
+                .canonicalProductKey("canonical:running-shoes")
+                .build();
+        when(profiles.profile(USER_ID)).thenReturn(profile());
+        when(references.requireProduct(any(), eq("canonical:running-shoes"))).thenReturn(productReference);
+        org.mockito.Mockito.doThrow(new IllegalStateException("worker stopped after qualification persistence"))
+                .when(qualifications)
+                .qualify(any());
+        AgentToolExecutionContext executionContext = context();
+
+        assertThatThrownBy(() -> tool.execute(
+                executionContext,
+                "{\"canonicalProductKey\":\"canonical:running-shoes\","
+                        + "\"query\":\"find similar products\"}"
+        )).isInstanceOf(IllegalStateException.class);
+
+        ArgumentCaptor<BindAgentSimilaritySearchQualificationCommand> bindingCommand =
+                ArgumentCaptor.forClass(BindAgentSimilaritySearchQualificationCommand.class);
+        verify(similarityQualifications).bind(bindingCommand.capture());
+        assertThat(bindingCommand.getValue().qualificationId())
+                .isEqualTo(expectedQualificationId(executionContext));
+        assertThat(bindingCommand.getValue().canonicalProductKey())
+                .isEqualTo("canonical:running-shoes");
+        verifyNoInteractions(searches);
+    }
+
     private AgentToolExecutionContext context() {
         return new AgentToolExecutionContext(
                 USER_ID,
@@ -248,11 +377,23 @@ class FindSimilarProductsAgentToolTest {
                 UUID.randomUUID(),
                 UUID.randomUUID(),
                 "check my black jacket in inventory and find me some new that are similar"
-        ).withMerchantId(MERCHANT_ID);
+        ).withMerchantId(MERCHANT_ID)
+                .withBuyerIp("203.0.113.42")
+                .withUserAgent("Meant Browser/1.0")
+                .withLanguage("cs-CZ");
     }
 
     private EnsureUserProfileCommand profile() {
         return new EnsureUserProfileCommand(USER_ID, "similarity@example.test", "Similar", "Shopper");
+    }
+
+    private UUID expectedQualificationId(AgentToolExecutionContext context) {
+        return QualifyUserProductSearchCommand.requestQualificationId(
+                USER_ID,
+                context.conversationId(),
+                MERCHANT_ID,
+                context.triggeringMessageId()
+        );
     }
 
     private UserGroupedProductSearchResult emptyResult(String query) {
@@ -273,6 +414,21 @@ class FindSimilarProductsAgentToolTest {
                 products,
                 0,
                 false,
+                List.of()
+        );
+    }
+
+    private CatalogDiscoveryFilters availableOnly() {
+        return new CatalogDiscoveryFilters(
+                true,
+                List.of(),
+                null,
+                List.of(),
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                null,
                 List.of()
         );
     }
