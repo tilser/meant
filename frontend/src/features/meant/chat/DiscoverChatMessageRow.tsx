@@ -271,7 +271,6 @@ export function DiscoverChatMessageRow({
   onShelfAddProduct,
   onDragMessage,
   onDragProduct,
-  onRetryProductResultSet,
   onVisibleProductContextChange,
   immutable = false,
   useLiveCart = false,
@@ -349,7 +348,6 @@ export function DiscoverChatMessageRow({
   onShelfAddProduct: (product: Product, sourceElement: HTMLElement) => void
   onDragMessage: (event: ReactDragEvent<HTMLElement>, message: DiscoverChatMessage) => void
   onDragProduct: (event: ReactDragEvent<HTMLElement>, product: Product) => void
-  onRetryProductResultSet: (threadId: string, resultSetId: string) => void
   onVisibleProductContextChange?: VisibleProductContextChange
   immutable?: boolean
   useLiveCart?: boolean
@@ -476,7 +474,6 @@ export function DiscoverChatMessageRow({
                 onNewsletterSignup={onNewsletterSignup}
                 onShelfAddProduct={onShelfAddProduct}
                 onDragProduct={onDragProduct}
-                onRetryProductResultSet={onRetryProductResultSet}
                 onVisibleProductContextChange={onVisibleProductContextChange}
                 immutable={immutable}
                 useLiveCart={useLiveCart}

@@ -56,8 +56,6 @@ app:
         expire-after-access: 25h
       endpoints:
         - method: POST
-          path: /api/v1/users/me/product-search-qualifications
-        - method: POST
           path: /api/v1/users/me/product-searches
         - method: POST
           path: /api/v1/users/me/product-searches:stream

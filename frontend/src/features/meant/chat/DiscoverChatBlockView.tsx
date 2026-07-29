@@ -117,7 +117,6 @@ export function DiscoverChatBlockView({
   onNewsletterSignup,
   onShelfAddProduct,
   onDragProduct,
-  onRetryProductResultSet,
   onVisibleProductContextChange,
   immutable,
   useLiveCart,
@@ -184,7 +183,6 @@ export function DiscoverChatBlockView({
   onNewsletterSignup: () => void
   onShelfAddProduct: (product: Product, sourceElement: HTMLElement) => void
   onDragProduct: (event: ReactDragEvent<HTMLElement>, product: Product) => void
-  onRetryProductResultSet: (threadId: string, resultSetId: string) => void
   onVisibleProductContextChange?: VisibleProductContextChange
   immutable: boolean
   useLiveCart: boolean
@@ -213,78 +211,32 @@ export function DiscoverChatBlockView({
     )
   }
   if (block.type === 'products') {
-    const unavailableCount = Math.max(0, block.unavailableCount ?? 0)
-    const productResultSetId = block.productResultSetId
-    if (block.historyHydration === 'loading') {
-      return (
-        <div className="mt-ct-system">
-          <SparkMark size={11} color="var(--faint)" />
-          Refreshing saved product results…
-        </div>
-      )
-    }
-    if (block.historyHydration === 'failed') {
-      return (
-        <div className="mt-ct-system">
-          <SparkMark size={11} color="var(--faint)" />
-          <span>Saved product results couldn&apos;t be refreshed right now.</span>
-          {productResultSetId ? (
-            <button
-              className="mt-ct-inline-link"
-              type="button"
-              onClick={() => onRetryProductResultSet(threadId, productResultSetId)}
-            >
-              Try again
-            </button>
-          ) : null}
-        </div>
-      )
-    }
-    if (block.historyHydration === 'loaded' && block.products.length === 0) {
-      return (
-        <div className="mt-ct-system">
-          <SparkMark size={11} color="var(--faint)" />
-          {unavailableCount > 0
-            ? `${unavailableCount} saved ${unavailableCount === 1 ? 'result is' : 'results are'} no longer available.`
-            : 'No products from these saved results are currently available.'}
-        </div>
-      )
-    }
     return (
-      <>
-        <DiscoverProductBatch
-          products={block.products}
-          query={block.query}
-          qualificationId={block.qualificationId}
-          deliveryLocations={deliveryLocations}
-          preferences={preferences}
-          savedSet={savedSet}
-          savePendingSet={savePendingSet}
-          pinnedSet={pinnedSet}
-          watchedSet={watchedSet}
-          shelfProductSet={shelfProductSet}
-          onOpen={openProduct}
-          onToggleSave={onToggleSave}
-          onAddCart={onAddCart}
-          onPin={onPin}
-          onWatch={onWatch}
-          onDig={onDig}
-          onJustPick={onJustPick}
-          onCompareHere={onCompareHere}
-          onShelfAddProduct={onShelfAddProduct}
-          onDragProduct={onDragProduct}
-          sourceMessageId={block.sourceMessageId}
-          onVisibleProductContextChange={onVisibleProductContextChange}
-          agentActionsDisabled={agentActionsDisabled}
-        />
-        {block.historyHydration === 'loaded' && unavailableCount > 0 ? (
-          <div className="mt-ct-system">
-            <SparkMark size={11} color="var(--faint)" />
-            {unavailableCount} saved {unavailableCount === 1 ? 'result is' : 'results are'} no
-            longer available.
-          </div>
-        ) : null}
-      </>
+      <DiscoverProductBatch
+        products={block.products}
+        query={block.query}
+        qualificationId={block.qualificationId}
+        deliveryLocations={deliveryLocations}
+        preferences={preferences}
+        savedSet={savedSet}
+        savePendingSet={savePendingSet}
+        pinnedSet={pinnedSet}
+        watchedSet={watchedSet}
+        shelfProductSet={shelfProductSet}
+        onOpen={openProduct}
+        onToggleSave={onToggleSave}
+        onAddCart={onAddCart}
+        onPin={onPin}
+        onWatch={onWatch}
+        onDig={onDig}
+        onJustPick={onJustPick}
+        onCompareHere={onCompareHere}
+        onShelfAddProduct={onShelfAddProduct}
+        onDragProduct={onDragProduct}
+        sourceMessageId={block.sourceMessageId}
+        onVisibleProductContextChange={onVisibleProductContextChange}
+        agentActionsDisabled={agentActionsDisabled}
+      />
     )
   }
   if (block.type === 'reviews') {
@@ -359,20 +311,6 @@ export function DiscoverChatBlockView({
             {block.message ?? `No accepted discount code found for ${merchant}.`}
           </div>
         )}
-      </div>
-    )
-  }
-  if (block.type === 'similar-reference') {
-    return (
-      <div className="mt-ct-block">
-        <div className="mt-ct-block-head">
-          <div className="mt-mono mt-ct-block-key">Similar products</div>
-        </div>
-        <div className={`mt-ct-code-empty ${block.status === 'error' ? 'error' : ''}`}>
-          {block.status === 'error'
-            ? 'These similar products could not be refreshed right now. Reopen this chat to try again.'
-            : 'Refreshing similar products...'}
-        </div>
       </div>
     )
   }

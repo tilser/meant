@@ -22,17 +22,12 @@ const {
   completeEmbeddedCheckout,
   createCart,
   createUserInventoryItem,
-  deleteDiscoverConversation,
   deleteUserProductSearchPreference,
-  getDiscoverConversation,
-  getDiscoverConversationProductResultSet,
   getCartCheckout,
   getSavedProduct,
   rehydrateCanonicalProducts,
   searchLocationSuggestions,
   searchSimilarGroupedProducts,
-  qualifyProductSearch,
-  saveDiscoverConversation,
   searchDiscountCodes,
   searchGroupedProducts,
   selectProductVariant,
@@ -56,16 +51,6 @@ beforeEach(() => {
     requestKeepalive.push(init?.keepalive)
     if (request.url.endsWith('/cancel') || request.url.endsWith('/opened')) {
       return new Response(null, { status: 204 })
-    }
-    if (request.url.endsWith('/api/v1/users/me/product-search-qualifications')) {
-      return Response.json({
-        qualificationId: 'qualification-1',
-        status: 'NEEDS_INPUT',
-        assistantMessage: 'Which color do you prefer?',
-        suggestedReplies: ['Black', 'Any color'],
-        missingFilters: ['ATTRIBUTES'],
-        effectiveQuery: 'running shoes',
-      })
     }
     if (request.url.endsWith('/api/v1/users/me/product-searches')) {
       return Response.json({ products: [] })
@@ -366,13 +351,6 @@ describe('account-bound mutation APIs', () => {
         expectedUserId: 'user-a',
       }),
     ).rejects.toThrow('Authenticated user changed before request')
-    await expect(
-      qualifyProductSearch({
-        conversationId: 'conversation-1',
-        message: 'running shoes',
-        expectedUserId: 'user-a',
-      }),
-    ).rejects.toThrow('Authenticated user changed before request')
     await expect(getCartCheckout({ cartId: 'cart-1', expectedUserId: 'user-a' })).rejects.toThrow(
       'Authenticated user changed before request',
     )
@@ -484,26 +462,6 @@ describe('canonical product history rehydration API', () => {
 })
 
 describe('qualified product search API', () => {
-  test('continues one generic qualification conversation without category-specific fields', async () => {
-    const response = await qualifyProductSearch({
-      conversationId: 'conversation-1',
-      qualificationId: 'qualification-1',
-      message: 'Black, please',
-      merchantId: 'merchant-1',
-    })
-
-    expect(response.status).toBe('NEEDS_INPUT')
-    expect(requests).toHaveLength(1)
-    expect(requests[0]?.method).toBe('POST')
-    expect(requests[0]?.url).toEndWith('/api/v1/users/me/product-search-qualifications')
-    expect(await requests[0]?.json()).toEqual({
-      conversationId: 'conversation-1',
-      qualificationId: 'qualification-1',
-      message: 'Black, please',
-      merchantId: 'merchant-1',
-    })
-  })
-
   test('binds a ready search to its qualification id', async () => {
     await searchGroupedProducts({
       query: 'black running shoes size 10',
@@ -584,83 +542,5 @@ describe('validated delivery location API', () => {
     expect(await requests[0]?.json()).toEqual({
       locations: [{ id: 'geonames:3067696' }],
     })
-  })
-})
-
-describe('Discover conversation persistence API', () => {
-  test('loads one conversation directly instead of relying on the top-50 history page', async () => {
-    await getDiscoverConversation('conversation/51')
-
-    expect(requests).toHaveLength(1)
-    expect(requests[0]?.method).toBe('GET')
-    expect(requests[0]?.url).toBe(
-      'http://localhost:8080/api/v1/users/me/discover/conversations/conversation%2F51',
-    )
-  })
-
-  test('loads one durable product result set inside its owned conversation', async () => {
-    await getDiscoverConversationProductResultSet(
-      'conversation/51',
-      '00000000-0000-4000-8000-000000000102',
-    )
-
-    expect(requests).toHaveLength(1)
-    expect(requests[0]?.method).toBe('GET')
-    expect(requests[0]?.cache).toBe('no-store')
-    expect(requests[0]?.url).toBe(
-      'http://localhost:8080/api/v1/users/me/discover/conversations/conversation%2F51/product-result-sets/00000000-0000-4000-8000-000000000102',
-    )
-  })
-
-  test('sends the last observed revision with a conversation update', async () => {
-    await saveDiscoverConversation({
-      conversationId: 'conversation-1',
-      title: 'Running shoes',
-      threadJson: '{"messages":[]}',
-      expectedRevision: 3,
-    })
-
-    expect(requests[0]?.method).toBe('PUT')
-    expect(await requests[0]?.json()).toEqual({
-      title: 'Running shoes',
-      threadJson: '{"messages":[]}',
-      expectedRevision: 3,
-    })
-  })
-
-  test('does not send a stale conversation write with the next user session', async () => {
-    authenticatedUserId = 'user-b'
-
-    await expect(
-      saveDiscoverConversation({
-        conversationId: 'conversation-1',
-        title: 'Running shoes',
-        threadJson: '{"messages":[]}',
-        expectedRevision: 3,
-        expectedUserId: 'user-a',
-      }),
-    ).rejects.toThrow('Authenticated user changed before request')
-    expect(requests).toHaveLength(0)
-  })
-
-  test('rejects a failed delete so the UI can keep the conversation visible', async () => {
-    globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
-      requests.push(new Request(input, init))
-      return Response.json({ detail: 'Delete failed' }, { status: 500 })
-    }) as unknown as typeof fetch
-
-    await expect(deleteDiscoverConversation('conversation-1')).rejects.toThrow(
-      'Failed to delete Discover conversation',
-    )
-    expect(requests[0]?.method).toBe('DELETE')
-  })
-
-  test('treats an already deleted conversation as success', async () => {
-    globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
-      requests.push(new Request(input, init))
-      return new Response(null, { status: 404 })
-    }) as unknown as typeof fetch
-
-    await expect(deleteDiscoverConversation('conversation-1')).resolves.toBeUndefined()
   })
 })

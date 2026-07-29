@@ -53,20 +53,20 @@ class SecurityConfigurationIT extends PostgresIntegrationTestSupport {
     }
 
     @Test
-    void discoverConversationPutPreflightAllowsLocalFrontend() {
+    void agentConversationPatchPreflightAllowsLocalFrontend() {
         UUID conversationId = UUID.randomUUID();
 
         client.method(HttpMethod.OPTIONS)
-                .uri("/api/users/me/discover/conversations/{conversationId}", conversationId)
+                .uri("/api/v1/users/me/agent/conversations/{conversationId}", conversationId)
                 .header(HttpHeaders.ORIGIN, "http://localhost:3000")
-                .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "PUT")
+                .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "PATCH")
                 .header(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS, "authorization,content-type")
                 .exchange()
                 .expectStatus().isOk()
                 .expectHeader().valueEquals(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "http://localhost:3000")
                 .expectHeader().value(HttpHeaders.ACCESS_CONTROL_ALLOW_METHODS, value -> {
                     org.assertj.core.api.Assertions.assertThat(value.split(","))
-                            .contains("PUT");
+                            .contains("PATCH");
                 })
                 .expectHeader().value(HttpHeaders.ACCESS_CONTROL_ALLOW_HEADERS, value -> {
                     org.assertj.core.api.Assertions.assertThat(value.toLowerCase())

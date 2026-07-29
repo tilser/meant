@@ -1,7 +1,8 @@
-package com.meant.api.module.user.service;
+package com.meant.api.module.agent.service;
 
 import com.meant.api.common.util.CountryCodeNormalizer;
 import com.meant.api.module.user.constant.UserProductSearchQuestionTarget;
+import com.meant.api.module.user.service.UserProductSearchCategoryPolicy;
 import com.meant.api.module.user.service.dto.UserProductSearchQualificationSnapshot;
 import java.util.List;
 import java.util.Locale;
@@ -10,7 +11,7 @@ import org.springframework.stereotype.Component;
 
 /** Deterministically distinguishes an answer to a server question from a new shopping intent. */
 @Component
-public class UserProductSearchQualificationContinuationPolicy {
+public class AgentProductSearchQualificationContinuationPolicy {
 
     private static final Pattern CANCELLATION = Pattern.compile(
             "(?i)^\\s*(?:cancel|stop|never\\s*mind|nevermind|forget\\s+it|start\\s+over)\\s*[.!]?\\s*$");
@@ -39,7 +40,7 @@ public class UserProductSearchQualificationContinuationPolicy {
 
     private final UserProductSearchCategoryPolicy categoryPolicy;
 
-    public UserProductSearchQualificationContinuationPolicy(
+    public AgentProductSearchQualificationContinuationPolicy(
             UserProductSearchCategoryPolicy categoryPolicy
     ) {
         this.categoryPolicy = categoryPolicy;

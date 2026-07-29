@@ -92,8 +92,6 @@ app:
         expire-after-access: ${APP_RATE_LIMIT_EXPENSIVE_ENDPOINTS_BUCKET_CACHE_EXPIRE_AFTER_ACCESS:25h}
       endpoints:
         - method: POST
-          path: /api/v1/users/me/product-search-qualifications
-        - method: POST
           path: /api/v1/users/me/product-searches
         - method: POST
           path: /api/v1/users/me/products/{canonicalProductKey}/similar

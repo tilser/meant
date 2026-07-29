@@ -285,10 +285,6 @@ export interface UserProductSearchSuggestionsProfile {
   suggestions: string[]
 }
 
-export type ProductSearchQualificationFilter = components['schemas']['UserProductSearchFilterKind']
-export type ProductSearchQualificationProfile =
-  components['schemas']['UserProductSearchQualificationResponse']
-
 export type UserTasteBehaviorType = 'SAVE' | 'PURCHASE' | 'DISMISS'
 export type UserTasteSignalStatus = 'ACTIVE' | 'DISABLED'
 export type UserTasteSignalType =
@@ -334,18 +330,6 @@ export interface UserPopularProductSearchProfile {
   displayQuery: string
   query: string
 }
-
-export interface UserDiscoverConversationProfile {
-  conversationId: string
-  title: string
-  createdAt: string
-  updatedAt: string
-  threadJson: string
-  revision: number
-}
-
-export type UserDiscoverProductResultSetProfile =
-  components['schemas']['UserDiscoverProductResultSetResponse']
 
 export interface UserSavedProductOfferProfile {
   offerKey?: string | null
@@ -1173,34 +1157,6 @@ export async function deleteUserProductSearchPreference(
   )
 }
 
-export async function qualifyProductSearch(input: {
-  conversationId: string
-  qualificationId?: string | null
-  message: string
-  merchantId?: string | null
-  signal?: AbortSignal
-  expectedUserId?: string
-}): Promise<ProductSearchQualificationProfile> {
-  const response = await fetch(`${API_URL}/api/v1/users/me/product-search-qualifications`, {
-    method: 'POST',
-    headers: {
-      ...(await authHeaders(input.expectedUserId)),
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      conversationId: input.conversationId,
-      qualificationId: input.qualificationId ?? undefined,
-      message: input.message,
-      merchantId: input.merchantId ?? undefined,
-    }),
-    signal: input.signal,
-  })
-  return parseJsonResponse<ProductSearchQualificationProfile>(
-    response,
-    'Failed to qualify product search',
-  )
-}
-
 export async function searchGroupedProducts(input: {
   query: string
   qualificationId: string
@@ -1515,103 +1471,6 @@ export async function getPopularProductSearches(
     response,
     'Failed to load popular searches',
   )
-}
-
-export async function getDiscoverConversations(options?: {
-  expectedUserId?: string
-  signal?: AbortSignal
-}): Promise<UserDiscoverConversationProfile[]> {
-  const response = await fetch(`${API_URL}/api/users/me/discover/conversations`, {
-    headers: await authHeaders(options?.expectedUserId),
-    signal: options?.signal,
-  })
-  return parseJsonResponse<UserDiscoverConversationProfile[]>(
-    response,
-    'Failed to load Discover conversations',
-  )
-}
-
-export async function getDiscoverConversation(
-  conversationId: string,
-  options?: { expectedUserId?: string; signal?: AbortSignal },
-): Promise<UserDiscoverConversationProfile> {
-  const response = await fetch(
-    `${API_URL}/api/v1/users/me/discover/conversations/${encodeURIComponent(conversationId)}`,
-    {
-      headers: await authHeaders(options?.expectedUserId),
-      signal: options?.signal,
-    },
-  )
-  return parseJsonResponse<UserDiscoverConversationProfile>(
-    response,
-    'Failed to load Discover conversation',
-  )
-}
-
-export async function getDiscoverConversationProductResultSet(
-  conversationId: string,
-  resultSetId: string,
-  options?: { expectedUserId?: string; signal?: AbortSignal },
-): Promise<UserDiscoverProductResultSetProfile> {
-  const response = await fetch(
-    `${API_URL}/api/v1/users/me/discover/conversations/${encodeURIComponent(conversationId)}/product-result-sets/${encodeURIComponent(resultSetId)}`,
-    {
-      cache: 'no-store',
-      headers: await authHeaders(options?.expectedUserId),
-      signal: options?.signal,
-    },
-  )
-  return parseJsonResponse<UserDiscoverProductResultSetProfile>(
-    response,
-    'Failed to refresh saved product results',
-  )
-}
-
-export async function saveDiscoverConversation(input: {
-  conversationId: string
-  title: string
-  threadJson: string
-  expectedRevision?: number
-  expectedUserId?: string
-  signal?: AbortSignal
-}): Promise<UserDiscoverConversationProfile> {
-  const response = await fetch(
-    `${API_URL}/api/users/me/discover/conversations/${encodeURIComponent(input.conversationId)}`,
-    {
-      method: 'PUT',
-      headers: {
-        ...(await authHeaders(input.expectedUserId)),
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        title: input.title,
-        threadJson: input.threadJson,
-        expectedRevision: input.expectedRevision,
-      }),
-      signal: input.signal,
-    },
-  )
-  return parseJsonResponse<UserDiscoverConversationProfile>(
-    response,
-    'Failed to save Discover conversation',
-  )
-}
-
-export async function deleteDiscoverConversation(
-  conversationId: string,
-  options?: { expectedUserId?: string; signal?: AbortSignal },
-): Promise<void> {
-  const response = await fetch(
-    `${API_URL}/api/users/me/discover/conversations/${encodeURIComponent(conversationId)}`,
-    {
-      method: 'DELETE',
-      headers: await authHeaders(options?.expectedUserId),
-      signal: options?.signal,
-    },
-  )
-  if (!response.ok && response.status !== 404) {
-    throw new Error('Failed to delete Discover conversation')
-  }
 }
 
 export async function getSavedProducts(input?: {

@@ -9,13 +9,13 @@ import com.meant.api.module.user.service.dto.UserProductSearchQualificationModel
 import com.meant.api.module.user.service.dto.UserProductSearchQualificationResult;
 import com.meant.api.module.user.service.dto.UserProductSearchQualificationSnapshot;
 import com.meant.api.module.user.service.query.GenerateUserProductSearchQualificationQuery;
-import com.meant.api.module.user.service.query.GetUserDiscoverConversationQuery;
 import com.meant.api.module.user.service.query.GetUserProductSearchQualificationQuery;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.util.Objects;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
 
@@ -23,6 +23,7 @@ import org.springframework.validation.annotation.Validated;
 @Service
 @Validated
 @RequiredArgsConstructor
+@Slf4j
 public class UserProductSearchQualificationService {
 
     private final UserSettingsService userSettingsService;
@@ -30,19 +31,31 @@ public class UserProductSearchQualificationService {
     private final UserProductSearchQualificationModelService modelService;
     private final UserProductSearchQualificationPersistenceService persistenceService;
     private final UserProductSearchCatalogInputBuilder catalogInputBuilder;
-    private final UserDiscoverConversationService conversationService;
 
     public UserProductSearchQualificationResult qualify(
             @NotNull @Valid EnsureUserProfileCommand profileCommand,
             @NotNull @Valid QualifyUserProductSearchCommand command
     ) {
+        log.info(
+                "Product-search qualification orchestration started. userId={}, conversationId={}, "
+                        + "requestedQualificationId={}, merchantScoped={}",
+                command.userId(),
+                command.conversationId(),
+                command.qualificationId(),
+                command.merchantId() != null
+        );
         if (!profileCommand.id().equals(command.userId())) {
             throw UserException.forbidden("Product-search qualification user does not match authenticated user");
         }
-        conversationService.requireOwned(new GetUserDiscoverConversationQuery(
-                command.userId(), command.conversationId()));
-
         UserProductSearchQualificationSnapshot previous = previous(command);
+        log.info(
+                "Product-search qualification previous state loaded. userId={}, conversationId={}, "
+                        + "requestedQualificationId={}, previousStatus={}",
+                command.userId(),
+                command.conversationId(),
+                command.qualificationId(),
+                previous == null ? "NONE" : previous.status()
+        );
         if (previous != null && previous.status() == UserProductSearchQualificationStatus.READY) {
             if (!previous.plan().currentSchema()) {
                 throw UserException.notFound(
@@ -55,6 +68,14 @@ public class UserProductSearchQualificationService {
         catalogInputBuilder.validateSupportedCurrency(command.message());
         UUID merchantId = previous == null ? command.merchantId() : previous.merchantId();
         var durablePreferences = preferenceService.list(command.userId());
+        log.info(
+                "Product-search qualification invoking model. userId={}, conversationId={}, "
+                        + "qualificationId={}, durablePreferenceCount={}",
+                command.userId(),
+                command.conversationId(),
+                command.qualificationId(),
+                durablePreferences.size()
+        );
         UserProductSearchQualificationModelResult generated = modelService.generate(
                 new GenerateUserProductSearchQualificationQuery(
                         originalQuery,
@@ -70,6 +91,16 @@ public class UserProductSearchQualificationService {
         UserProductSearchQualificationStatus status = ready
                 ? UserProductSearchQualificationStatus.READY
                 : UserProductSearchQualificationStatus.NEEDS_INPUT;
+        log.info(
+                "Product-search qualification model result validated. userId={}, conversationId={}, "
+                        + "status={}, currentSchema={}, missingFilterCount={}, missingTargetCount={}",
+                command.userId(),
+                command.conversationId(),
+                status,
+                generated.plan().currentSchema(),
+                generated.plan().missingFilters().size(),
+                generated.plan().missingTargets().size()
+        );
         UUID qualificationId = previous == null ? UUID.randomUUID() : previous.qualificationId();
         UserProductSearchQualificationSnapshot persisted = persistenceService.persist(
                 new PersistUserProductSearchQualificationCommand(
@@ -84,6 +115,13 @@ public class UserProductSearchQualificationService {
                         generated.model(),
                         generated.promptVersion()
                 )
+        );
+        log.info(
+                "Product-search qualification persisted. userId={}, conversationId={}, qualificationId={}, status={}",
+                command.userId(),
+                command.conversationId(),
+                persisted.qualificationId(),
+                persisted.status()
         );
         return result(persisted);
     }

@@ -39,15 +39,6 @@ export type VisibleProductContextChange = (
   context: VisibleProductContext | null | undefined,
 ) => void
 
-export type SimilarReferenceStatus = 'idle' | 'loading' | 'error'
-export type SimilarMessageRole = 'request' | 'response'
-export type SimilarSearchStatus = 'requested' | 'pending' | 'success' | 'empty' | 'error'
-
-export interface SimilarProductsRehydrationResult {
-  products: readonly Product[]
-  unavailableCanonicalProductKeys: readonly string[]
-}
-
 export interface SimilarityAnchor {
   canonicalProductKey: string
   inventoryItemId: string | null
@@ -63,11 +54,8 @@ export type DiscoverChatBlock =
       products: readonly Product[]
       query?: string
       qualificationId?: string
-      productResultSetId?: string
       /** Durable TOOL message whose ordered artifacts produced these cards. */
       sourceMessageId?: string
-      unavailableCount?: number
-      historyHydration?: 'loading' | 'loaded' | 'failed'
     }
   | { type: 'reviews'; product: Product; snapshot?: ProductReviewsProfile }
   | {
@@ -90,17 +78,8 @@ export type DiscoverChatBlock =
       /** Durable TOOL message whose ordered artifacts produced these cards. */
       sourceMessageId?: string
       anchorCanonicalProductKey?: string
-      resultCanonicalProductKeys?: readonly string[]
       /** Trusted anchor metadata returned by the similarity tool. */
       similarityAnchor?: SimilarityAnchor
-    }
-  | {
-      type: 'similar-reference'
-      anchorCanonicalProductKey: string
-      resultCanonicalProductKeys: readonly string[]
-      query: string
-      qualificationId?: string
-      status: SimilarReferenceStatus
     }
   | { type: 'decision'; product: Product; runnerUp: Product | null }
   | { type: 'watch'; product: Product; price: number; merchant: string }
@@ -148,17 +127,11 @@ export interface DiscoverChatMessage {
   blocks?: readonly DiscoverChatBlock[]
   pending?: boolean
   pendingText?: string
-  pendingOperation?: 'similar-product-search'
   suggestedReplies?: readonly string[]
   /** Values submitted by suggestion chips when their display labels include extra context. */
   suggestedReplySubmissions?: readonly string[]
   query?: string
   productContext?: Product
-  similarMessageRole?: SimilarMessageRole
-  similarSearchStatus?: SimilarSearchStatus
-  similarAnchorCanonicalProductKey?: string
-  /** Legacy runtime hint. Durable storage preserves the message and omits this flag. */
-  sessionOnly?: boolean
 }
 
 export interface DiscoverChatThread {
@@ -169,42 +142,11 @@ export interface DiscoverChatThread {
   merchantId?: string
   /** Server-owned count used while a historical transcript has not been loaded yet. */
   messageCount?: number
-  qualificationId?: string
   named?: boolean
   archived?: boolean
-  focusProductId?: ProductId
   createdAt?: number
   updatedAt?: number
-  autoTitleSource?: 'similar-product-search'
-  /** Server revision this local snapshot was based on. Stored locally, never sent in the snapshot. */
-  persistedRevision?: number
 }
-
-export interface DiscoverProductSearchTurnInput {
-  conversationId: string
-  qualificationId?: string
-  merchantId?: string
-  message: string
-  onActivities?: (activities: readonly AgentActivity[]) => void
-}
-
-export type DiscoverProductSearchTurnResult =
-  | {
-      status: 'NEEDS_INPUT'
-      qualificationId: string
-      assistantMessage: string
-      suggestedReplies: readonly string[]
-      effectiveQuery: string
-    }
-  | {
-      status: 'READY'
-      qualificationId: string
-      assistantMessage: string
-      suggestedReplies: readonly string[]
-      effectiveQuery: string
-      products: readonly Product[]
-      productResultSetId: string
-    }
 
 export interface ProductDetailChatRequest {
   id: string

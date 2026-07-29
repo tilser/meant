@@ -7,19 +7,16 @@ import com.meant.api.module.catalog.service.dto.*;
 import com.meant.api.module.user.constant.UserProductSearchPagination;
 import com.meant.api.module.user.exception.UserProductSearchGroupingException;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
-import com.meant.api.module.user.service.command.ReplaceUserDiscoverProductResultSetCommand;
 import com.meant.api.module.user.service.command.SearchUserProductsCommand;
 import com.meant.api.module.user.service.dto.UserCanonicalProductPersonalizationResult;
 import com.meant.api.module.user.service.dto.UserCatalogSourceState;
 import com.meant.api.module.user.service.dto.UserGroupedProductSearchResult;
-import com.meant.api.module.user.service.dto.UserProductSearchHistoryContext;
 import com.meant.api.module.user.service.dto.UserProductSearchPreparation;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,7 +37,6 @@ public class UserGroupedProductSearchService {
     private final UserProductRankingContextFactory rankingContextFactory;
     private final UserCanonicalProductSessionStore productSessionStore;
     private final UserCanonicalProductReferencePersistenceService productReferencePersistenceService;
-    private final UserDiscoverProductResultSetPersistenceService productResultSetPersistenceService;
     private final UserProductPreferenceMatchCuratorService preferenceMatchCuratorService;
     private final UserCatalogMerchantOriginEnrichmentService merchantOriginEnrichmentService;
 
@@ -53,7 +49,6 @@ public class UserGroupedProductSearchService {
             UserProductRankingContextFactory rankingContextFactory,
             UserCanonicalProductSessionStore productSessionStore,
             UserCanonicalProductReferencePersistenceService productReferencePersistenceService,
-            UserDiscoverProductResultSetPersistenceService productResultSetPersistenceService,
             UserProductPreferenceMatchCuratorService preferenceMatchCuratorService,
             UserCatalogMerchantOriginEnrichmentService merchantOriginEnrichmentService
     ) {
@@ -64,7 +59,6 @@ public class UserGroupedProductSearchService {
         this.rankingContextFactory = rankingContextFactory;
         this.productSessionStore = productSessionStore;
         this.productReferencePersistenceService = productReferencePersistenceService;
-        this.productResultSetPersistenceService = productResultSetPersistenceService;
         this.preferenceMatchCuratorService = preferenceMatchCuratorService;
         this.merchantOriginEnrichmentService = merchantOriginEnrichmentService;
     }
@@ -77,7 +71,6 @@ public class UserGroupedProductSearchService {
             UserProductRankingContextFactory rankingContextFactory,
             UserCanonicalProductSessionStore productSessionStore,
             UserCanonicalProductReferencePersistenceService productReferencePersistenceService,
-            UserDiscoverProductResultSetPersistenceService productResultSetPersistenceService,
             UserProductPreferenceMatchCuratorService preferenceMatchCuratorService
     ) {
         this(
@@ -88,7 +81,6 @@ public class UserGroupedProductSearchService {
                 rankingContextFactory,
                 productSessionStore,
                 productReferencePersistenceService,
-                productResultSetPersistenceService,
                 preferenceMatchCuratorService,
                 new UserCatalogMerchantOriginEnrichmentService(null)
         );
@@ -98,7 +90,7 @@ public class UserGroupedProductSearchService {
             @NotNull @Valid EnsureUserProfileCommand profileCommand,
             @NotNull @Valid SearchUserProductsCommand command
     ) {
-        return search(command, preparationService.prepare(profileCommand, command), null, null, null);
+        return search(command, preparationService.prepare(profileCommand, command), null, null);
     }
 
     public UserGroupedProductSearchResult search(
@@ -109,22 +101,6 @@ public class UserGroupedProductSearchService {
         return search(
                 command,
                 preparationService.prepare(profileCommand, command, discoveryFilters),
-                null,
-                null,
-                null
-        );
-    }
-
-    public UserGroupedProductSearchResult search(
-            @NotNull @Valid EnsureUserProfileCommand profileCommand,
-            @NotNull @Valid SearchUserProductsCommand command,
-            CatalogDiscoveryFilters discoveryFilters,
-            @NotNull @Valid UserProductSearchHistoryContext historyContext
-    ) {
-        return search(
-                command,
-                preparationService.prepare(profileCommand, command, discoveryFilters),
-                historyContext,
                 null,
                 null
         );
@@ -149,7 +125,6 @@ public class UserGroupedProductSearchService {
         return search(
                 command,
                 preparationService.prepareSimilarity(profileCommand, command, discoveryFilters),
-                null,
                 anchor,
                 similarityReference
         );
@@ -158,7 +133,6 @@ public class UserGroupedProductSearchService {
     private UserGroupedProductSearchResult search(
             SearchUserProductsCommand command,
             UserProductSearchPreparation preparation,
-            UserProductSearchHistoryContext historyContext,
             CanonicalProduct anchor,
             CatalogSimilarityReference similarityReference
     ) {
@@ -254,24 +228,7 @@ public class UserGroupedProductSearchService {
                         .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue));
         Map<String, UserCanonicalProductPersonalizationResult> pagePersonalizations =
                 preferenceMatchCuratorService.curateCanonical(page, preparation.settings());
-        UUID productResultSetId;
-        if (historyContext == null) {
-            productReferencePersistenceService.replace(command.userId(), page);
-            productResultSetId = null;
-        } else {
-            productResultSetId = productResultSetPersistenceService.replace(
-                    new ReplaceUserDiscoverProductResultSetCommand(
-                            command.userId(),
-                            historyContext.conversationId(),
-                            historyContext.qualificationId(),
-                            responseOffset,
-                            responseLimit,
-                            hasMore ? pageEnd : null,
-                            hasMore,
-                            discovery.truncated(),
-                            page
-                    ));
-        }
+        productReferencePersistenceService.replace(command.userId(), page);
         productSessionStore.remember(
                 command.userId(), page, pageProductExplanations, pageOfferExplanations,
                 pagePersonalizations, sourceStates);
@@ -292,8 +249,7 @@ public class UserGroupedProductSearchService {
                 sourceStates,
                 grouping.decisions().size(),
                 grouping.decisions().size() > visibleDecisions.size(),
-                visibleDecisions,
-                productResultSetId
+                visibleDecisions
         );
     }
 

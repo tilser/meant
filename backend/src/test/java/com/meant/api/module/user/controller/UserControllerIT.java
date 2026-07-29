@@ -50,13 +50,11 @@ import com.meant.api.plugin.support.UcpSession;
 import com.meant.api.module.merchant.service.dto.ProductDetailsResult;
 import com.meant.api.module.merchant.service.query.GetMerchantProductDetailsQuery;
 import com.meant.api.module.merchant.service.query.SemanticProductSearchQuery;
-import com.meant.api.module.user.controller.response.UserDiscoverConversationResponse;
 import com.meant.api.module.user.controller.response.UserInventoryExportResponse;
 import com.meant.api.module.user.controller.response.UserInventoryItemResponse;
 import com.meant.api.module.user.controller.response.UserPopularProductSearchResponse;
 import com.meant.api.module.user.controller.response.UserProductDiscoveryResponse;
 import com.meant.api.module.user.controller.response.UserProductSearchProductResponse;
-import com.meant.api.module.user.controller.response.UserProductSearchQualificationResponse;
 import com.meant.api.module.user.controller.response.UserResponse;
 import com.meant.api.module.user.controller.response.UserSavedProductResponse;
 import com.meant.api.module.user.controller.response.UserSettingsResponse;
@@ -774,113 +772,6 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
                         "sustainable-brands",
                         "best-value",
                         "highly-rated");
-    }
-
-    @Test
-    void qualificationAsksForAllMissingFiltersThenPersistsConfirmedScopedSize() {
-        UUID id = UUID.randomUUID();
-        UUID conversationId = UUID.randomUUID();
-        String email = id + "@example.com";
-        String bearer = token(id, email, "Ada Lovelace");
-
-        client.put().uri("/api/users/me/discover/conversations/{conversationId}", conversationId)
-                .headers(headers -> {
-                    headers.setBearerAuth(bearer);
-                    headers.setContentType(MediaType.APPLICATION_JSON);
-                })
-                .body("{\"title\":\"Running shoes\",\"threadJson\":\"{}\"}")
-                .exchange()
-                .expectStatus().isOk();
-
-        UserProductSearchQualificationResponse question = client.post()
-                .uri("/api/v1/users/me/product-search-qualifications")
-                .headers(headers -> {
-                    headers.setBearerAuth(bearer);
-                    headers.setContentType(MediaType.APPLICATION_JSON);
-                })
-                .body("""
-                        {"conversationId":"%s","message":"running shoes"}
-                        """.formatted(conversationId))
-                .exchange()
-                .expectStatus().isOk()
-                .expectBody(UserProductSearchQualificationResponse.class)
-                .returnResult()
-                .getResponseBody();
-
-        assertThat(question).isNotNull();
-        assertThat(question.status().name()).isEqualTo("NEEDS_INPUT");
-        assertThat(question.assistantMessage()).contains(
-                "condition", "delivery destination", "shipping origin", "maximum price",
-                "color", "size", "target gender", "minimum rating", "price tier");
-
-        UserProductSearchQualificationResponse ready = client.post()
-                .uri("/api/v1/users/me/product-search-qualifications")
-                .headers(headers -> {
-                    headers.setBearerAuth(bearer);
-                    headers.setContentType(MediaType.APPLICATION_JSON);
-                })
-                .body("""
-                        {"conversationId":"%s","qualificationId":"%s","message":"new condition; deliver to US; ship from US or CA; maximum price $150; color Black; size 10; target gender Unisex; minimum rating 4.5 with at least 10 reviews; low or medium price tier"}
-                        """.formatted(conversationId, question.qualificationId()))
-                .exchange()
-                .expectStatus().isOk()
-                .expectBody(UserProductSearchQualificationResponse.class)
-                .returnResult()
-                .getResponseBody();
-
-        assertThat(ready).isNotNull();
-        assertThat(ready.status().name()).isEqualTo("READY");
-        assertThat(ready.missingFilters()).isEmpty();
-
-        UserSettingsResponse settings = client.get().uri("/api/users/me/settings")
-                .headers(headers -> headers.setBearerAuth(bearer))
-                .exchange()
-                .expectStatus().isOk()
-                .expectBody(UserSettingsResponse.class)
-                .returnResult()
-                .getResponseBody();
-
-        assertThat(settings).isNotNull();
-        assertThat(settings.productSearchPreferences()).singleElement().satisfies(preference -> {
-            assertThat(preference.scope()).isEqualTo("running-shoes");
-            assertThat(preference.values()).containsExactly("10");
-        });
-    }
-
-    @Test
-    void discoverConversationDetailReturnsOnlyTheAuthenticatedUsersConversation() {
-        UUID id = UUID.randomUUID();
-        UUID otherUserId = UUID.randomUUID();
-        UUID conversationId = UUID.randomUUID();
-        String bearer = token(id, id + "@example.com", "Ada Lovelace");
-
-        client.put().uri("/api/users/me/discover/conversations/{conversationId}", conversationId)
-                .headers(headers -> {
-                    headers.setBearerAuth(bearer);
-                    headers.setContentType(MediaType.APPLICATION_JSON);
-                })
-                .body("{\"title\":\"Old chat\",\"threadJson\":\"{\\\"messages\\\":[]}\"}")
-                .exchange()
-                .expectStatus().isOk();
-
-        UserDiscoverConversationResponse response = client.get()
-                .uri("/api/v1/users/me/discover/conversations/{conversationId}", conversationId)
-                .headers(headers -> headers.setBearerAuth(bearer))
-                .exchange()
-                .expectStatus().isOk()
-                .expectBody(UserDiscoverConversationResponse.class)
-                .returnResult()
-                .getResponseBody();
-
-        assertThat(response).isNotNull();
-        assertThat(response.conversationId()).isEqualTo(conversationId);
-        assertThat(response.title()).isEqualTo("Old chat");
-
-        client.get().uri("/api/v1/users/me/discover/conversations/{conversationId}", conversationId)
-                .headers(headers -> headers.setBearerAuth(
-                        token(otherUserId, otherUserId + "@example.com", "Other User")))
-                .exchange()
-                .expectStatus().isNotFound();
     }
 
     @Test
@@ -1984,20 +1875,16 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
                 .contains(
                         "\"/api/users/me/saved-products/detail\"",
                         "\"/api/users/me/settings/product-search-preferences/{scope}\"",
-                        "\"/api/v1/users/me/product-search-qualifications\"",
                         "\"/api/v1/users/me/product-searches\"",
                         "\"/api/v1/users/me/product-searches:stream\"",
                         "\"/api/v1/users/me/products:rehydrate\"",
                         "\"/api/v1/users/me/products/{canonicalProductKey}/similar\"",
                         "\"/api/v1/users/me/product-variant-selections\"",
-                        "\"operationId\":\"qualifyProductSearchV1\"",
                         "\"operationId\":\"deleteProductSearchPreference\"",
                         "\"operationId\":\"searchGroupedProductsV1\"",
                         "\"operationId\":\"searchSimilarProductsV1\"",
                         "\"operationId\":\"rehydrateCanonicalProductsV1\"",
                         "\"operationId\":\"streamFederatedProductsV1\"",
-                        "UserProductSearchQualificationRequest",
-                        "UserProductSearchQualificationResponse",
                         "UserProductSearchPreferenceRequest",
                         "UserProductSearchPreferenceResponse",
                         "UserGroupedProductSearchV1Response",
@@ -2028,7 +1915,14 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
                 .doesNotContain(
                         "\"/api/users/me/product-searches\"",
                         "\"/api/users/me/product-searches:stream\"",
-                        "\"operationId\":\"searchProducts\""
+                        "\"/api/users/me/discover/conversations",
+                        "\"/api/v1/users/me/discover/conversations",
+                        "\"/api/v1/users/me/product-search-qualifications\"",
+                        "\"operationId\":\"searchProducts\"",
+                        "UserDiscoverConversation",
+                        "UserDiscoverProductResultSet",
+                        "UserProductSearchQualificationRequest",
+                        "\"productResultSetId\""
                 );
         JsonNode similarRequestProperties = new ObjectMapper().readTree(openApi)
                 .at("/components/schemas/UserSimilarProductSearchRequest/properties");

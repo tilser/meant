@@ -1,4 +1,4 @@
-package com.meant.api.module.user.service.dto;
+package com.meant.api.module.agent.service.dto;
 
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryFilters;
 import com.meant.api.module.user.constant.UserProductSearchQuestionTarget;
@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.UUID;
 
 /** Server-validated qualification outcome for one agent catalog-search attempt. */
-public record UserProductSearchAgentQualificationResult(
+public record AgentProductSearchQualificationResult(
         UUID qualificationId,
         String authoritativeQuery,
         String assistantMessage,
@@ -14,7 +14,7 @@ public record UserProductSearchAgentQualificationResult(
         CatalogDiscoveryFilters filters
 ) {
 
-    public UserProductSearchAgentQualificationResult {
+    public AgentProductSearchQualificationResult {
         questionTargets = questionTargets == null ? List.of() : List.copyOf(questionTargets);
     }
 

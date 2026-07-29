@@ -4,7 +4,6 @@ import type { components, paths } from './schema'
 
 test('generated OpenAPI schema exposes only federated V1 search routes', () => {
   const expectedPaths: Array<keyof paths> = [
-    '/api/v1/users/me/product-search-qualifications',
     '/api/v1/users/me/product-searches',
     '/api/v1/users/me/product-searches:stream',
     '/api/v1/users/me/products/{canonicalProductKey}',
@@ -13,10 +12,6 @@ test('generated OpenAPI schema exposes only federated V1 search routes', () => {
     '/api/v1/users/me/product-variant-selections',
   ]
   const expectedSchemas: Array<keyof components['schemas']> = [
-    'UserProductSearchQualificationRequest',
-    'UserProductSearchQualificationResponse',
-    'UserProductSearchQualificationStatus',
-    'UserProductSearchFilterKind',
     'UserGroupedProductSearchV1Response',
     'UserSimilarProductSearchV1Response',
     'CanonicalProductResponse',
@@ -55,8 +50,8 @@ test('generated OpenAPI schema exposes only federated V1 search routes', () => {
     'features',
   ]
 
-  expect(expectedPaths).toHaveLength(7)
-  expect(expectedSchemas).toHaveLength(31)
+  expect(expectedPaths).toHaveLength(6)
+  expect(expectedSchemas).toHaveLength(27)
   expect(federatedEventFields).toContain('observationSources')
   expect(rankingFields).toContain('diversityPolicyOutcome')
 
@@ -74,12 +69,9 @@ test('generated OpenAPI schema exposes only federated V1 search routes', () => {
     ['query', 'qualificationId']
   expect(similarSearchFields).toEqual(['query', 'qualificationId'])
 
-  const groupedResultSetField: keyof components['schemas']['UserGroupedProductSearchV1Response'] =
-    'productResultSetId'
   const similarResponseFields: Array<
     keyof components['schemas']['UserSimilarProductSearchV1Response']
   > = ['query', 'products', 'hasMore']
-  expect(groupedResultSetField).toBe('productResultSetId')
   expect(similarResponseFields).toEqual(['query', 'products', 'hasMore'])
 
   const rehydrationRequestFields: Array<
@@ -175,33 +167,6 @@ test('delivery locations expose validated UCP shipping fields', () => {
   expect(savedFields).toContain('region')
   expect(requestFields).toEqual(['id'])
   expect(locationPaths).toHaveLength(1)
-})
-
-test('Discover conversation persistence uses optimistic revisions', () => {
-  type Request = components['schemas']['UserDiscoverConversationRequest']
-  type Response = components['schemas']['UserDiscoverConversationResponse']
-  const requestFields: Array<keyof Request> = ['expectedRevision']
-  const responseFields: Array<keyof Response> = ['revision']
-
-  expect(requestFields).toContain('expectedRevision')
-  expect(responseFields).toContain('revision')
-
-  const ownedDetailPaths: Array<keyof paths> = [
-    '/api/v1/users/me/discover/conversations/{conversationId}',
-  ]
-  expect(ownedDetailPaths).toHaveLength(1)
-
-  type ProductResultSet = components['schemas']['UserDiscoverProductResultSetResponse']
-  const productResultSetFields: Array<keyof ProductResultSet> = [
-    'resultSetId',
-    'products',
-    'unavailableCount',
-  ]
-  const productResultSetPaths: Array<keyof paths> = [
-    '/api/v1/users/me/discover/conversations/{conversationId}/product-result-sets/{resultSetId}',
-  ]
-  expect(productResultSetFields).toContain('products')
-  expect(productResultSetPaths).toHaveLength(1)
 })
 
 test('saved products retain typed routing and return a durable exact offer key', () => {

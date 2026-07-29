@@ -19,7 +19,6 @@ import com.meant.api.module.user.service.command.SearchUserProductsCommand;
 import com.meant.api.module.user.service.command.SearchSimilarUserProductsCommand;
 import com.meant.api.module.user.service.dto.AuthenticatedUser;
 import com.meant.api.module.user.service.dto.UserQualifiedProductSearchInput;
-import com.meant.api.module.user.service.dto.UserProductSearchHistoryContext;
 import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.service.query.GetUserCanonicalProductDetailQuery;
 import com.meant.api.module.user.service.query.RehydrateUserCanonicalProductsQuery;
@@ -90,9 +89,7 @@ public class UserGroupedProductSearchV1Controller {
                         request.offset(),
                         request.limit()
                 ),
-                qualified.filters(),
-                new UserProductSearchHistoryContext(
-                        qualified.conversationId(), qualified.qualificationId())
+                qualified.filters()
         ));
     }
 

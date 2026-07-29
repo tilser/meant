@@ -1869,7 +1869,6 @@ export function AgentDiscoverView({
               onShelfAddProduct={(product) => addProductToShelf(product)}
               onDragMessage={dragMessage}
               onDragProduct={dragProduct}
-              onRetryProductResultSet={() => undefined}
               onVisibleProductContextChange={captureVisibleProductContext}
             />
           ))}

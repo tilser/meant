@@ -4,70 +4,6 @@
  */
 
 export interface paths {
-    "/api/users/me/discover/conversations/{conversationId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Save a Discover chat conversation
-         * @description Creates or replaces the persisted Discover chat snapshot for the authenticated user.
-         */
-        put: operations["saveDiscoverConversation"];
-        post?: never;
-        /**
-         * Delete a Discover chat conversation
-         * @description Permanently deletes a persisted Discover chat snapshot for the authenticated user.
-         */
-        delete: operations["deleteDiscoverConversation"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/users/me/discover/conversations/{conversationId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get a Discover chat conversation
-         * @description Returns one persisted Discover chat snapshot owned by the authenticated user.
-         */
-        get: operations["discoverConversation"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/users/me/discover/conversations/{conversationId}/product-result-sets/{resultSetId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Reopen one Discover product result set
-         * @description Resolves a user-owned identifiers-only result reference and batch-rehydrates current product facts without persisting provider facts or media.
-         */
-        get: operations["discoverConversationProductResultSet"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/webhooks/shopify/orders": {
         parameters: {
             query?: never;
@@ -99,26 +35,6 @@ export interface paths {
          * @description Uses a server-issued live or durable saved offer only as a trusted product and merchant anchor. The current provider resolves the requested options. A new offer key is returned only for a complete, unrelaxed, unique exact variant; provider and commerce identifiers are never accepted from the browser.
          */
         post: operations["selectUserProductVariantV1"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/users/me/product-search-qualifications": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Qualify a product search before catalog discovery
-         * @description Uses the current turn, prior qualification state, and durable user context to decide which supported hard filters need values. Catalog discovery is authorized only when READY.
-         */
-        post: operations["qualifyProductSearchV1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -948,26 +864,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/users/me/discover/conversations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Discover chat conversations
-         * @description Returns persisted Discover chat snapshots for the authenticated user.
-         */
-        get: operations["discoverConversations"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/reviews/merchants/{merchantId}/products": {
         parameters: {
             query?: never;
@@ -1152,41 +1048,6 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /** @description Persisted Discover chat snapshot. */
-        UserDiscoverConversationRequest: {
-            title: string;
-            threadJson: string;
-            /** @description Last server revision observed by the caller; omitted only when creating a new chat */
-            expectedRevision?: number;
-        };
-        /** @description Persisted Discover chat snapshot. */
-        UserDiscoverConversationResponse: {
-            /** Format: uuid */
-            conversationId: string;
-            title: string;
-            /** Format: date-time */
-            createdAt: string;
-            /** Format: date-time */
-            updatedAt: string;
-            threadJson: string;
-            /** Format: int64 */
-            revision: number;
-        };
-        /** @description Current products rehydrated from one identifiers-only Discover history reference. */
-        UserDiscoverProductResultSetResponse: {
-            /**
-             * Format: uuid
-             * @description Server-issued identifier of the historical result set
-             */
-            resultSetId: string;
-            /** @description Current products restored in their original result order */
-            products: components["schemas"]["CanonicalProductResponse"][];
-            /**
-             * Format: int32
-             * @description Referenced products that could not be authoritatively rehydrated
-             */
-            unavailableCount: number;
-        };
         /** @description Select one exact product variant from a server-issued live or saved offer anchor */
         SelectUserProductVariantRequest: {
             /** @description Server-issued live canonical or durable saved offer key used only as the trusted anchor */
@@ -1674,30 +1535,6 @@ export interface components {
             /** @description Optional originating qualification whose typed filters further narrow similarity results */
             qualificationId?: string;
         };
-        /** @description One user turn in product-search qualification before catalog discovery. */
-        UserProductSearchQualificationRequest: {
-            /** Format: uuid */
-            conversationId: string;
-            /** Format: uuid */
-            qualificationId?: string;
-            message: string;
-            /** Format: uuid */
-            merchantId?: string;
-        };
-        /** @enum {string} */
-        UserProductSearchQualificationStatus: "NEEDS_INPUT" | "READY";
-        /** @enum {string} */
-        UserProductSearchFilterKind: "AVAILABLE" | "CONDITION" | "SHIPS_TO" | "SHIPS_FROM" | "PRICE" | "SHOPS" | "CATEGORIES" | "ATTRIBUTES" | "RATING" | "PRICE_TIER";
-        /** @description Qualification state that either asks for more input or authorizes catalog discovery. */
-        UserProductSearchQualificationResponse: {
-            /** Format: uuid */
-            qualificationId: string;
-            status: components["schemas"]["UserProductSearchQualificationStatus"];
-            assistantMessage: string;
-            suggestedReplies: string[];
-            missingFilters: components["schemas"]["UserProductSearchFilterKind"][];
-            effectiveQuery: string;
-        };
         /** @description Shared product facts plus all exact distinct offers and source observations */
         CanonicalProductResponse: {
             /** @description Stable evidence-derived canonical product key */
@@ -1951,11 +1788,6 @@ export interface components {
             sourceStates: components["schemas"]["UserCatalogSourceStateResponse"][];
             /** @description Deterministically ordered canonical products */
             products: components["schemas"]["CanonicalProductResponse"][];
-            /**
-             * Format: uuid
-             * @description Durable server result-set reference used to reopen this page in Discover history
-             */
-            productResultSetId: string;
             /**
              * Format: int32
              * @description Total typed reconciliation decisions in the fetched candidate window
@@ -3786,99 +3618,6 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    discoverConversation: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                conversationId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Persisted Discover chat snapshot */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["UserDiscoverConversationResponse"];
-                };
-            };
-        };
-    };
-    discoverConversationProductResultSet: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** Format: uuid */
-                conversationId: string;
-                /** Format: uuid */
-                resultSetId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Current products for the historical Discover result set */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["UserDiscoverProductResultSetResponse"];
-                };
-            };
-        };
-    };
-    saveDiscoverConversation: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                conversationId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UserDiscoverConversationRequest"];
-            };
-        };
-        responses: {
-            /** @description Persisted Discover chat snapshot */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["UserDiscoverConversationResponse"];
-                };
-            };
-        };
-    };
-    deleteDiscoverConversation: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                conversationId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Discover chat deleted */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
     receive: {
         parameters: {
             query?: never;
@@ -3926,30 +3665,6 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["UserProductVariantSelectionResponse"];
-                };
-            };
-        };
-    };
-    qualifyProductSearchV1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UserProductSearchQualificationRequest"];
-            };
-        };
-        responses: {
-            /** @description Current product-search qualification state */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["UserProductSearchQualificationResponse"];
                 };
             };
         };
@@ -5132,28 +4847,6 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["UserInventoryExportResponse"];
-                };
-            };
-        };
-    };
-    discoverConversations: {
-        parameters: {
-            query?: {
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Persisted Discover chat snapshots */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["UserDiscoverConversationResponse"][];
                 };
             };
         };

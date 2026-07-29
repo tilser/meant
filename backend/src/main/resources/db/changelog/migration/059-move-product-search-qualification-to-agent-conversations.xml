@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="001-remove-legacy-discover-persistence" author="meant">
+        <comment>
+            Agent conversations replaced the legacy Discover snapshot store. Existing qualification
+            rows belong to that unused conversation model and cannot be safely reassigned.
+        </comment>
+        <dropTable tableName="user_discover_product_result_items" cascadeConstraints="true"/>
+        <dropTable tableName="user_discover_product_result_sets" cascadeConstraints="true"/>
+        <delete tableName="user_product_search_qualifications"/>
+        <dropForeignKeyConstraint
+                baseTableName="user_product_search_qualifications"
+                constraintName="fk_user_product_search_qualifications_conversation"/>
+        <dropTable tableName="user_discover_conversation_tombstones" cascadeConstraints="true"/>
+        <dropTable tableName="user_discover_conversations" cascadeConstraints="true"/>
+        <addForeignKeyConstraint
+                baseTableName="user_product_search_qualifications"
+                baseColumnNames="conversation_id"
+                referencedTableName="agent_conversation"
+                referencedColumnNames="id"
+                onDelete="CASCADE"
+                constraintName="fk_user_product_search_qualifications_agent_conversation"/>
+    </changeSet>
+
+</databaseChangeLog>

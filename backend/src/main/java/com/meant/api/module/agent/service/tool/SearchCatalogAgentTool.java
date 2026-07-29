@@ -3,6 +3,7 @@ package com.meant.api.module.agent.service.tool;
 import com.meant.api.module.agent.constant.AgentToolRisk;
 import com.meant.api.module.agent.service.AgentContextProfileService;
 import com.meant.api.module.agent.service.AgentJsonSupport;
+import com.meant.api.module.agent.service.AgentProductSearchQualificationService;
 import com.meant.api.module.agent.service.AgentProductReadResultService;
 import com.meant.api.module.agent.service.dto.AgentArtifact;
 import com.meant.api.module.agent.service.dto.AgentProductListResult;
@@ -22,7 +23,6 @@ import com.meant.api.module.catalog.service.dto.CatalogDiscoveryPriceTier;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryRating;
 import com.meant.api.module.user.constant.UserProductSearchPagination;
 import com.meant.api.module.user.constant.UserProductSearchQuestionTarget;
-import com.meant.api.module.user.service.UserProductSearchAgentQualificationService;
 import com.meant.api.module.user.service.UserGroupedProductSearchService;
 import com.meant.api.module.user.service.command.SearchUserProductsCommand;
 import com.meant.api.module.user.service.dto.UserGroupedProductSearchResult;
@@ -74,7 +74,7 @@ public class SearchCatalogAgentTool implements AgentTool {
     private final AgentJsonSupport json;
     private final AgentContextProfileService profileService;
     private final AgentProductReadResultService resultService;
-    private final UserProductSearchAgentQualificationService qualificationService;
+    private final AgentProductSearchQualificationService qualificationService;
     private final UserGroupedProductSearchService searchService;
 
     @Override

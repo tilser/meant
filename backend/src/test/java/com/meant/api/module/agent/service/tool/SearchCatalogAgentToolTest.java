@@ -13,7 +13,9 @@ import static org.mockito.Mockito.when;
 import com.meant.api.module.agent.exception.AgentException;
 import com.meant.api.module.agent.service.AgentContextProfileService;
 import com.meant.api.module.agent.service.AgentJsonSupport;
+import com.meant.api.module.agent.service.AgentProductSearchQualificationService;
 import com.meant.api.module.agent.service.AgentProductReadResultService;
+import com.meant.api.module.agent.service.dto.AgentProductSearchQualificationResult;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
 import com.meant.api.module.agent.service.dto.SearchCatalogAgentToolInput;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryAttributeName;
@@ -22,10 +24,8 @@ import com.meant.api.module.catalog.service.dto.CatalogDiscoveryFilters;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryPriceTier;
 import com.meant.api.module.user.constant.UserProductSearchQuestionTarget;
 import com.meant.api.module.user.service.UserGroupedProductSearchService;
-import com.meant.api.module.user.service.UserProductSearchAgentQualificationService;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.command.SearchUserProductsCommand;
-import com.meant.api.module.user.service.dto.UserProductSearchAgentQualificationResult;
 import com.meant.api.module.user.service.dto.UserGroupedProductSearchResult;
 import java.math.BigDecimal;
 import java.util.List;
@@ -42,8 +42,8 @@ class SearchCatalogAgentToolTest {
         AgentJsonSupport json = mock(AgentJsonSupport.class);
         AgentContextProfileService profiles = mock(AgentContextProfileService.class);
         AgentProductReadResultService results = mock(AgentProductReadResultService.class);
-        UserProductSearchAgentQualificationService qualifications =
-                mock(UserProductSearchAgentQualificationService.class);
+        AgentProductSearchQualificationService qualifications =
+                mock(AgentProductSearchQualificationService.class);
         UserGroupedProductSearchService searches = mock(UserGroupedProductSearchService.class);
         EnsureUserProfileCommand profile = new EnsureUserProfileCommand(
                 userId, "shopper@example.test", "Shopper", null);
@@ -75,8 +75,8 @@ class SearchCatalogAgentToolTest {
         AgentJsonSupport json = mock(AgentJsonSupport.class);
         AgentContextProfileService profiles = mock(AgentContextProfileService.class);
         AgentProductReadResultService results = mock(AgentProductReadResultService.class);
-        UserProductSearchAgentQualificationService qualifications =
-                mock(UserProductSearchAgentQualificationService.class);
+        AgentProductSearchQualificationService qualifications =
+                mock(AgentProductSearchQualificationService.class);
         UserGroupedProductSearchService searches = mock(UserGroupedProductSearchService.class);
         when(json.readArguments("{}", SearchCatalogAgentToolInput.class))
                 .thenReturn(new SearchCatalogAgentToolInput(" ", null, null));
@@ -99,8 +99,8 @@ class SearchCatalogAgentToolTest {
         AgentJsonSupport json = mock(AgentJsonSupport.class);
         AgentContextProfileService profiles = mock(AgentContextProfileService.class);
         AgentProductReadResultService results = mock(AgentProductReadResultService.class);
-        UserProductSearchAgentQualificationService qualifications =
-                mock(UserProductSearchAgentQualificationService.class);
+        AgentProductSearchQualificationService qualifications =
+                mock(AgentProductSearchQualificationService.class);
         UserGroupedProductSearchService searches = mock(UserGroupedProductSearchService.class);
         EnsureUserProfileCommand profile = new EnsureUserProfileCommand(
                 userId, "shopper@example.test", "Shopper", null);
@@ -190,8 +190,8 @@ class SearchCatalogAgentToolTest {
         AgentJsonSupport json = mock(AgentJsonSupport.class);
         AgentContextProfileService profiles = mock(AgentContextProfileService.class);
         AgentProductReadResultService results = mock(AgentProductReadResultService.class);
-        UserProductSearchAgentQualificationService qualifications =
-                mock(UserProductSearchAgentQualificationService.class);
+        AgentProductSearchQualificationService qualifications =
+                mock(AgentProductSearchQualificationService.class);
         UserGroupedProductSearchService searches = mock(UserGroupedProductSearchService.class);
         EnsureUserProfileCommand profile = new EnsureUserProfileCommand(
                 userId, "shopper@example.test", "Shopper", null);
@@ -249,8 +249,8 @@ class SearchCatalogAgentToolTest {
         AgentJsonSupport json = mock(AgentJsonSupport.class);
         AgentContextProfileService profiles = mock(AgentContextProfileService.class);
         AgentProductReadResultService results = mock(AgentProductReadResultService.class);
-        UserProductSearchAgentQualificationService qualifications =
-                mock(UserProductSearchAgentQualificationService.class);
+        AgentProductSearchQualificationService qualifications =
+                mock(AgentProductSearchQualificationService.class);
         UserGroupedProductSearchService searches = mock(UserGroupedProductSearchService.class);
         EnsureUserProfileCommand profile = new EnsureUserProfileCommand(
                 userId, "shopper@example.test", "Shopper", null);
@@ -260,7 +260,7 @@ class SearchCatalogAgentToolTest {
         when(profiles.profile(userId)).thenReturn(profile);
         when(qualifications.qualify(
                 eq(profile), any(UUID.class), nullable(UUID.class), eq(qualificationId), eq("find shoes"))).thenReturn(
-                new UserProductSearchAgentQualificationResult(
+                new AgentProductSearchQualificationResult(
                         UUID.randomUUID(),
                         "football boots",
                         "What boot size do you need, and what country or postal code should they ship to?",
@@ -285,8 +285,8 @@ class SearchCatalogAgentToolTest {
         AgentJsonSupport json = mock(AgentJsonSupport.class);
         AgentContextProfileService profiles = mock(AgentContextProfileService.class);
         AgentProductReadResultService results = mock(AgentProductReadResultService.class);
-        UserProductSearchAgentQualificationService qualifications =
-                mock(UserProductSearchAgentQualificationService.class);
+        AgentProductSearchQualificationService qualifications =
+                mock(AgentProductSearchQualificationService.class);
         UserGroupedProductSearchService searches = mock(UserGroupedProductSearchService.class);
         EnsureUserProfileCommand profile = new EnsureUserProfileCommand(
                 userId, "shopper@example.test", "Shopper", null);
@@ -330,11 +330,11 @@ class SearchCatalogAgentToolTest {
         verifyNoInteractions(searches, results);
     }
 
-    private UserProductSearchAgentQualificationResult ready(
+    private AgentProductSearchQualificationResult ready(
             String query,
             CatalogDiscoveryFilters filters
     ) {
-        return new UserProductSearchAgentQualificationResult(
+        return new AgentProductSearchQualificationResult(
                 UUID.randomUUID(), query, "Ready", List.of(), filters);
     }
 

@@ -72,7 +72,6 @@ const baseProps = {
   onNewsletterSignup: () => undefined,
   onShelfAddProduct: () => undefined,
   onDragProduct: () => undefined,
-  onRetryProductResultSet: () => undefined,
   immutable: false,
   useLiveCart: true,
   agentActionsDisabled: false,

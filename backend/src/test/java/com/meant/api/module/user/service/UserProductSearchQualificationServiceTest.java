@@ -20,7 +20,6 @@ import com.meant.api.module.user.service.dto.UserProductSearchQualificationSnaps
 import com.meant.api.module.user.service.dto.UserProductSearchPreferenceResult;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
 import com.meant.api.module.user.service.query.GenerateUserProductSearchQualificationQuery;
-import com.meant.api.module.user.service.query.GetUserDiscoverConversationQuery;
 import com.meant.api.module.user.service.query.GetUserProductSearchQualificationQuery;
 import java.time.Duration;
 import java.time.Instant;
@@ -51,8 +50,7 @@ class UserProductSearchQualificationServiceTest {
                 preferenceService,
                 modelService,
                 persistenceService,
-                catalogInputBuilder(),
-                conversationService()
+                catalogInputBuilder()
         );
         EnsureUserProfileCommand profile = profile();
 
@@ -89,8 +87,7 @@ class UserProductSearchQualificationServiceTest {
                         "qualification-v1"
                 )),
                 persistenceService,
-                catalogInputBuilder(),
-                conversationService()
+                catalogInputBuilder()
         );
         EnsureUserProfileCommand profile = profile();
         UUID merchantId = UUID.fromString("00000000-0000-4000-8000-000000000002");
@@ -113,8 +110,7 @@ class UserProductSearchQualificationServiceTest {
                 preferenceService,
                 modelService,
                 persistenceService,
-                catalogInputBuilder(),
-                conversationService()
+                catalogInputBuilder()
         );
         EnsureUserProfileCommand profile = profile();
         UUID conversationId = UUID.randomUUID();
@@ -158,8 +154,7 @@ class UserProductSearchQualificationServiceTest {
                 preferenceService,
                 modelService,
                 persistenceService,
-                catalogInputBuilder(),
-                conversationService()
+                catalogInputBuilder()
         );
         EnsureUserProfileCommand profile = profile();
         UUID conversationId = UUID.randomUUID();
@@ -196,8 +191,7 @@ class UserProductSearchQualificationServiceTest {
                 new FakePreferenceService(List.of()),
                 new FakeModelService(null),
                 persistenceService,
-                catalogInputBuilder(),
-                conversationService()
+                catalogInputBuilder()
         );
         GetUserProductSearchQualificationQuery query = new GetUserProductSearchQualificationQuery(
                 UUID.randomUUID(), UUID.randomUUID());
@@ -228,8 +222,7 @@ class UserProductSearchQualificationServiceTest {
                 new FakePreferenceService(List.of()),
                 modelService,
                 new FakePersistenceService(),
-                catalogInputBuilder(),
-                conversationService()
+                catalogInputBuilder()
         );
         EnsureUserProfileCommand profile = profile();
 
@@ -285,15 +278,6 @@ class UserProductSearchQualificationServiceTest {
                         80
                 )
         ));
-    }
-
-    private UserDiscoverConversationService conversationService() {
-        return new UserDiscoverConversationService(null, null, null, null) {
-            @Override
-            public void requireOwned(GetUserDiscoverConversationQuery query) {
-                // The unit test controls an already-owned conversation boundary.
-            }
-        };
     }
 
     private UserProductSearchQualificationPlan plan(UserProductSearchFilterState priceState) {
