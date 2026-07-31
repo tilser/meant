@@ -30,7 +30,9 @@ import com.meant.api.module.catalog.service.dto.CatalogDiscoveryRating;
 import com.meant.api.module.user.constant.UserProductSearchPagination;
 import com.meant.api.module.user.constant.UserProductSearchDecisionSource;
 import com.meant.api.module.user.constant.UserProductSearchQuestionTarget;
+import com.meant.api.module.user.constant.UserCurrency;
 import com.meant.api.module.user.service.UserGroupedProductSearchService;
+import com.meant.api.module.user.service.UserSettingsService;
 import com.meant.api.module.user.service.UserSimilarProductSearchService;
 import com.meant.api.module.user.service.command.SearchSimilarUserProductsCommand;
 import com.meant.api.module.user.service.command.SearchUserProductsCommand;
@@ -38,6 +40,7 @@ import com.meant.api.module.user.service.dto.UserGroupedProductSearchResult;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.Currency;
 import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -65,7 +68,7 @@ public class SearchCatalogAgentTool implements AgentTool {
                 "query":{"type":"string","minLength":1,"maxLength":500},
                 "shipsTo":{"type":"object","additionalProperties":false,"required":["country"],"properties":{"country":{"type":"string","pattern":"^[A-Za-z]{2}$"},"region":{"type":"string","maxLength":120},"postalCode":{"type":"string","maxLength":30}}},
                 "shipsFrom":{"type":"array","maxItems":10,"items":{"type":"object","additionalProperties":false,"required":["country"],"properties":{"country":{"type":"string","pattern":"^[A-Za-z]{2}$"}}}},
-                "price":{"type":"object","additionalProperties":false,"properties":{"minUsd":{"type":"number","minimum":0,"maximum":1000000,"multipleOf":0.01},"maxUsd":{"type":"number","minimum":0,"maximum":1000000,"multipleOf":0.01}}},
+                "price":{"type":"object","description":"Major units in the currency selected in Account settings.","additionalProperties":false,"properties":{"minAmount":{"type":"number","minimum":0,"maximum":1000000,"multipleOf":0.01},"maxAmount":{"type":"number","minimum":0,"maximum":1000000,"multipleOf":0.01}}},
                 "conditions":{"type":"array","maxItems":2,"items":{"type":"string","enum":["new","secondhand"]}},
                 "attributes":{"type":"array","maxItems":3,"items":{"type":"object","additionalProperties":false,"required":["name","values"],"properties":{"name":{"type":"string","enum":["Color","Size","Target gender"]},"values":{"type":"array","minItems":1,"maxItems":20,"items":{"type":"string","minLength":1,"maxLength":100}}}}},
                 "rating":{"type":"object","additionalProperties":false,"properties":{"variantMinimum":{"type":"number","minimum":0,"maximum":5},"variantMinimumCount":{"type":"integer","minimum":0}}},
@@ -77,7 +80,7 @@ public class SearchCatalogAgentTool implements AgentTool {
               "additionalProperties":false
             }
             """,
-            "3",
+            "4",
             AgentToolRisk.READ
     );
 
@@ -88,6 +91,7 @@ public class SearchCatalogAgentTool implements AgentTool {
     private final AgentSimilaritySearchQualificationService similarityQualificationService;
     private final UserGroupedProductSearchService searchService;
     private final UserSimilarProductSearchService similarProductSearchService;
+    private final UserSettingsService settingsService;
 
     @Override
     public AgentToolDescriptor descriptor() {
@@ -107,7 +111,8 @@ public class SearchCatalogAgentTool implements AgentTool {
             throw AgentProductReadToolException.invalid("Limit must be between 1 and 20.");
         }
         var profile = profileService.profile(context.userId());
-        CatalogDiscoveryFilters requestedFilters = filters(input);
+        String preferredCurrency = UserCurrency.normalizeOrDefault(settingsService.get(profile).currency());
+        CatalogDiscoveryFilters requestedFilters = filters(input, preferredCurrency);
         String authoritativeUserText = context.triggeringUserText() == null
                 || context.triggeringUserText().isBlank()
                 ? query
@@ -299,7 +304,7 @@ public class SearchCatalogAgentTool implements AgentTool {
                 json.write(output), summary, artifacts);
     }
 
-    private CatalogDiscoveryFilters filters(SearchCatalogAgentToolInput input) {
+    private CatalogDiscoveryFilters filters(SearchCatalogAgentToolInput input, String preferredCurrency) {
         List<CatalogDiscoveryCondition> conditions = input.conditions().stream()
                 .map(this::condition)
                 .distinct()
@@ -321,7 +326,7 @@ public class SearchCatalogAgentTool implements AgentTool {
                         input.shipsTo().postalCode(),
                         "shipsTo"
                 );
-        CatalogDiscoveryPrice price = price(input.price());
+        CatalogDiscoveryPrice price = price(input.price(), preferredCurrency);
         CatalogDiscoveryRating rating = rating(input.rating());
         boolean constrained = shipsTo != null
                 || !shipsFrom.isEmpty()
@@ -557,14 +562,15 @@ public class SearchCatalogAgentTool implements AgentTool {
         return new CatalogDiscoveryLocation(country, region, postalCode);
     }
 
-    private CatalogDiscoveryPrice price(SearchCatalogAgentToolInput.Price input) {
+    private CatalogDiscoveryPrice price(SearchCatalogAgentToolInput.Price input, String currency) {
         if (input == null) {
             return null;
         }
-        Long min = minorUnits(input.minUsd(), "price.minUsd");
-        Long max = minorUnits(input.maxUsd(), "price.maxUsd");
+        Long min = minorUnits(input.minAmount(), "price.minAmount", currency);
+        Long max = minorUnits(input.maxAmount(), "price.maxAmount", currency);
         if (min == null && max == null) {
-            throw AgentProductReadToolException.invalid("Price needs a minimum or maximum USD amount.");
+            throw AgentProductReadToolException.invalid(
+                    "Price needs a minimum or maximum amount in " + currency + ".");
         }
         if (min != null && max != null && min > max) {
             throw AgentProductReadToolException.invalid("Minimum price must not exceed maximum price.");
@@ -587,19 +593,22 @@ public class SearchCatalogAgentTool implements AgentTool {
         }
     }
 
-    private Long minorUnits(BigDecimal amount, String field) {
+    private Long minorUnits(BigDecimal amount, String field, String currency) {
         if (amount == null) {
             return null;
         }
         if (amount.signum() < 0 || amount.compareTo(BigDecimal.valueOf(1_000_000)) > 0) {
-            throw AgentProductReadToolException.invalid(field + " must be between 0 and 1000000 USD.");
+            throw AgentProductReadToolException.invalid(
+                    field + " must be between 0 and 1000000 " + currency + ".");
         }
+        int fractionDigits = Currency.getInstance(currency).getDefaultFractionDigits();
         try {
-            return amount.movePointRight(2)
+            return amount.movePointRight(Math.max(fractionDigits, 0))
                     .setScale(0, RoundingMode.UNNECESSARY)
                     .longValueExact();
         } catch (ArithmeticException exception) {
-            throw AgentProductReadToolException.invalid(field + " must have at most two decimal places.");
+            throw AgentProductReadToolException.invalid(
+                    field + " must use the minor-unit precision for " + currency + ".");
         }
     }
 

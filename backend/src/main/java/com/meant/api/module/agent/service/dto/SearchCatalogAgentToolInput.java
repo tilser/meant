@@ -34,8 +34,8 @@ public record SearchCatalogAgentToolInput(
     public record Origin(String country) {
     }
 
-    /** Buyer-facing USD major units; the tool maps these to provider-neutral minor units. */
-    public record Price(BigDecimal minUsd, BigDecimal maxUsd) {
+    /** Buyer-facing major units in the currency selected in Account settings. */
+    public record Price(BigDecimal minAmount, BigDecimal maxAmount) {
     }
 
     public record Attribute(String name, List<String> values) {

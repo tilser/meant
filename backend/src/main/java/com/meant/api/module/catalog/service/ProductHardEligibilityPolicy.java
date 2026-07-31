@@ -15,14 +15,18 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 /** Applies explicit hard constraints fail-closed using only comparable typed facts. */
 @Component
+@RequiredArgsConstructor
 public class ProductHardEligibilityPolicy {
 
     private static final Pattern SPACE = Pattern.compile("\\s+");
     private static final List<String> HIERARCHY_SEPARATORS = List.of(" > ", " / ", " :: ");
+
+    private final ProductHardEligibilityMetrics metrics;
 
     List<CanonicalProduct> eligible(List<CanonicalProduct> products, ProductRankingContext context) {
         return products == null ? List.of() : products.stream()
@@ -41,11 +45,17 @@ public class ProductHardEligibilityPolicy {
         if (currency == null) {
             return product;
         }
-        List<Offer> offers = product.offers().stream()
+        List<Offer> originalOffers = product.offers();
+        List<Offer> offers = originalOffers.stream()
                 .filter(offer -> currencyEligible(offer.price(), currency))
                 .filter(offer -> currencyEligible(offer.listPrice(), currency))
                 .toList();
-        return offers.isEmpty() ? null : product.withOffers(offers);
+        metrics.recordCurrencyExcludedOffers(originalOffers.size() - offers.size());
+        if (offers.isEmpty() && !originalOffers.isEmpty()) {
+            metrics.recordCurrencyExcludedProduct();
+            return null;
+        }
+        return product.withOffers(offers);
     }
 
     private boolean currencyEligible(Money price, String currency) {

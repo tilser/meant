@@ -21,9 +21,13 @@ import com.meant.api.module.catalog.service.dto.CatalogDiscoveryFilters;
 import com.meant.api.module.user.constant.UserProductSearchDecisionSource;
 import com.meant.api.module.user.constant.UserProductSearchQuestionTarget;
 import com.meant.api.module.user.service.UserGroupedProductSearchService;
+import com.meant.api.module.user.service.UserSettingsService;
 import com.meant.api.module.user.service.UserSimilarProductSearchService;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.dto.UserGroupedProductSearchResult;
+import com.meant.api.module.user.service.dto.UserSettingsResult;
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -43,11 +47,54 @@ class SearchCatalogAgentToolTest {
         );
 
         assertThat(tool.descriptor().inputSchemaJson())
-                .contains("shipsTo", "attributes", "priceTiers")
+                .contains("shipsTo", "attributes", "priceTiers", "minAmount", "maxAmount")
+                .doesNotContain("minUsd", "maxUsd")
                 .doesNotContain("qualificationId", "qualificationUpdatedAt");
         assertThat(tool.descriptor().description())
                 .contains("appliedFilters", "unsetFilters")
                 .contains("missing filters never prevent a search");
+    }
+
+    @Test
+    void convertsRequestedPriceUsingTheAccountCurrenciesMinorUnits() {
+        AgentJsonSupport json = mock(AgentJsonSupport.class);
+        AgentContextProfileService profiles = mock(AgentContextProfileService.class);
+        AgentProductSearchQualificationService qualifications =
+                mock(AgentProductSearchQualificationService.class);
+        UserGroupedProductSearchService searches = mock(UserGroupedProductSearchService.class);
+        UUID userId = UUID.randomUUID();
+        EnsureUserProfileCommand profile = new EnsureUserProfileCommand(
+                userId, "shopper@example.test", "Shopper", null);
+        SearchCatalogAgentToolInput input = new SearchCatalogAgentToolInput(
+                "watch",
+                null,
+                List.of(),
+                new SearchCatalogAgentToolInput.Price(null, new BigDecimal("100")),
+                List.of(),
+                List.of(),
+                null,
+                List.of(),
+                null,
+                null
+        );
+
+        when(json.readArguments("{}", SearchCatalogAgentToolInput.class)).thenReturn(input);
+        when(json.write(any())).thenReturn("{}");
+        when(profiles.profile(userId)).thenReturn(profile);
+        when(qualifications.qualify(any())).thenReturn(new AgentProductSearchQualificationResult(
+                UUID.randomUUID(), "watch", null, Map.of(), List.of(), Set.of(), Set.of()));
+        when(searches.search(eq(profile), any(), any(), eq(Set.of()), eq(Set.of())))
+                .thenReturn(emptyResult("watch"));
+
+        tool(json, profiles, qualifications, searches, "JPY").execute(
+                new AgentToolExecutionContext(
+                        userId, UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "watch under 100 JPY"),
+                "{}"
+        );
+
+        ArgumentCaptor<CatalogDiscoveryFilters> filters = ArgumentCaptor.forClass(CatalogDiscoveryFilters.class);
+        verify(searches).search(eq(profile), any(), filters.capture(), eq(Set.of()), eq(Set.of()));
+        assertThat(filters.getValue().price().max()).isEqualTo(100L);
     }
 
     @Test
@@ -105,6 +152,18 @@ class SearchCatalogAgentToolTest {
             AgentProductSearchQualificationService qualifications,
             UserGroupedProductSearchService searches
     ) {
+        return tool(json, profiles, qualifications, searches, "USD");
+    }
+
+    private SearchCatalogAgentTool tool(
+            AgentJsonSupport json,
+            AgentContextProfileService profiles,
+            AgentProductSearchQualificationService qualifications,
+            UserGroupedProductSearchService searches,
+            String currency
+    ) {
+        UserSettingsService settings = mock(UserSettingsService.class);
+        when(settings.get(any())).thenReturn(settings(currency));
         return new SearchCatalogAgentTool(
                 json,
                 profiles,
@@ -112,8 +171,15 @@ class SearchCatalogAgentToolTest {
                 qualifications,
                 mock(AgentSimilaritySearchQualificationService.class),
                 searches,
-                mock(UserSimilarProductSearchService.class)
+                mock(UserSimilarProductSearchService.class),
+                settings
         );
+    }
+
+    private UserSettingsResult settings(String currency) {
+        Instant now = Instant.parse("2026-06-17T10:00:00Z");
+        return new UserSettingsResult(
+                120, currency, null, null, List.of(), List.of(), List.of(), List.of(), List.of(), now, now);
     }
 
     private UserGroupedProductSearchResult emptyResult(String query) {

@@ -18,7 +18,20 @@ public class UnsupportedProductSearchCurrencyException extends RuntimeException 
     }
 
     public UnsupportedProductSearchCurrencyException(String currency, String preferredCurrency) {
-        super("Product search currency " + currency + " does not match preferred currency " + preferredCurrency);
-        this.safeMessage = "Use " + preferredCurrency + " for prices, or change your currency in Account settings.";
+        this(currency, preferredCurrency, false);
+    }
+
+    private UnsupportedProductSearchCurrencyException(String currency, String preferredCurrency, boolean mixed) {
+        super(mixed
+                ? "Product search contains mixed currencies"
+                : "Product search currency " + currency + " does not match preferred currency " + preferredCurrency);
+        this.safeMessage = mixed
+                ? "Price amounts use different currencies. Use only " + preferredCurrency
+                        + ", or change your currency in Account settings."
+                : "Use " + preferredCurrency + " for prices, or change your currency in Account settings.";
+    }
+
+    public static UnsupportedProductSearchCurrencyException mixed(String preferredCurrency) {
+        return new UnsupportedProductSearchCurrencyException(null, preferredCurrency, true);
     }
 }

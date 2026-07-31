@@ -9,6 +9,7 @@ import com.meant.api.module.catalog.service.dto.Money;
 import com.meant.api.module.catalog.service.dto.Offer;
 import com.meant.api.module.catalog.service.dto.OfferAvailabilityStatus;
 import com.meant.api.module.catalog.service.dto.ProductAttribute;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -89,6 +90,31 @@ class ProductHardEligibilityPolicyTest {
             assertThat(product.offers()).singleElement().satisfies(offer ->
                     assertThat(offer.price().currency()).isEqualTo("USD"));
         });
+    }
+
+    @Test
+    void recordsOffersAndProductsExcludedByPreferredCurrency() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        ProductRankingService measuredService = ProductRankingTestFactory.service(
+                List.of(),
+                ProductRankingMetrics.noop(),
+                new ProductHardEligibilityMetrics(registry)
+        );
+        CanonicalProduct mixed = product("mixed", List.of(category("apparel")),
+                offer("A", "m1", "mixed", "usd", new Money(8_000, "USD")),
+                offer("A", "m2", "mixed", "eur", new Money(7_000, "EUR")));
+        CanonicalProduct eurOnly = product("eur", List.of(category("apparel")),
+                offer("B", "m3", "eur", "eur", new Money(7_000, "EUR")));
+
+        measuredService.rank(
+                List.of(mixed, eurOnly),
+                RankingTestFixtures.context("shirt", "USD", "US", null, List.of(), 20)
+        );
+
+        assertThat(registry.get("commerce.catalog.eligibility.currency.exclusions")
+                .tag("scope", "offer").counter().count()).isEqualTo(2);
+        assertThat(registry.get("commerce.catalog.eligibility.currency.exclusions")
+                .tag("scope", "product").counter().count()).isEqualTo(1);
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.meant.api.module.user.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.meant.api.module.user.entity.ShoppingFilter;
 import com.meant.api.module.user.entity.User;
@@ -132,6 +133,25 @@ class UserSettingsServiceTest {
         );
 
         assertThat(result.currency()).isEqualTo("EUR");
+    }
+
+    @Test
+    void updateRejectsIsoCurrenciesThatTheProductDoesNotSupport() {
+        assertThatThrownBy(() -> service.update(
+                profileCommand(),
+                new UpdateUserSettingsCommand(
+                        USER_ID,
+                        null,
+                        false,
+                        null,
+                        "XAU",
+                        null,
+                        null,
+                        null,
+                        Set.of(),
+                        List.of()
+                )
+        )).hasMessageContaining("supported ISO 4217 currency codes");
     }
 
     @Test

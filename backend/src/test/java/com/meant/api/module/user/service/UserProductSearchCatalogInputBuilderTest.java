@@ -173,16 +173,14 @@ class UserProductSearchCatalogInputBuilderTest {
                 Instant.parse("2026-06-17T10:00:00Z")
         );
 
-        UserProductSearchCatalogInput input = builder.build(
-                "linen shirt under €100",
-                intent("linen shirt under €100"),
-                preferredEur
-        );
+        for (String request : List.of("linen shirt under €100", "linen shirt under $100")) {
+            UserProductSearchCatalogInput input = builder.build(request, intent(request), preferredEur);
 
-        assertThat(input.context().currency()).isEqualTo("EUR");
-        assertThat(input.filters().price().max()).isEqualTo(10_000L);
-        assertThat(input.context().intent()).contains("Hard price filter: at most 100 EUR");
-        assertThat(input.cacheKey()).contains("currency=EUR");
+            assertThat(input.context().currency()).as(request).isEqualTo("EUR");
+            assertThat(input.filters().price().max()).as(request).isEqualTo(10_000L);
+            assertThat(input.context().intent()).as(request).contains("Hard price filter: at most 100 EUR");
+            assertThat(input.cacheKey()).as(request).contains("currency=EUR");
+        }
     }
 
     @Test
@@ -247,10 +245,16 @@ class UserProductSearchCatalogInputBuilderTest {
     @Test
     void rejectsMixedCurrencyRange() {
         assertThatThrownBy(() -> builder.build(
-                        "hiking boots between $50 and €100",
-                        intent("hiking boots between $50 and €100"),
+                        "hiking boots between £50 and €100",
+                        intent("hiking boots between £50 and €100"),
                         settings(new UserLocationResult("United States", "US", "New York"))))
-                .isInstanceOf(UnsupportedProductSearchCurrencyException.class);
+                .isInstanceOfSatisfying(UnsupportedProductSearchCurrencyException.class, exception ->
+                        assertThat(exception.getSafeMessage()).startsWith("Price amounts use different currencies."));
+    }
+
+    @Test
+    void ignoresUnsupportedIsoLookalikesInOrdinaryText() {
+        builder.validateSupportedCurrency("I need a set of 4 PEN desk organizers");
     }
 
     @Test

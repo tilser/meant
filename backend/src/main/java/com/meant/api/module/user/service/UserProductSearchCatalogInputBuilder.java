@@ -22,6 +22,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Currency;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.regex.Matcher;
@@ -35,21 +36,19 @@ public class UserProductSearchCatalogInputBuilder {
 
     private static final String AMOUNT_NUMBER_PATTERN =
             "(?:\\d{1,3}(?:[\\s\\.,]\\d{3})+|\\d+)(?:[\\.,]\\d{1,2})?";
-    private static final String CURRENCY_SYMBOLS = "$€£¥₹₩₽₺₴₫฿₱₪₦₲₵";
+    private static final String CURRENCY_SYMBOLS = "$€£¥₹₩";
     private static final String AMOUNT_PATTERN = "(?:[" + CURRENCY_SYMBOLS + "]\\s*)?"
             + AMOUNT_NUMBER_PATTERN;
-    private static final String ISO_CURRENCY_CODE_PATTERN = Currency.getAvailableCurrencies().stream()
-            .map(Currency::getCurrencyCode)
+    private static final String ISO_CURRENCY_CODE_PATTERN = UserCurrency.supportedCodes().stream()
             .sorted()
             .collect(Collectors.joining("|"));
     private static final String CURRENCY_PATTERN =
             "(?:usd|u\\.s\\. dollars?|us dollars?|dollars?|eur|euros?|gbp|pounds?|czk|kč|"
                     + "czech crowns?|crowns?|koruna|koruny|cad|canadian dollars?|aud|australian dollars?|"
                     + "nzd|new zealand dollars?|jpy|yen|chf|swiss francs?|sek|swedish kronor?|nok|"
-                    + "norwegian kroner?|dkk|danish kroner?|pln|polish zloty|huf|ron|bgn|inr|indian rupees?|"
-                    + "cny|rmb|chinese yuan|renminbi|hkd|hong kong dollars?|sgd|singapore dollars?|mxn|"
-                    + "mexican pesos?|brl|brazilian reais?|zar|south african rand|krw|korean won|aed|sar|"
-                    + "ils|thb|idr|myr|php|twd|(?-i:" + ISO_CURRENCY_CODE_PATTERN + "))";
+                    + "norwegian kroner?|dkk|danish kroner?|pln|polish zloty|huf|inr|indian rupees?|"
+                    + "cny|rmb|chinese yuan|renminbi|hkd|hong kong dollars?|sgd|singapore dollars?|"
+                    + "krw|korean won|(?-i:" + ISO_CURRENCY_CODE_PATTERN + "))";
     private static final String CURRENCY_SYMBOL_CLASS = "[" + CURRENCY_SYMBOLS + "]";
     private static final Pattern PREFIXED_SYMBOL_CURRENCY_AMOUNT_PATTERN = Pattern.compile(
             "(?<currency>%s)\\s*%s".formatted(CURRENCY_SYMBOL_CLASS, AMOUNT_NUMBER_PATTERN)
@@ -210,7 +209,7 @@ public class UserProductSearchCatalogInputBuilder {
         );
     }
 
-    /** Rejects explicitly stated non-USD prices before an LLM can rewrite them out of the catalog query. */
+    /** Rejects prices explicitly stated in a currency other than the account preference. */
     public void validateSupportedCurrency(String value) {
         validateSupportedCurrency(value, UserCurrency.DEFAULT);
     }
@@ -229,17 +228,27 @@ public class UserProductSearchCatalogInputBuilder {
         if (value == null || value.isBlank()) {
             return;
         }
-        rejectDifferentCurrency(PREFIXED_SYMBOL_CURRENCY_AMOUNT_PATTERN.matcher(value), preferredCurrency);
-        rejectDifferentCurrency(SUFFIXED_SYMBOL_CURRENCY_AMOUNT_PATTERN.matcher(value), preferredCurrency);
-        rejectDifferentCurrency(PREFIXED_TEXT_CURRENCY_AMOUNT_PATTERN.matcher(value), preferredCurrency);
-        rejectDifferentCurrency(SUFFIXED_TEXT_CURRENCY_AMOUNT_PATTERN.matcher(value), preferredCurrency);
+        LinkedHashSet<String> currencies = new LinkedHashSet<>();
+        collectCurrencies(PREFIXED_SYMBOL_CURRENCY_AMOUNT_PATTERN.matcher(value), currencies);
+        collectCurrencies(SUFFIXED_SYMBOL_CURRENCY_AMOUNT_PATTERN.matcher(value), currencies);
+        collectCurrencies(PREFIXED_TEXT_CURRENCY_AMOUNT_PATTERN.matcher(value), currencies);
+        collectCurrencies(SUFFIXED_TEXT_CURRENCY_AMOUNT_PATTERN.matcher(value), currencies);
+        if (currencies.size() > 1) {
+            throw UnsupportedProductSearchCurrencyException.mixed(preferredCurrency);
+        }
+        currencies.stream()
+                .filter(currency -> !preferredCurrency.equals(currency))
+                .findFirst()
+                .ifPresent(currency -> {
+                    throw new UnsupportedProductSearchCurrencyException(currency, preferredCurrency);
+                });
     }
 
-    private void rejectDifferentCurrency(Matcher matcher, String preferredCurrency) {
+    private void collectCurrencies(Matcher matcher, LinkedHashSet<String> currencies) {
         while (matcher.find()) {
             String currency = currencyFromToken(matcher.group("currency"));
-            if (currency != null && !preferredCurrency.equals(currency)) {
-                throw new UnsupportedProductSearchCurrencyException(currency, preferredCurrency);
+            if (currency != null) {
+                currencies.add(currency);
             }
         }
     }
@@ -611,11 +620,8 @@ public class UserProductSearchCatalogInputBuilder {
             return currencyFromSymbol(normalized.charAt(0));
         }
         if (normalized.length() == 3) {
-            try {
-                return Currency.getInstance(normalized.toUpperCase(Locale.ROOT)).getCurrencyCode();
-            } catch (IllegalArgumentException ignored) {
-                return null;
-            }
+            String code = normalized.toUpperCase(Locale.ROOT);
+            return UserCurrency.isSupported(code) ? code : null;
         }
         if (normalized.matches("dollars?")) {
             return null;
@@ -637,9 +643,6 @@ public class UserProductSearchCatalogInputBuilder {
         if (normalized.matches("chinese yuan|renminbi|rmb")) return "CNY";
         if (normalized.matches("hong kong dollars?")) return "HKD";
         if (normalized.matches("singapore dollars?")) return "SGD";
-        if (normalized.matches("mexican pesos?")) return "MXN";
-        if (normalized.matches("brazilian reais?")) return "BRL";
-        if (normalized.matches("south african rand")) return "ZAR";
         if (normalized.matches("korean won")) return "KRW";
         return null;
     }
@@ -659,6 +662,9 @@ public class UserProductSearchCatalogInputBuilder {
         if (parsedPrice == null || parsedPrice.currency() == null) {
             return;
         }
+        if ("MIXED".equals(parsedPrice.currency())) {
+            throw UnsupportedProductSearchCurrencyException.mixed(preferredCurrency);
+        }
         if (!preferredCurrency.equalsIgnoreCase(parsedPrice.currency())) {
             throw new UnsupportedProductSearchCurrencyException(parsedPrice.currency(), preferredCurrency);
         }
@@ -666,22 +672,12 @@ public class UserProductSearchCatalogInputBuilder {
 
     private String currencyFromSymbol(char symbol) {
         return switch (symbol) {
-            case '$' -> "USD";
+            case '$' -> null;
             case '€' -> "EUR";
             case '£' -> "GBP";
-            case '¥' -> "JPY";
+            case '¥' -> null;
             case '₹' -> "INR";
             case '₩' -> "KRW";
-            case '₽' -> "RUB";
-            case '₺' -> "TRY";
-            case '₴' -> "UAH";
-            case '₫' -> "VND";
-            case '฿' -> "THB";
-            case '₱' -> "PHP";
-            case '₪' -> "ILS";
-            case '₦' -> "NGN";
-            case '₲' -> "PYG";
-            case '₵' -> "GHS";
             default -> null;
         };
     }
