@@ -10,8 +10,6 @@ import com.meant.api.module.agent.service.dto.AgentModelToolDefinition;
 import com.meant.api.module.agent.service.dto.AgentModelToolResult;
 import com.meant.api.module.agent.service.dto.AgentModelUsage;
 import com.meant.api.module.agent.service.port.AgentModelGateway;
-import com.openai.models.chat.completions.ChatCompletionNamedToolChoice;
-import com.openai.models.chat.completions.ChatCompletionToolChoiceOption;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -31,7 +29,7 @@ import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
-import org.springframework.ai.openai.OpenAiChatOptions;
+import org.springframework.ai.model.tool.ToolCallingChatOptions;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.DefaultToolDefinition;
 import org.springframework.ai.tool.definition.ToolDefinition;
@@ -58,26 +56,15 @@ public final class SpringAiAgentModelGateway implements AgentModelGateway {
         }
 
         List<ToolCallback> callbacks = request.tools().stream()
-                .map(SchemaOnlyToolCallback::new)
+                .map(ExternallyExecutedToolCallback::new)
                 .map(ToolCallback.class::cast)
                 .toList();
-        OpenAiChatOptions.Builder optionsBuilder = OpenAiChatOptions.builder()
+        ToolCallingChatOptions options = ToolCallingChatOptions.builder()
                 .model(request.model())
                 .temperature(request.temperature())
                 .maxTokens(request.maximumOutputTokens())
-                .timeout(properties.modelTimeout())
-                .streamUsage(true)
-                .parallelToolCalls(true)
-                .toolCallbacks(callbacks);
-        if (request.requiredToolName() != null) {
-            ChatCompletionNamedToolChoice namedTool = ChatCompletionNamedToolChoice.builder()
-                    .function(ChatCompletionNamedToolChoice.Function.builder()
-                            .name(request.requiredToolName())
-                            .build())
-                    .build();
-            optionsBuilder.toolChoice(ChatCompletionToolChoiceOption.ofNamedToolChoice(namedTool));
-        }
-        OpenAiChatOptions options = optionsBuilder.build();
+                .toolCallbacks(callbacks)
+                .build();
         Prompt prompt = new Prompt(request.messages().stream().map(this::toSpringMessage).toList(), options);
 
         StringBuilder text = new StringBuilder();
@@ -183,11 +170,11 @@ public final class SpringAiAgentModelGateway implements AgentModelGateway {
         );
     }
 
-    private static final class SchemaOnlyToolCallback implements ToolCallback {
+    private static final class ExternallyExecutedToolCallback implements ToolCallback {
 
         private final ToolDefinition definition;
 
-        private SchemaOnlyToolCallback(AgentModelToolDefinition source) {
+        private ExternallyExecutedToolCallback(AgentModelToolDefinition source) {
             definition = DefaultToolDefinition.builder()
                     .name(source.name())
                     .description(source.description())
@@ -202,7 +189,7 @@ public final class SpringAiAgentModelGateway implements AgentModelGateway {
 
         @Override
         public String call(String toolInput) {
-            throw new IllegalStateException("Agent tools are executed only by the Meant run coordinator");
+            return "{\"status\":\"delegated_to_run_coordinator\"}";
         }
     }
 

@@ -266,6 +266,7 @@ user:
     search-version: v3
     query-parser-prompt-version: v4
     explanation-prompt-version: v1
+    qualification-maximum-output-tokens: 4096
     cache-ttl: 24h
     qualification-pending-ttl: 30m
     product-detail-session-ttl: 30m

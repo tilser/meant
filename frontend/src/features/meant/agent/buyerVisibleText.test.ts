@@ -60,10 +60,7 @@ describe('buyer-visible agent text sanitization', () => {
 
   test('preserves a verified myshopify storefront origin', () => {
     expect(
-      sanitizeBuyerVisibleText(
-        'Continue at seller.myshopify.com.',
-        'official-store.myshopify.com',
-      ),
+      sanitizeBuyerVisibleText('Continue at seller.myshopify.com.', 'official-store.myshopify.com'),
     ).toBe('Continue at official-store.myshopify.com.')
   })
 
@@ -81,8 +78,6 @@ describe('buyer-visible agent text sanitization', () => {
       sanitizeBuyerVisibleText(
         'Internal paths: /.well-known/ucp.json, /api/mcp, and /mcp/session/1. Keep /mcpology.',
       ),
-    ).toBe(
-      'Internal paths: the merchant, the merchant, and the merchant. Keep /mcpology.',
-    )
+    ).toBe('Internal paths: the merchant, the merchant, and the merchant. Keep /mcpology.')
   })
 })

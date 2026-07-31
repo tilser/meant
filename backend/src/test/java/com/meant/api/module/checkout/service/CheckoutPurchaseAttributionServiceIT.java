@@ -130,6 +130,7 @@ class CheckoutPurchaseAttributionServiceIT extends PostgresIntegrationTestSuppor
                 .userId(userId)
                 .provider("SHOPIFY")
                 .merchantDomain("shop.example")
+                .routingDomain("shop.example")
                 .externalMerchantId("merchant-1")
                 .routingScopeKey("SHOPIFY:merchant:merchant-1:domain:shop.example")
                 .endpoint("https://shop.example/api/ucp/mcp")

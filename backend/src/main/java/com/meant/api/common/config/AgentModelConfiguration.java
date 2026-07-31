@@ -1,13 +1,14 @@
 package com.meant.api.common.config;
 
 import com.meant.api.common.service.SpringAiAgentModelGateway;
+import com.meant.api.common.service.SpringAiAgentToolConversationHistory;
 import com.meant.api.common.service.UnavailableAgentModelGateway;
 import com.meant.api.module.agent.properties.AgentProperties;
 import com.meant.api.module.agent.service.port.AgentModelGateway;
+import com.meant.api.module.agent.service.port.AgentToolConversationHistory;
 import io.micrometer.observation.ObservationRegistry;
 import java.util.Map;
 import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.model.tool.DefaultToolCallingManager;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -20,6 +21,12 @@ import org.springframework.context.annotation.Lazy;
 
 @Configuration(proxyBeanMethods = false)
 public class AgentModelConfiguration {
+
+    @Bean
+    @ConditionalOnMissingBean(AgentToolConversationHistory.class)
+    AgentToolConversationHistory agentToolConversationHistory() {
+        return new SpringAiAgentToolConversationHistory();
+    }
 
     @Bean("agentChatModel")
     @Lazy
@@ -43,9 +50,6 @@ public class AgentModelConfiguration {
                 .build();
         return OpenAiChatModel.builder()
                 .options(options)
-                .toolCallingManager(DefaultToolCallingManager.builder()
-                        .observationRegistry(observationRegistry)
-                        .build())
                 .observationRegistry(observationRegistry)
                 .build();
     }

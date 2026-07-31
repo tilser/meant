@@ -35,8 +35,15 @@ describe('agent direct-action request identity', () => {
       status: 400,
       code: 'bad_request',
     })
+    const transferredApiError = {
+      name: 'ApiError',
+      message: 'Invalid target.',
+      status: 400,
+      code: 'bad_request',
+    }
 
     expect(retainAgentActionIdempotencyKey(foreignApiError)).toBe(false)
+    expect(retainAgentActionIdempotencyKey(transferredApiError)).toBe(false)
   })
 
   test('reuses one key through an uncertain retry and rotates it only after completion', () => {

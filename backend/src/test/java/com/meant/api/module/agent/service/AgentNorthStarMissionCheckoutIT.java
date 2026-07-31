@@ -17,6 +17,7 @@ import com.meant.api.module.agent.repository.AgentRunRepository;
 import com.meant.api.module.agent.repository.AgentToolInvocationRepository;
 import com.meant.api.module.agent.repository.ShoppingMissionRepository;
 import com.meant.api.module.agent.service.command.CreateAgentConversationCommand;
+import com.meant.api.module.agent.service.command.RecordAgentUserActionCommand;
 import com.meant.api.module.agent.service.command.SubmitAgentTurnCommand;
 import com.meant.api.module.agent.service.dto.AgentArtifact;
 import com.meant.api.module.agent.service.dto.AgentModelRequest;
@@ -69,6 +70,7 @@ class AgentNorthStarMissionCheckoutIT extends PostgresIntegrationTestSupport {
     @Autowired private AgentConversationService conversationService;
     @Autowired private AgentTurnService turnService;
     @Autowired private AgentRunCoordinator coordinator;
+    @Autowired private AgentUserActionService userActionService;
     @Autowired private AgentArtifactService artifactService;
     @Autowired private AgentRunRepository runRepository;
     @Autowired private AgentToolInvocationRepository invocationRepository;
@@ -113,7 +115,7 @@ class AgentNorthStarMissionCheckoutIT extends PostgresIntegrationTestSupport {
     }
 
     @Test
-    void picnicMissionUsesRealMissionCartAndCheckoutToolsWithPartialMerchantFailure() throws InterruptedException {
+    void picnicMissionBuildsCartsAndRequiresUserApprovalBeforeCheckout() throws InterruptedException {
         var conversation = conversationService.create(
                 new CreateAgentConversationCommand(USER_ID, "Summer picnic mission"));
         artifactService.persist(
@@ -142,11 +144,8 @@ class AgentNorthStarMissionCheckoutIT extends PostgresIntegrationTestSupport {
                           {"offerKey":"%s","quantity":1}
                         ]}
                         """.formatted(BLANKET_OFFER, CUPS_OFFER, SNACKS_OFFER));
-                case 2 -> toolResponse("prepare-checkout", "prepare_checkout", """
-                        {"cartIds":["%s","%s"]}
-                        """.formatted(CART_ONE_ID, CART_TWO_ID));
                 default -> new AgentModelResponse(
-                        "Two merchant checkouts are ready; the snack merchant could not prepare its cart.",
+                        "Two merchant carts are ready; confirm before preparing checkout.",
                         List.of(),
                         new AgentModelUsage(80L, 20L),
                         "stop",
@@ -163,28 +162,34 @@ class AgentNorthStarMissionCheckoutIT extends PostgresIntegrationTestSupport {
         ));
         coordinator.schedule(accepted.runId());
 
-        verify(modelGateway, timeout(8_000).times(4)).turn(any(), any(), any());
+        verify(modelGateway, timeout(8_000).times(3)).turn(any(), any(), any());
         awaitTerminalRun(accepted.runId());
+        var checkoutAction = userActionService.perform(new RecordAgentUserActionCommand(
+                USER_ID,
+                conversation.conversationId(),
+                "prepare_checkout",
+                "{\"cartIds\":[\"" + CART_ONE_ID + "\",\"" + CART_TWO_ID + "\"]}",
+                "north-star-picnic-checkout",
+                "Approved checkout preparation"
+        ));
 
         var run = runRepository.findById(accepted.runId()).orElseThrow();
         assertThat(run.getStatus()).isEqualTo(AgentRunStatus.COMPLETED);
-        assertThat(run.getIterationCount()).isEqualTo(4);
-        assertThat(run.getToolInvocationCount()).isEqualTo(3);
+        assertThat(run.getIterationCount()).isEqualTo(3);
+        assertThat(run.getToolInvocationCount()).isEqualTo(2);
 
         var invocations = invocationRepository.findByRunIdOrderByCreatedAtAsc(run.getId());
         assertThat(invocations)
                 .extracting(tool -> tool.getToolName())
-                .containsExactly("create_shopping_mission", "prepare_carts", "prepare_checkout");
+                .containsExactly("create_shopping_mission", "prepare_carts");
         assertThat(invocations)
                 .extracting(tool -> tool.getStatus())
                 .containsOnly(AgentToolInvocationStatus.COMPLETED);
         assertThat(invocations.get(1).getArgumentsJson())
                 .contains(BLANKET_OFFER, CUPS_OFFER, SNACKS_OFFER);
         assertThat(invocations.get(1).getResultJson())
-                .contains(CART_ONE_ID.toString(), CART_TWO_ID.toString(), "shopify:snacks")
+                .contains(CART_ONE_ID.toString(), CART_TWO_ID.toString(), "snacks.example")
                 .doesNotContain("simulated merchant cart outage");
-        assertThat(invocations.get(2).getArgumentsJson())
-                .contains(CART_ONE_ID.toString(), CART_TWO_ID.toString());
         assertThat(invocations).noneMatch(tool -> tool.getToolName().equals("complete_checkout"));
 
         var mission = missionRepository.findFirstByConversationIdAndUserIdOrderByUpdatedAtDesc(
@@ -204,15 +209,15 @@ class AgentNorthStarMissionCheckoutIT extends PostgresIntegrationTestSupport {
         assertThat(artifacts).filteredOn(value -> value.getArtifactType() == AgentArtifactType.CART)
                 .extracting(value -> value.getCartId())
                 .containsExactlyInAnyOrder(CART_ONE_ID, CART_TWO_ID);
-        assertThat(artifacts).filteredOn(value -> value.getArtifactType() == AgentArtifactType.CHECKOUT)
+        assertThat(checkoutAction.artifacts()).filteredOn(value -> value.type() == AgentArtifactType.CHECKOUT)
                 .satisfiesExactlyInAnyOrder(
                         value -> {
-                            assertThat(value.getCartId()).isEqualTo(CART_ONE_ID);
-                            assertThat(value.getCheckoutAttemptId()).isEqualTo(CHECKOUT_ONE_ID);
+                            assertThat(value.cartId()).isEqualTo(CART_ONE_ID);
+                            assertThat(value.checkoutAttemptId()).isEqualTo(CHECKOUT_ONE_ID);
                         },
                         value -> {
-                            assertThat(value.getCartId()).isEqualTo(CART_TWO_ID);
-                            assertThat(value.getCheckoutAttemptId()).isEqualTo(CHECKOUT_TWO_ID);
+                            assertThat(value.cartId()).isEqualTo(CART_TWO_ID);
+                            assertThat(value.checkoutAttemptId()).isEqualTo(CHECKOUT_TWO_ID);
                         }
                 );
         assertThat(artifacts).allSatisfy(value -> {
@@ -227,9 +232,10 @@ class AgentNorthStarMissionCheckoutIT extends PostgresIntegrationTestSupport {
                 .flatExtracting(CreateCartCommand::addItems)
                 .extracting(CreateCartCommand.AddItem::offerKey)
                 .containsExactlyInAnyOrder(BLANKET_OFFER, CUPS_OFFER, SNACKS_OFFER);
-        assertThat(requests).hasSize(4);
+        assertThat(requests).hasSize(3);
         assertThat(requests).allSatisfy(request -> assertThat(request.tools())
-                .noneMatch(tool -> tool.name().equals("complete_checkout")));
+                .noneMatch(tool -> tool.name().equals("prepare_checkout")
+                        || tool.name().equals("complete_checkout")));
     }
 
     private AgentModelResponse toolResponse(String id, String name, String arguments) {

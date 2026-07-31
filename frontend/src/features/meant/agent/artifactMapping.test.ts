@@ -1511,7 +1511,7 @@ describe('agent artifact mapping', () => {
     })
   })
 
-  test('grounds inventory similarity copy in durable product metadata', () => {
+  test('keeps model-generated similarity copy beside durable product metadata', () => {
     const query = 'check my black jacket in inventory and find me some new that are similar'
     const user: AgentMessageProfile = {
       messageId: 'message-user-similar',
@@ -1624,7 +1624,7 @@ describe('agent artifact mapping', () => {
     expect(messages).toHaveLength(2)
     expect(messages[1]?.blocks?.[0]).toEqual({
       type: 'text',
-      text: 'Here are similar jackets to your Black Quilted Jacket:',
+      text: `I found these ${query}:`,
     })
     expect(messages[1]?.blocks?.[1]).toMatchObject({
       type: 'similar',
@@ -1635,11 +1635,10 @@ describe('agent artifact mapping', () => {
         label: 'My Black Quilted Jacket',
       },
     })
-    expect(JSON.stringify(messages[1])).not.toContain(query)
     expect(JSON.stringify(messages[1])).not.toContain('Brown Chore Coat')
   })
 
-  test('keeps each grounded heading next to its own similarity result in a multi-tool run', () => {
+  test('keeps one model heading with each similarity result in a multi-tool run', () => {
     const jacket = canonicalProduct('product-jacket', 'offer-jacket', 'Field Jacket')
     const boots = canonicalProduct('product-boots', 'offer-boots', 'Hiking Boots')
     const toolMessage = (messageId: string, sequenceNumber: number): AgentMessageProfile => ({
@@ -1734,14 +1733,13 @@ describe('agent artifact mapping', () => {
     const messages = discoverMessagesFromAgentConversation(conversation, [])
 
     expect(messages[1]?.blocks).toMatchObject([
-      { type: 'text', text: 'Here are similar jackets to your Black Quilted Jacket:' },
+      { type: 'text', text: 'Here are all the results.' },
       { type: 'similar', products: [{ id: jacket.key }] },
-      { type: 'text', text: 'Here are similar boots to your Brown Hiking Boots:' },
       { type: 'similar', products: [{ id: boots.key }] },
     ])
   })
 
-  test('projects trusted product clarification choices as clickable numbered replies', () => {
+  test('ignores retired product-clarification envelopes and keeps the model text natural', () => {
     const assistant: AgentMessageProfile = {
       messageId: 'message-clarification',
       runId: 'run-clarification',
@@ -1779,13 +1777,16 @@ describe('agent artifact mapping', () => {
       artifacts: [],
     }
 
-    expect(discoverMessagesFromAgentConversation(conversation, [])).toEqual([
+    const messages = discoverMessagesFromAgentConversation(conversation, [])
+
+    expect(messages).toEqual([
       expect.objectContaining({
         role: 'ai',
-        suggestedReplies: ['1. Green cap', '2. Brown cap', '3. Red wool cap'],
-        suggestedReplySubmissions: ['1', '2', '3'],
+        blocks: [{ type: 'text', text: 'Which product should I add to your cart?' }],
       }),
     ])
+    expect(messages[0]).not.toHaveProperty('suggestedReplies')
+    expect(messages[0]).not.toHaveProperty('suggestedReplySubmissions')
   })
 
   test('keeps a clarification question visible beside grounded similarity results', () => {
@@ -1865,15 +1866,14 @@ describe('agent artifact mapping', () => {
           type: 'text',
           text: 'Which jacket should I use? Reply with a number or product name.',
         },
-        { type: 'text', text: 'Here are similar jackets to your Black Quilted Jacket:' },
         { type: 'similar', products: [{ id: product.key }] },
       ],
-      suggestedReplies: ['1. Black Quilted Jacket', '2. Black Leather Jacket'],
-      suggestedReplySubmissions: ['1', '2'],
     })
+    expect(messages[0]).not.toHaveProperty('suggestedReplies')
+    expect(messages[0]).not.toHaveProperty('suggestedReplySubmissions')
   })
 
-  test('replaces enumerated catalog prose with one concise lead-in and product cards', () => {
+  test('preserves model catalog prose beside product cards', () => {
     const user: AgentMessageProfile = {
       messageId: 'message-user',
       runId: 'run-1',
@@ -1939,7 +1939,10 @@ describe('agent artifact mapping', () => {
       id: 'message-assistant',
       role: 'ai',
       blocks: [
-        { type: 'text', text: 'I found these sunglasses:' },
+        {
+          type: 'text',
+          text: 'I found these sunglasses: Fashion Square Vintage Polarized Sunglasses for $9.00 Classic Original for $59.00. Do any of these look interesting?',
+        },
         {
           type: 'products',
           query: 'I am looking for some cool sunglasses',
@@ -1948,10 +1951,7 @@ describe('agent artifact mapping', () => {
         },
       ],
     })
-    expect(messages[1]?.blocks?.[0]).not.toMatchObject({ text: expect.stringContaining('$') })
-    expect(messages[1]?.blocks?.[0]).not.toMatchObject({
-      text: expect.stringContaining('Fashion Square'),
-    })
+    expect(messages[1]?.blocks?.[0]).toMatchObject({ text: expect.stringContaining('$') })
   })
 
   test('orders product cards by artifact ordinal and retains their tool message', () => {

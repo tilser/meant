@@ -431,10 +431,7 @@ function InventoryItemCard({
             <h3 className="mt-inv-name">{item.name}</h3>
             {item.brand ? (
               <div className="mt-inv-brand">
-                {merchantAdjacentDisplayLabel(
-                  item.brand,
-                  item.commerceReference?.merchantOrigin,
-                )}
+                {merchantAdjacentDisplayLabel(item.brand, item.commerceReference?.merchantOrigin)}
               </div>
             ) : null}
           </div>

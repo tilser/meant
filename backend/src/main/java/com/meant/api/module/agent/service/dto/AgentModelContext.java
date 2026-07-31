@@ -7,7 +7,6 @@ public record AgentModelContext(
         List<AgentModelMessage> messages,
         String triggeringUserText,
         AgentVisibleProductContext visibleProductContext,
-        AgentProductClarification pendingProductClarification,
         UUID merchantId
 ) {
 
@@ -16,7 +15,7 @@ public record AgentModelContext(
     }
 
     public AgentModelContext(List<AgentModelMessage> messages, String triggeringUserText) {
-        this(messages, triggeringUserText, null, null, null);
+        this(messages, triggeringUserText, null, null);
     }
 
     public AgentModelContext(
@@ -24,15 +23,6 @@ public record AgentModelContext(
             String triggeringUserText,
             AgentVisibleProductContext visibleProductContext
     ) {
-        this(messages, triggeringUserText, visibleProductContext, null, null);
-    }
-
-    public AgentModelContext(
-            List<AgentModelMessage> messages,
-            String triggeringUserText,
-            AgentVisibleProductContext visibleProductContext,
-            AgentProductClarification pendingProductClarification
-    ) {
-        this(messages, triggeringUserText, visibleProductContext, pendingProductClarification, null);
+        this(messages, triggeringUserText, visibleProductContext, null);
     }
 }

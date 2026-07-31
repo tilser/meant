@@ -16,6 +16,7 @@ import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionResult;
 import com.meant.api.module.agent.service.dto.SearchCatalogAgentToolInput;
 import com.meant.api.module.agent.service.command.QualifyAgentProductSearchCommand;
+import com.meant.api.module.agent.service.dto.AgentAppliedSearchFilter;
 import com.meant.api.module.agent.service.query.GetAgentSimilaritySearchQualificationQuery;
 import com.meant.api.module.catalog.service.dto.CanonicalProduct;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryAttributeFilter;
@@ -27,6 +28,7 @@ import com.meant.api.module.catalog.service.dto.CatalogDiscoveryPrice;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryPriceTier;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryRating;
 import com.meant.api.module.user.constant.UserProductSearchPagination;
+import com.meant.api.module.user.constant.UserProductSearchDecisionSource;
 import com.meant.api.module.user.constant.UserProductSearchQuestionTarget;
 import com.meant.api.module.user.service.UserGroupedProductSearchService;
 import com.meant.api.module.user.service.UserSimilarProductSearchService;
@@ -37,8 +39,10 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.IntStream;
@@ -51,21 +55,21 @@ public class SearchCatalogAgentTool implements AgentTool {
 
     private static final AgentToolDescriptor DESCRIPTOR = new AgentToolDescriptor(
             "search_catalog",
-            "Start or resume server-owned product-search qualification, then search and rank the commerce catalog. "
-                    + "Call this immediately for a shopping request instead of asking search-filter questions yourself. "
-                    + "The server supplies the conversation, profile, supported Shopify parameters, and validated filters. "
-                    + "Pass qualificationId only when it came from trusted server context.",
+            "Search and rank the commerce catalog. The server enriches the request with conversation and profile "
+                    + "filter advice, and the result reports appliedFilters and unsetFilters. Supply only filters that "
+                    + "are relevant to this request; missing filters never prevent a search.",
             """
             {
               "type":"object",
                 "properties":{
                 "query":{"type":"string","minLength":1,"maxLength":500},
-                "qualificationId":{"type":"string","format":"uuid"},
-                "qualificationUpdatedAt":{
-                  "type":"string",
-                  "format":"date-time",
-                  "description":"Server-issued pending qualification revision; never invent this value"
-                },
+                "shipsTo":{"type":"object","additionalProperties":false,"required":["country"],"properties":{"country":{"type":"string","pattern":"^[A-Za-z]{2}$"},"region":{"type":"string","maxLength":120},"postalCode":{"type":"string","maxLength":30}}},
+                "shipsFrom":{"type":"array","maxItems":10,"items":{"type":"object","additionalProperties":false,"required":["country"],"properties":{"country":{"type":"string","pattern":"^[A-Za-z]{2}$"}}}},
+                "price":{"type":"object","additionalProperties":false,"properties":{"minUsd":{"type":"number","minimum":0,"maximum":1000000,"multipleOf":0.01},"maxUsd":{"type":"number","minimum":0,"maximum":1000000,"multipleOf":0.01}}},
+                "conditions":{"type":"array","maxItems":2,"items":{"type":"string","enum":["new","secondhand"]}},
+                "attributes":{"type":"array","maxItems":3,"items":{"type":"object","additionalProperties":false,"required":["name","values"],"properties":{"name":{"type":"string","enum":["Color","Size","Target gender"]},"values":{"type":"array","minItems":1,"maxItems":20,"items":{"type":"string","minLength":1,"maxLength":100}}}}},
+                "rating":{"type":"object","additionalProperties":false,"properties":{"variantMinimum":{"type":"number","minimum":0,"maximum":5},"variantMinimumCount":{"type":"integer","minimum":0}}},
+                "priceTiers":{"type":"array","maxItems":3,"items":{"type":"string","enum":["low","medium","high"]}},
                 "offset":{"type":"integer","minimum":0,"maximum":99},
                 "limit":{"type":"integer","minimum":1,"maximum":20}
               },
@@ -73,7 +77,7 @@ public class SearchCatalogAgentTool implements AgentTool {
               "additionalProperties":false
             }
             """,
-            "2",
+            "3",
             AgentToolRisk.READ
     );
 
@@ -112,24 +116,18 @@ public class SearchCatalogAgentTool implements AgentTool {
                 profile,
                 context.conversationId(),
                 context.merchantId(),
-                input.qualificationId(),
                 context.triggeringMessageId(),
                 authoritativeUserText,
-                input.qualificationUpdatedAt(),
                 null
         );
-        java.util.UUID similarityLookupId = input.qualificationId() == null
-                ? qualificationCommand.requestQualificationId()
-                : input.qualificationId();
+        java.util.UUID similarityLookupId = qualificationCommand.requestQualificationId();
         var preboundSimilarityContext = similarityContext(context, similarityLookupId);
         qualificationCommand = new QualifyAgentProductSearchCommand(
                 profile,
                 context.conversationId(),
                 context.merchantId(),
-                input.qualificationId(),
                 context.triggeringMessageId(),
                 authoritativeUserText,
-                input.qualificationUpdatedAt(),
                 preboundSimilarityContext
                         .map(value -> bounded(value.anchorLabel(), 500))
                         .orElse(null)
@@ -139,15 +137,15 @@ public class SearchCatalogAgentTool implements AgentTool {
         var resolvedSimilarityContext = preboundSimilarityContext.or(() ->
                 similarityContext(context, qualification.qualificationId()));
         requireMatchingSimilarityQualification(resolvedSimilarityContext, qualification.qualificationId());
-        if (!qualification.ready()) {
-            return qualificationRequired(
-                    qualification.qualificationId(),
-                    qualification.assistantMessage(),
-                    qualification.questionTargets()
-            );
-        }
-        CatalogDiscoveryFilters filters = qualification.filters();
-        requireRequestedFiltersAuthorized(requestedFilters, filters);
+        CatalogDiscoveryFilters filters = mergeFilters(qualification.filters(), requestedFilters);
+        Map<String, AgentAppliedSearchFilter> appliedFilters = mergeAppliedFilters(
+                qualification.appliedFilters(),
+                requestedFilters
+        );
+        List<UserProductSearchQuestionTarget> unsetFilters = resolvedUnsetFilters(
+                qualification.unsetFilters(),
+                requestedFilters
+        );
         if (resolvedSimilarityContext.isPresent()) {
             var bound = resolvedSimilarityContext.get();
             AgentSimilarityAnchorResult similarityAnchor = new AgentSimilarityAnchorResult(
@@ -167,9 +165,12 @@ public class SearchCatalogAgentTool implements AgentTool {
                             context.buyerIp(),
                             context.userAgent(),
                             context.language()
-                    )
+                    ),
+                    filters,
+                    qualification.explicitAnyTargets(),
+                    qualification.profileSuppressionTargets()
             );
-            return similarityResponse(result, similarityAnchor);
+            return similarityResponse(result, similarityAnchor, appliedFilters, unsetFilters);
         }
 
         SearchUserProductsCommand command = new SearchUserProductsCommand(
@@ -189,7 +190,7 @@ public class SearchCatalogAgentTool implements AgentTool {
                 qualification.explicitAnyTargets(),
                 qualification.profileSuppressionTargets()
         );
-        return response(result, List.of());
+        return response(result, List.of(), appliedFilters, unsetFilters);
     }
 
     private void requireMatchingSimilarityQualification(
@@ -220,7 +221,9 @@ public class SearchCatalogAgentTool implements AgentTool {
 
     private AgentToolExecutionResult similarityResponse(
             UserGroupedProductSearchResult result,
-            AgentSimilarityAnchorResult similarityAnchor
+            AgentSimilarityAnchorResult similarityAnchor,
+            Map<String, AgentAppliedSearchFilter> appliedFilters,
+            List<UserProductSearchQuestionTarget> unsetFilters
     ) {
         List<CanonicalProduct> products = result.products();
         List<AgentProductReferenceResult> references = IntStream.range(0, products.size())
@@ -243,7 +246,11 @@ public class SearchCatalogAgentTool implements AgentTool {
                 false,
                 result.upstreamTruncated(),
                 List.of(),
-                similarityAnchor
+                similarityAnchor,
+                List.of(),
+                appliedFilters,
+                unsetFilters,
+                products.size()
         );
         return AgentToolExecutionResult.read(
                 json.write(output),
@@ -254,7 +261,9 @@ public class SearchCatalogAgentTool implements AgentTool {
 
     private AgentToolExecutionResult response(
             UserGroupedProductSearchResult result,
-            List<String> searchAdjustments
+            List<String> searchAdjustments,
+            Map<String, AgentAppliedSearchFilter> appliedFilters,
+            List<UserProductSearchQuestionTarget> unsetFilters
     ) {
         List<CanonicalProduct> products = result.products();
         List<AgentProductReferenceResult> references = IntStream.range(0, products.size())
@@ -277,7 +286,10 @@ public class SearchCatalogAgentTool implements AgentTool {
                 result.upstreamTruncated(),
                 List.of(),
                 null,
-                searchAdjustments
+                searchAdjustments,
+                appliedFilters,
+                unsetFilters,
+                products.size()
         );
         String summary = "Found " + products.size() + " grounded product option(s).";
         if (!searchAdjustments.isEmpty()) {
@@ -334,54 +346,147 @@ public class SearchCatalogAgentTool implements AgentTool {
                 : null;
     }
 
-    private AgentToolExecutionResult qualificationRequired(
-            java.util.UUID qualificationId,
-            String question,
-            List<UserProductSearchQuestionTarget> targets
-    ) {
-        AgentProductListResult output = new AgentProductListResult(
-                List.of(),
-                null,
-                false,
-                false,
-                List.of(),
-                null,
-                List.of(),
-                qualificationId,
-                question,
-                targets
-        );
-        return AgentToolExecutionResult.waitingForUser(json.write(output), question);
-    }
-
     private String bounded(String value, int maximumLength) {
         return value == null || value.length() <= maximumLength
                 ? value
                 : value.substring(0, maximumLength);
     }
 
-    private void requireRequestedFiltersAuthorized(
-            CatalogDiscoveryFilters requested,
-            CatalogDiscoveryFilters authorized
+    private CatalogDiscoveryFilters mergeFilters(
+            CatalogDiscoveryFilters advised,
+            CatalogDiscoveryFilters requested
     ) {
         if (requested == null) {
-            return;
+            return advised;
         }
-        boolean authorizedRequest = authorized != null
-                && authorized.conditions().containsAll(requested.conditions())
-                && java.util.Objects.equals(authorized.shipsTo(), requested.shipsTo())
-                && authorized.shipsFrom().containsAll(requested.shipsFrom())
-                && java.util.Objects.equals(authorized.price(), requested.price())
-                && requested.attributes().stream().allMatch(requestedAttribute ->
-                        authorized.attributes().stream().anyMatch(authorizedAttribute ->
-                                authorizedAttribute.name() == requestedAttribute.name()
-                                        && authorizedAttribute.values().containsAll(requestedAttribute.values())))
-                && java.util.Objects.equals(authorized.rating(), requested.rating())
-                && authorized.priceTiers().containsAll(requested.priceTiers());
-        if (!authorizedRequest) {
-            throw AgentProductReadToolException.invalid(
-                    "One or more typed catalog constraints were not validated from the request or stored profile.");
+        CatalogDiscoveryFilters base = advised == null
+                ? new CatalogDiscoveryFilters(
+                        null, List.of(), null, List.of(), null, List.of(), List.of(), List.of(), null, List.of())
+                : advised;
+        return new CatalogDiscoveryFilters(
+                base.available(),
+                requested.conditions().isEmpty() ? base.conditions() : requested.conditions(),
+                requested.shipsTo() == null ? base.shipsTo() : requested.shipsTo(),
+                requested.shipsFrom().isEmpty() ? base.shipsFrom() : requested.shipsFrom(),
+                requested.price() == null ? base.price() : requested.price(),
+                base.shopIds(),
+                base.categoryIds(),
+                mergeAttributes(base.attributes(), requested.attributes()),
+                requested.rating() == null ? base.rating() : requested.rating(),
+                requested.priceTiers().isEmpty() ? base.priceTiers() : requested.priceTiers()
+        );
+    }
+
+    private List<CatalogDiscoveryAttributeFilter> mergeAttributes(
+            List<CatalogDiscoveryAttributeFilter> advised,
+            List<CatalogDiscoveryAttributeFilter> requested
+    ) {
+        Map<CatalogDiscoveryAttributeName, CatalogDiscoveryAttributeFilter> merged = new LinkedHashMap<>();
+        advised.forEach(attribute -> merged.put(attribute.name(), attribute));
+        requested.forEach(attribute -> merged.put(attribute.name(), attribute));
+        return List.copyOf(merged.values());
+    }
+
+    private Map<String, AgentAppliedSearchFilter> mergeAppliedFilters(
+            Map<String, AgentAppliedSearchFilter> advised,
+            CatalogDiscoveryFilters requested
+    ) {
+        Map<String, AgentAppliedSearchFilter> merged = new LinkedHashMap<>(advised);
+        if (requested == null) {
+            return Map.copyOf(merged);
         }
+        putRequested(merged, "condition", requested.conditions().stream().map(Enum::name).toList());
+        putRequested(merged, "shipsTo", locationValues(requested.shipsTo()));
+        putRequested(merged, "shipsFrom", requested.shipsFrom().stream()
+                .flatMap(location -> locationValues(location).stream())
+                .toList());
+        putRequested(merged, "price", rangeValues(
+                requested.price() == null ? null : requested.price().min(),
+                requested.price() == null ? null : requested.price().max()
+        ));
+        requested.attributes().forEach(attribute -> putRequested(
+                merged,
+                switch (attribute.name()) {
+                    case COLOR -> "color";
+                    case SIZE -> "size";
+                    case TARGET_GENDER -> "targetGender";
+                },
+                attribute.values()
+        ));
+        putRequested(merged, "rating", rangeValues(
+                requested.rating() == null ? null : requested.rating().variantMinimum(),
+                requested.rating() == null ? null : requested.rating().variantMinimumCount()
+        ));
+        putRequested(merged, "priceTier", requested.priceTiers().stream().map(Enum::name).toList());
+        return Map.copyOf(merged);
+    }
+
+    private void putRequested(
+            Map<String, AgentAppliedSearchFilter> filters,
+            String name,
+            List<String> values
+    ) {
+        if (!values.isEmpty()) {
+            filters.put(name, new AgentAppliedSearchFilter(
+                    values,
+                    UserProductSearchDecisionSource.CURRENT_USER_TURN
+            ));
+        }
+    }
+
+    private List<UserProductSearchQuestionTarget> resolvedUnsetFilters(
+            List<UserProductSearchQuestionTarget> advised,
+            CatalogDiscoveryFilters requested
+    ) {
+        if (requested == null) {
+            return advised;
+        }
+        Set<UserProductSearchQuestionTarget> unset = new LinkedHashSet<>(advised);
+        if (!requested.conditions().isEmpty()) {
+            unset.remove(UserProductSearchQuestionTarget.CONDITION);
+        }
+        if (requested.shipsTo() != null) {
+            unset.remove(UserProductSearchQuestionTarget.SHIPS_TO);
+        }
+        if (!requested.shipsFrom().isEmpty()) {
+            unset.remove(UserProductSearchQuestionTarget.SHIPS_FROM);
+        }
+        if (requested.price() != null) {
+            unset.remove(UserProductSearchQuestionTarget.PRICE);
+        }
+        requested.attributes().forEach(attribute -> unset.remove(switch (attribute.name()) {
+            case COLOR -> UserProductSearchQuestionTarget.COLOR;
+            case SIZE -> UserProductSearchQuestionTarget.SIZE;
+            case TARGET_GENDER -> UserProductSearchQuestionTarget.TARGET_GENDER;
+        }));
+        if (requested.rating() != null) {
+            unset.remove(UserProductSearchQuestionTarget.RATING);
+        }
+        if (!requested.priceTiers().isEmpty()) {
+            unset.remove(UserProductSearchQuestionTarget.PRICE_TIER);
+        }
+        return List.copyOf(unset);
+    }
+
+    private List<String> locationValues(CatalogDiscoveryLocation location) {
+        if (location == null) {
+            return List.of();
+        }
+        return List.of(java.util.stream.Stream.of(
+                        location.country(), location.region(), location.postalCode())
+                .filter(java.util.Objects::nonNull)
+                .collect(java.util.stream.Collectors.joining(" / ")));
+    }
+
+    private List<String> rangeValues(Number minimum, Number maximum) {
+        List<String> values = new ArrayList<>();
+        if (minimum != null) {
+            values.add("min=" + minimum);
+        }
+        if (maximum != null) {
+            values.add("max=" + maximum);
+        }
+        return List.copyOf(values);
     }
 
     private List<CatalogDiscoveryAttributeFilter> attributes(

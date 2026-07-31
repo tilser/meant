@@ -416,7 +416,8 @@ export function savedProductFromProfile(
             return {
               ...offer,
               merchant: savedOfferMerchantLabel(details, offer),
-              merchantDomain: offer.merchantOrigin?.trim() || details?.merchantOrigin?.trim() || null,
+              merchantDomain:
+                offer.merchantOrigin?.trim() || details?.merchantOrigin?.trim() || null,
               price: price ?? Number.NaN,
               priceMinorUnits: price == null ? null : offer.priceMinorUnits,
               priceCurrency: price == null ? null : offer.priceCurrency,

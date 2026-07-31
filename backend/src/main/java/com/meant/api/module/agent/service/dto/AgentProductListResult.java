@@ -3,7 +3,7 @@ package com.meant.api.module.agent.service.dto;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.meant.api.module.user.constant.UserProductSearchQuestionTarget;
 import java.util.List;
-import java.util.UUID;
+import java.util.Map;
 
 public record AgentProductListResult(
         List<AgentProductReferenceResult> products,
@@ -14,18 +14,19 @@ public record AgentProductListResult(
         @JsonInclude(JsonInclude.Include.NON_NULL)
         AgentSimilarityAnchorResult similarityAnchor,
         List<String> searchAdjustments,
-        @JsonInclude(JsonInclude.Include.NON_NULL)
-        UUID qualificationId,
-        @JsonInclude(JsonInclude.Include.NON_NULL)
-        String qualificationQuestion,
-        List<UserProductSearchQuestionTarget> qualificationTargets
+        Map<String, AgentAppliedSearchFilter> appliedFilters,
+        List<UserProductSearchQuestionTarget> unsetFilters,
+        Integer resultCount
 ) {
+
     public AgentProductListResult {
         products = products == null ? List.of() : List.copyOf(products);
         unavailableCanonicalProductKeys = unavailableCanonicalProductKeys == null
                 ? List.of() : List.copyOf(unavailableCanonicalProductKeys);
         searchAdjustments = searchAdjustments == null ? List.of() : List.copyOf(searchAdjustments);
-        qualificationTargets = qualificationTargets == null ? List.of() : List.copyOf(qualificationTargets);
+        appliedFilters = appliedFilters == null ? Map.of() : Map.copyOf(appliedFilters);
+        unsetFilters = unsetFilters == null ? List.of() : List.copyOf(unsetFilters);
+        resultCount = resultCount == null ? products.size() : Math.max(0, resultCount);
     }
 
     public AgentProductListResult(
@@ -45,9 +46,9 @@ public record AgentProductListResult(
                 unavailableCanonicalProductKeys,
                 similarityAnchor,
                 searchAdjustments,
-                null,
-                null,
-                List.of()
+                Map.of(),
+                List.of(),
+                products == null ? 0 : products.size()
         );
     }
 
@@ -66,9 +67,6 @@ public record AgentProductListResult(
                 upstreamTruncated,
                 unavailableCanonicalProductKeys,
                 similarityAnchor,
-                List.of(),
-                null,
-                null,
                 List.of()
         );
     }

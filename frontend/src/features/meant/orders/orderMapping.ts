@@ -36,10 +36,7 @@ export function orderFromProfile(profile: OrderProfile): Order {
   }
 }
 
-function safeOrderProductUrl(
-  value?: string | null,
-  merchantOrigin?: string | null,
-): string | null {
+function safeOrderProductUrl(value?: string | null, merchantOrigin?: string | null): string | null {
   if (!value) return null
   try {
     const url = new URL(value)
@@ -57,13 +54,9 @@ function safeOrderProductUrl(
     }
     const path = url.pathname.toLocaleLowerCase().replace(/\/+$/, '') || '/'
     if (
-      [
-        '/.well-known/ucp.json',
-        '/.well-known/ucp',
-        '/api/ucp/mcp',
-        '/api/mcp',
-        '/mcp',
-      ].some((protocolPath) => path === protocolPath || path.startsWith(`${protocolPath}/`))
+      ['/.well-known/ucp.json', '/.well-known/ucp', '/api/ucp/mcp', '/api/mcp', '/mcp'].some(
+        (protocolPath) => path === protocolPath || path.startsWith(`${protocolPath}/`),
+      )
     ) {
       return null
     }

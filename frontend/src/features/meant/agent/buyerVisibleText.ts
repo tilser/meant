@@ -56,9 +56,7 @@ function buyerVisibleMerchantOrigin(merchantOrigin?: string | null): string {
   const trimmed = merchantOrigin?.trim()
   if (!trimmed) return NEUTRAL_MERCHANT
   try {
-    const url = new URL(
-      /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`,
-    )
+    const url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`)
     const host = url.hostname.toLocaleLowerCase()
     if (
       !['http:', 'https:'].includes(url.protocol) ||

@@ -15,7 +15,6 @@ public record AgentToolExecutionContext(
         String userAgent,
         String language,
         AgentVisibleProductContext visibleProductContext,
-        AgentProductClarification pendingProductClarification,
         UUID merchantId
 ) {
 
@@ -33,7 +32,7 @@ public record AgentToolExecutionContext(
             String triggeringUserText
     ) {
         this(userId, conversationId, runId, triggeringMessageId, triggeringUserText,
-                null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null);
     }
 
     public AgentToolExecutionContext(
@@ -45,7 +44,7 @@ public record AgentToolExecutionContext(
             UUID idempotencyKey
     ) {
         this(userId, conversationId, runId, triggeringMessageId, triggeringUserText,
-                idempotencyKey, null, null, null, null, null, null, null);
+                idempotencyKey, null, null, null, null, null, null);
     }
 
     public AgentToolExecutionContext(
@@ -58,7 +57,7 @@ public record AgentToolExecutionContext(
             UUID executionOwner
     ) {
         this(userId, conversationId, runId, triggeringMessageId, triggeringUserText,
-                idempotencyKey, executionOwner, null, null, null, null, null, null);
+                idempotencyKey, executionOwner, null, null, null, null, null);
     }
 
     public AgentToolExecutionContext(
@@ -72,7 +71,7 @@ public record AgentToolExecutionContext(
             String buyerIp
     ) {
         this(userId, conversationId, runId, triggeringMessageId, triggeringUserText,
-                idempotencyKey, executionOwner, buyerIp, null, null, null, null, null);
+                idempotencyKey, executionOwner, buyerIp, null, null, null, null);
     }
 
     public AgentToolExecutionContext(
@@ -87,223 +86,72 @@ public record AgentToolExecutionContext(
             AgentVisibleProductContext visibleProductContext
     ) {
         this(userId, conversationId, runId, triggeringMessageId, triggeringUserText,
-                idempotencyKey, executionOwner, buyerIp, null, null,
-                visibleProductContext, null, null);
-    }
-
-    public AgentToolExecutionContext(
-            UUID userId,
-            UUID conversationId,
-            UUID runId,
-            UUID triggeringMessageId,
-            String triggeringUserText,
-            UUID idempotencyKey,
-            UUID executionOwner,
-            String buyerIp,
-            AgentVisibleProductContext visibleProductContext,
-            AgentProductClarification pendingProductClarification
-    ) {
-        this(userId, conversationId, runId, triggeringMessageId, triggeringUserText,
-                idempotencyKey, executionOwner, buyerIp, null, null, visibleProductContext,
-                pendingProductClarification, null);
-    }
-
-    public AgentToolExecutionContext(
-            UUID userId,
-            UUID conversationId,
-            UUID runId,
-            UUID triggeringMessageId,
-            String triggeringUserText,
-            UUID idempotencyKey,
-            UUID executionOwner,
-            String buyerIp,
-            AgentVisibleProductContext visibleProductContext,
-            AgentProductClarification pendingProductClarification,
-            UUID merchantId
-    ) {
-        this(userId, conversationId, runId, triggeringMessageId, triggeringUserText,
-                idempotencyKey, executionOwner, buyerIp, null, null, visibleProductContext,
-                pendingProductClarification, merchantId);
-    }
-
-    public AgentToolExecutionContext(
-            UUID userId,
-            UUID conversationId,
-            UUID runId,
-            UUID triggeringMessageId,
-            String triggeringUserText,
-            UUID idempotencyKey,
-            UUID executionOwner,
-            String buyerIp,
-            String userAgent,
-            AgentVisibleProductContext visibleProductContext,
-            AgentProductClarification pendingProductClarification,
-            UUID merchantId
-    ) {
-        this(userId, conversationId, runId, triggeringMessageId, triggeringUserText,
-                idempotencyKey, executionOwner, buyerIp, userAgent, null, visibleProductContext,
-                pendingProductClarification, merchantId);
+                idempotencyKey, executionOwner, buyerIp, null, null, visibleProductContext, null);
     }
 
     public AgentToolExecutionContext withIdempotencyKey(UUID value) {
-        return new AgentToolExecutionContext(
-                userId,
-                conversationId,
-                runId,
-                triggeringMessageId,
-                triggeringUserText,
-                value,
-                executionOwner,
-                buyerIp,
-                userAgent,
-                language,
-                visibleProductContext,
-                pendingProductClarification,
-                merchantId
-        );
+        return copy(value, executionOwner, buyerIp, userAgent, language, visibleProductContext, merchantId,
+                triggeringUserText);
     }
 
     public AgentToolExecutionContext withTriggeringUserText(String value) {
-        return new AgentToolExecutionContext(
-                userId,
-                conversationId,
-                runId,
-                triggeringMessageId,
-                value,
-                idempotencyKey,
-                executionOwner,
-                buyerIp,
-                userAgent,
-                language,
-                visibleProductContext,
-                pendingProductClarification,
-                merchantId
-        );
+        return copy(idempotencyKey, executionOwner, buyerIp, userAgent, language, visibleProductContext, merchantId,
+                value);
     }
 
     public AgentToolExecutionContext withExecutionOwner(UUID value) {
-        return new AgentToolExecutionContext(
-                userId,
-                conversationId,
-                runId,
-                triggeringMessageId,
-                triggeringUserText,
-                idempotencyKey,
-                value,
-                buyerIp,
-                userAgent,
-                language,
-                visibleProductContext,
-                pendingProductClarification,
-                merchantId
-        );
+        return copy(idempotencyKey, value, buyerIp, userAgent, language, visibleProductContext, merchantId,
+                triggeringUserText);
     }
 
     public AgentToolExecutionContext withBuyerIp(String value) {
-        return new AgentToolExecutionContext(
-                userId,
-                conversationId,
-                runId,
-                triggeringMessageId,
-                triggeringUserText,
-                idempotencyKey,
-                executionOwner,
-                value,
-                userAgent,
-                language,
-                visibleProductContext,
-                pendingProductClarification,
-                merchantId
-        );
+        return copy(idempotencyKey, executionOwner, value, userAgent, language, visibleProductContext, merchantId,
+                triggeringUserText);
     }
 
     public AgentToolExecutionContext withUserAgent(String value) {
-        return new AgentToolExecutionContext(
-                userId,
-                conversationId,
-                runId,
-                triggeringMessageId,
-                triggeringUserText,
-                idempotencyKey,
-                executionOwner,
-                buyerIp,
-                value,
-                language,
-                visibleProductContext,
-                pendingProductClarification,
-                merchantId
-        );
+        return copy(idempotencyKey, executionOwner, buyerIp, value, language, visibleProductContext, merchantId,
+                triggeringUserText);
     }
 
     public AgentToolExecutionContext withLanguage(String value) {
-        return new AgentToolExecutionContext(
-                userId,
-                conversationId,
-                runId,
-                triggeringMessageId,
-                triggeringUserText,
-                idempotencyKey,
-                executionOwner,
-                buyerIp,
-                userAgent,
-                value,
-                visibleProductContext,
-                pendingProductClarification,
-                merchantId
-        );
+        return copy(idempotencyKey, executionOwner, buyerIp, userAgent, value, visibleProductContext, merchantId,
+                triggeringUserText);
     }
 
     public AgentToolExecutionContext withVisibleProductContext(AgentVisibleProductContext value) {
-        return new AgentToolExecutionContext(
-                userId,
-                conversationId,
-                runId,
-                triggeringMessageId,
-                triggeringUserText,
-                idempotencyKey,
-                executionOwner,
-                buyerIp,
-                userAgent,
-                language,
-                value,
-                pendingProductClarification,
-                merchantId
-        );
-    }
-
-    public AgentToolExecutionContext withPendingProductClarification(AgentProductClarification value) {
-        return new AgentToolExecutionContext(
-                userId,
-                conversationId,
-                runId,
-                triggeringMessageId,
-                triggeringUserText,
-                idempotencyKey,
-                executionOwner,
-                buyerIp,
-                userAgent,
-                language,
-                visibleProductContext,
-                value,
-                merchantId
-        );
+        return copy(idempotencyKey, executionOwner, buyerIp, userAgent, language, value, merchantId,
+                triggeringUserText);
     }
 
     public AgentToolExecutionContext withMerchantId(UUID value) {
+        return copy(idempotencyKey, executionOwner, buyerIp, userAgent, language, visibleProductContext, value,
+                triggeringUserText);
+    }
+
+    private AgentToolExecutionContext copy(
+            UUID nextIdempotencyKey,
+            UUID nextExecutionOwner,
+            String nextBuyerIp,
+            String nextUserAgent,
+            String nextLanguage,
+            AgentVisibleProductContext nextVisibleProductContext,
+            UUID nextMerchantId,
+            String nextTriggeringUserText
+    ) {
         return new AgentToolExecutionContext(
                 userId,
                 conversationId,
                 runId,
                 triggeringMessageId,
-                triggeringUserText,
-                idempotencyKey,
-                executionOwner,
-                buyerIp,
-                userAgent,
-                language,
-                visibleProductContext,
-                pendingProductClarification,
-                value
+                nextTriggeringUserText,
+                nextIdempotencyKey,
+                nextExecutionOwner,
+                nextBuyerIp,
+                nextUserAgent,
+                nextLanguage,
+                nextVisibleProductContext,
+                nextMerchantId
         );
     }
 }

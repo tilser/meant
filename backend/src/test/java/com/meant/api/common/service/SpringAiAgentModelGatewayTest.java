@@ -15,7 +15,6 @@ import com.meant.api.module.agent.service.dto.AgentModelMessage;
 import com.meant.api.module.agent.service.dto.AgentModelRequest;
 import com.meant.api.module.agent.service.dto.AgentModelToolCall;
 import com.meant.api.module.agent.service.dto.AgentModelToolDefinition;
-import com.openai.models.chat.completions.ChatCompletionToolChoiceOption;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -33,7 +32,7 @@ import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
-import org.springframework.ai.openai.OpenAiChatOptions;
+import org.springframework.ai.model.tool.ToolCallingChatOptions;
 import org.springframework.http.HttpStatus;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.SignalType;
@@ -140,7 +139,7 @@ class SpringAiAgentModelGatewayTest {
     }
 
     @Test
-    void sendsSchemaOnlyToolDefinitionsAndTurnSpecificOptionsToSpringAi() {
+    void sendsCallableToolsAndProviderAgnosticTurnOptionsToSpringAi() {
         ChatModel chatModel = mock(ChatModel.class);
         when(chatModel.stream(any(Prompt.class))).thenReturn(Flux.just(
                 response("Done", List.of(), "STOP", "configured/model", new DefaultUsage(0, 0))
@@ -152,32 +151,21 @@ class SpringAiAgentModelGatewayTest {
                 "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"}}}"
         );
 
-        gateway.turn(request(List.of(definition), "search_catalog"), ignored -> { }, () -> false);
+        gateway.turn(request(List.of(definition)), ignored -> { }, () -> false);
 
         ArgumentCaptor<Prompt> promptCaptor = ArgumentCaptor.forClass(Prompt.class);
         verify(chatModel).stream(promptCaptor.capture());
-        assertThat(promptCaptor.getValue().getOptions()).isInstanceOf(OpenAiChatOptions.class);
-        OpenAiChatOptions options = (OpenAiChatOptions) promptCaptor.getValue().getOptions();
+        assertThat(promptCaptor.getValue().getOptions()).isInstanceOf(ToolCallingChatOptions.class);
+        ToolCallingChatOptions options = (ToolCallingChatOptions) promptCaptor.getValue().getOptions();
         assertThat(options.getModel()).isEqualTo("requested/model");
         assertThat(options.getTemperature()).isEqualTo(0.25);
         assertThat(options.getMaxTokens()).isEqualTo(321);
-        assertThat(options.getTimeout()).isEqualTo(Duration.ofSeconds(3));
-        assertThat(options.getParallelToolCalls()).isTrue();
-        assertThat(options.getStreamOptions().includeUsage()).isTrue();
-        assertThat(options.getToolChoice())
-                .isInstanceOf(ChatCompletionToolChoiceOption.class)
-                .extracting(choice -> ((ChatCompletionToolChoiceOption) choice)
-                        .asNamedToolChoice()
-                        .function()
-                        .name())
-                .isEqualTo("search_catalog");
         assertThat(options.getToolCallbacks()).singleElement().satisfies(callback -> {
             assertThat(callback.getToolDefinition().name()).isEqualTo("search_catalog");
             assertThat(callback.getToolDefinition().description()).isEqualTo("Search the catalog");
             assertThat(callback.getToolDefinition().inputSchema()).isEqualTo(definition.inputSchemaJson());
-            assertThatThrownBy(() -> callback.call("{}"))
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("Meant run coordinator");
+            assertThat(callback.call("{}"))
+                    .isEqualTo("{\"status\":\"delegated_to_run_coordinator\"}");
         });
     }
 
@@ -192,17 +180,12 @@ class SpringAiAgentModelGatewayTest {
     }
 
     private AgentModelRequest request(List<AgentModelToolDefinition> tools) {
-        return request(tools, null);
-    }
-
-    private AgentModelRequest request(List<AgentModelToolDefinition> tools, String requiredToolName) {
         return new AgentModelRequest(
                 "requested/model",
                 List.of(AgentModelMessage.system("system"), AgentModelMessage.user("user")),
                 tools,
                 0.25,
-                321,
-                requiredToolName
+                321
         );
     }
 

@@ -2,18 +2,15 @@ package com.meant.api.module.agent.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.meant.api.PostgresIntegrationTestSupport;
 import com.meant.api.module.agent.constant.AgentArtifactType;
-import com.meant.api.module.agent.constant.AgentMessageRole;
 import com.meant.api.module.agent.constant.AgentRunStatus;
 import com.meant.api.module.agent.constant.AgentToolInvocationStatus;
 import com.meant.api.module.agent.repository.AgentArtifactReferenceRepository;
-import com.meant.api.module.agent.repository.AgentMessageRepository;
 import com.meant.api.module.agent.repository.AgentRunRepository;
 import com.meant.api.module.agent.repository.AgentToolInvocationRepository;
 import com.meant.api.module.agent.service.command.CreateAgentConversationCommand;
@@ -100,7 +97,6 @@ class AgentNorthStarCatalogInventoryIT extends PostgresIntegrationTestSupport {
     @Autowired private AgentRunRepository runRepository;
     @Autowired private AgentToolInvocationRepository invocationRepository;
     @Autowired private AgentArtifactReferenceRepository artifactRepository;
-    @Autowired private AgentMessageRepository messageRepository;
 
     @MockitoBean private AgentModelGateway modelGateway;
     @MockitoBean private UserGroupedProductSearchService catalogSearchService;
@@ -126,7 +122,8 @@ class AgentNorthStarCatalogInventoryIT extends PostgresIntegrationTestSupport {
                 product("embroidered-cap", "Embroidered cap", "M")
         );
         String thirdVisibleOfferKey = products.get(6).offers().getFirst().key();
-        when(catalogSearchService.search(any(), any(SearchUserProductsCommand.class)))
+        when(catalogSearchService.search(
+                any(), any(SearchUserProductsCommand.class), any(), any(), any()))
                 .thenReturn(searchResult("versatile new clothing", products));
         stubCart(thirdVisibleOfferKey, CLOTHING_USER_ID);
         scriptModel(
@@ -199,7 +196,7 @@ class AgentNorthStarCatalogInventoryIT extends PostgresIntegrationTestSupport {
     }
 
     @Test
-    void conflictingVisibleOrdinalAndDescriptionWaitsForAChoiceThenCartsTheExactNumericReply()
+    void modelResolvesAConflictingDescriptionToAServerIssuedOfferWithoutRegexInterception()
             throws Exception {
         persistUser(CLARIFICATION_USER_ID, "north-star-clarification@example.test");
         List<CanonicalProduct> products = List.of(
@@ -209,7 +206,8 @@ class AgentNorthStarCatalogInventoryIT extends PostgresIntegrationTestSupport {
                 product("green-canvas-cap", "Green canvas cap", "M")
         );
         String thirdOfferKey = products.get(2).offers().getFirst().key();
-        when(catalogSearchService.search(any(), any(SearchUserProductsCommand.class)))
+        when(catalogSearchService.search(
+                any(), any(SearchUserProductsCommand.class), any(), any(), any()))
                 .thenReturn(searchResult("caps", products));
         stubCart(thirdOfferKey, CLARIFICATION_USER_ID);
         scriptModel(
@@ -238,41 +236,12 @@ class AgentNorthStarCatalogInventoryIT extends PostgresIntegrationTestSupport {
                 products.stream().map(CanonicalProduct::key).toList()
         );
 
-        UUID clarificationRunId = runTurnExpecting(
+        UUID cartRunId = runTurn(
                 CLARIFICATION_USER_ID,
                 conversationId,
                 "Add the third blue one to my cart.",
                 "north-star-clarification-conflict",
-                visibleProducts,
-                AgentRunStatus.WAITING_FOR_USER
-        );
-
-        assertThat(invocations(clarificationRunId)).isEmpty();
-        verify(cartService, never()).partitionSelectedOffers(any(PartitionSelectedOffersQuery.class));
-        verify(cartService, never()).create(any(CreateCartCommand.class), any(UUID.class));
-        verify(modelGateway, times(2)).turn(any(), any(), any());
-        assertThat(messageRepository.findByRunIdOrderBySequenceNumberAsc(clarificationRunId))
-                .filteredOn(message -> message.getRole() == AgentMessageRole.ASSISTANT)
-                .singleElement()
-                .satisfies(message -> {
-                    assertThat(message.getTextContent())
-                            .startsWith("Which product should I add to your cart?")
-                            .contains("Reply with a number or product name")
-                            .containsSubsequence(
-                                    "1. Blue linen cap",
-                                    "2. Blue mesh cap",
-                                    "3. Red wool cap",
-                                    "4. Green canvas cap")
-                            .doesNotContain("I'm sorry");
-                    assertThat(message.getContentJson())
-                            .contains("pendingProductClarification", "prepare_carts", thirdOfferKey);
-                });
-
-        UUID cartRunId = runTurn(
-                CLARIFICATION_USER_ID,
-                conversationId,
-                "3.",
-                "north-star-clarification-answer"
+                visibleProducts
         );
 
         assertThat(invocations(cartRunId))
@@ -342,7 +311,8 @@ class AgentNorthStarCatalogInventoryIT extends PostgresIntegrationTestSupport {
         );
         String firstOfferKey = similarProducts.getFirst().offers().getFirst().key();
         String secondOfferKey = similarProducts.get(1).offers().getFirst().key();
-        when(similarProductSearchService.search(any(), any(SearchSimilarUserProductsCommand.class)))
+        when(similarProductSearchService.search(
+                any(), any(SearchSimilarUserProductsCommand.class), any(), any(), any()))
                 .thenReturn(searchResult("similar shoes in the same size", similarProducts));
         stubCart(firstOfferKey, SHOES_USER_ID);
         scriptModel(
@@ -413,10 +383,11 @@ class AgentNorthStarCatalogInventoryIT extends PostgresIntegrationTestSupport {
 
         ArgumentCaptor<SearchSimilarUserProductsCommand> similar =
                 ArgumentCaptor.forClass(SearchSimilarUserProductsCommand.class);
-        verify(similarProductSearchService).search(any(), similar.capture());
+        verify(similarProductSearchService).search(
+                any(), similar.capture(), any(), any(), any());
         assertThat(similar.getValue().userId()).isEqualTo(SHOES_USER_ID);
         assertThat(similar.getValue().canonicalProductKey()).isEqualTo(commerceReference.canonicalProductKey());
-        assertThat(similar.getValue().query()).isEqualTo("similar shoes in the same size");
+        assertThat(similar.getValue().query()).isEqualTo("Find shoes similar to the ones I already have.");
 
         assertThat(invocations(cartRunId))
                 .singleElement()

@@ -38,8 +38,8 @@ public class FindSimilarProductsAgentTool implements AgentTool {
             "Find products similar to a product or owned inventory item previously shown in this conversation. "
                     + "For an owned item, call only after search_inventory resolves one complete, unambiguous match, "
                     + "or after the user chooses a match and get_inventory_item loads it. Pass that inventoryItemId. "
-                    + "Inventory anchors preserve selected size and options. The server qualifies the search and "
-                    + "asks for any critical missing size or shipping destination before catalog discovery.",
+                    + "Inventory anchors preserve selected size and options. Results include appliedFilters and "
+                    + "unsetFilters so you can decide whether a follow-up question would improve relevance.",
             """
             {"type":"object","properties":{"canonicalProductKey":{"type":"string","minLength":1,"maxLength":200},"inventoryItemId":{"type":"string","format":"uuid"},"query":{"type":"string","maxLength":500}},"anyOf":[{"required":["canonicalProductKey"]},{"required":["inventoryItemId"]}],"additionalProperties":false}
             """,
@@ -80,10 +80,8 @@ public class FindSimilarProductsAgentTool implements AgentTool {
                 profile,
                 context.conversationId(),
                 context.merchantId(),
-                null,
                 context.triggeringMessageId(),
                 authoritativeUserText,
-                null,
                 bounded(similarityAnchor.label(), 500)
         );
         UUID expectedQualificationId = qualificationCommand.requestQualificationId();
@@ -107,13 +105,6 @@ public class FindSimilarProductsAgentTool implements AgentTool {
             throw AgentProductReadToolException.invalid(
                     "Similarity search could not preserve its qualification identity.");
         }
-        if (!qualification.ready()) {
-            return qualificationRequired(
-                    qualificationId,
-                    qualification.assistantMessage(),
-                    qualification.questionTargets()
-            );
-        }
         AgentSimilarityAnchorResult qualifiedAnchor = new AgentSimilarityAnchorResult(
                 similarityAnchor.canonicalProductKey(),
                 similarityAnchor.inventoryItemId(),
@@ -131,7 +122,11 @@ public class FindSimilarProductsAgentTool implements AgentTool {
                         context.buyerIp(),
                         context.userAgent(),
                         context.language()
-                ));
+                ),
+                qualification.filters(),
+                qualification.explicitAnyTargets(),
+                qualification.profileSuppressionTargets()
+        );
         List<CanonicalProduct> products = result.products();
         List<AgentProductReferenceResult> references = IntStream.range(0, products.size())
                 .mapToObj(index -> resultService.reference(products.get(index), index + 1))
@@ -148,29 +143,19 @@ public class FindSimilarProductsAgentTool implements AgentTool {
                 .flatMap(List::stream)
                 .toList();
         AgentProductListResult output = new AgentProductListResult(
-                references, null, false, result.upstreamTruncated(), List.of(), qualifiedAnchor);
+                references,
+                null,
+                false,
+                result.upstreamTruncated(),
+                List.of(),
+                qualifiedAnchor,
+                List.of(),
+                qualification.appliedFilters(),
+                qualification.unsetFilters(),
+                products.size()
+        );
         return AgentToolExecutionResult.read(
                 json.write(output), "Found " + products.size() + " similar product(s).", artifacts);
-    }
-
-    private AgentToolExecutionResult qualificationRequired(
-            UUID qualificationId,
-            String question,
-            List<com.meant.api.module.user.constant.UserProductSearchQuestionTarget> targets
-    ) {
-        AgentProductListResult output = new AgentProductListResult(
-                List.of(),
-                null,
-                false,
-                false,
-                List.of(),
-                null,
-                List.of(),
-                qualificationId,
-                question,
-                targets
-        );
-        return AgentToolExecutionResult.waitingForUser(json.write(output), question);
     }
 
     private AgentSimilarityAnchorResult anchor(

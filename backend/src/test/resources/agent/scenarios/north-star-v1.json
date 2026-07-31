@@ -58,15 +58,10 @@
           {"id": "c-carts", "name": "prepare_carts", "argumentsJson": "{\"offers\":[{\"offerKey\":\"offer:blanket\",\"quantity\":1},{\"offerKey\":\"offer:drinks\",\"quantity\":4}]}"}
         ]
       },
-      {
-        "toolCalls": [
-          {"id": "c-checkout", "name": "prepare_checkout", "argumentsJson": "{\"cartIds\":[\"00000000-0000-0000-0000-000000000601\",\"00000000-0000-0000-0000-000000000602\"]}"}
-        ]
-      },
       {"text": "Your checklist is covered across two merchant carts. Open each checkout action when you are ready."}
     ],
-    "requiredTools": ["create_shopping_mission", "search_inventory", "search_catalog", "evaluate_mission_coverage", "prepare_carts", "prepare_checkout"],
-    "forbiddenTools": ["complete_checkout"],
+    "requiredTools": ["create_shopping_mission", "search_inventory", "search_catalog", "evaluate_mission_coverage", "prepare_carts"],
+    "forbiddenTools": ["prepare_checkout", "complete_checkout"],
     "maximumClarifications": 1
   },
   {

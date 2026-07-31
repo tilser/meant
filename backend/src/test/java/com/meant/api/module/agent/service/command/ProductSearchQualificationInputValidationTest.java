@@ -2,7 +2,6 @@ package com.meant.api.module.agent.service.command;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.meant.api.module.agent.service.query.ResolveAgentPendingProductSearchQuery;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.command.QualifyUserProductSearchCommand;
 import com.meant.api.module.user.service.query.FindUserProductSearchQualificationByRequestQuery;
@@ -28,9 +27,9 @@ class ProductSearchQualificationInputValidationTest {
                     profile,
                     conversationId,
                     null,
-                    null,
                     requestId,
-                    maximumTurn
+                    maximumTurn,
+                    null
             ))).isEmpty();
             assertThat(validator.validate(new QualifyUserProductSearchCommand(
                     userId,
@@ -40,13 +39,6 @@ class ProductSearchQualificationInputValidationTest {
                     null,
                     List.of(),
                     requestId
-            ))).isEmpty();
-            assertThat(validator.validate(new ResolveAgentPendingProductSearchQuery(
-                    userId,
-                    conversationId,
-                    null,
-                    requestId,
-                    maximumTurn
             ))).isEmpty();
             assertThat(validator.validate(new FindUserProductSearchQualificationByRequestQuery(
                     userId,
@@ -73,9 +65,9 @@ class ProductSearchQualificationInputValidationTest {
                     profile,
                     conversationId,
                     null,
-                    null,
                     requestId,
-                    oversizedTurn
+                    oversizedTurn,
+                    null
             ))).hasSize(1);
             assertThat(validator.validate(new QualifyUserProductSearchCommand(
                     userId,
@@ -85,13 +77,6 @@ class ProductSearchQualificationInputValidationTest {
                     null,
                     List.of(),
                     requestId
-            ))).hasSize(1);
-            assertThat(validator.validate(new ResolveAgentPendingProductSearchQuery(
-                    userId,
-                    conversationId,
-                    null,
-                    requestId,
-                    oversizedTurn
             ))).hasSize(1);
             assertThat(validator.validate(new FindUserProductSearchQualificationByRequestQuery(
                     userId,

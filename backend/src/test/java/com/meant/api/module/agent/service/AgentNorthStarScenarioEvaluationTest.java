@@ -22,7 +22,6 @@ import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Stream;
@@ -66,7 +65,6 @@ class AgentNorthStarScenarioEvaluationTest {
         messages.add(AgentModelMessage.system("Use only the supplied deterministic tools."));
         messages.add(AgentModelMessage.user(scenario.userMessage()));
         List<String> observedTools = new ArrayList<>();
-        int clarifications = 0;
         String finalText = null;
 
         for (int turn = 0; turn < scenario.steps().size(); turn++) {
@@ -87,10 +85,6 @@ class AgentNorthStarScenarioEvaluationTest {
                     ignored -> { },
                     () -> false
             );
-            if (result.text() != null
-                    && result.text().toUpperCase(Locale.ROOT).startsWith("WAITING_FOR_USER:")) {
-                clarifications++;
-            }
             if (result.toolCalls().isEmpty()) {
                 finalText = result.text();
                 break;
@@ -117,7 +111,6 @@ class AgentNorthStarScenarioEvaluationTest {
         assertThat(observedTools).doesNotContainAnyElementsOf(scenario.forbiddenTools());
         assertThat(registry.descriptors()).extracting(AgentToolDescriptor::name)
                 .doesNotContain("complete_checkout");
-        assertThat(clarifications).isLessThanOrEqualTo(scenario.maximumClarifications());
         assertThat(finalText).isNotBlank();
         scenario.integrationInvariants().forEach(this::assertIntegrationInvariantExists);
         for (int index = 1; index < model.requests().size(); index++) {

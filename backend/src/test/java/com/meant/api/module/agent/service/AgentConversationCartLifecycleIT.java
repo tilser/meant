@@ -14,6 +14,7 @@ import com.meant.api.module.agent.repository.AgentArtifactReferenceRepository;
 import com.meant.api.module.agent.repository.AgentRunRepository;
 import com.meant.api.module.agent.repository.AgentToolInvocationRepository;
 import com.meant.api.module.agent.service.command.CreateAgentConversationCommand;
+import com.meant.api.module.agent.service.command.RecordAgentUserActionCommand;
 import com.meant.api.module.agent.service.command.SubmitAgentTurnCommand;
 import com.meant.api.module.agent.service.dto.AgentModelRequest;
 import com.meant.api.module.agent.service.dto.AgentModelResponse;
@@ -84,6 +85,7 @@ class AgentConversationCartLifecycleIT extends PostgresIntegrationTestSupport {
     @Autowired private AgentConversationService conversationService;
     @Autowired private AgentTurnService turnService;
     @Autowired private AgentRunCoordinator coordinator;
+    @Autowired private AgentUserActionService userActionService;
     @Autowired private AgentRunRepository runRepository;
     @Autowired private AgentToolInvocationRepository invocationRepository;
     @Autowired private AgentArtifactReferenceRepository artifactRepository;
@@ -93,7 +95,7 @@ class AgentConversationCartLifecycleIT extends PostgresIntegrationTestSupport {
     @MockitoBean private CartService cartService;
 
     @Test
-    void cartReadFollowedByCheckoutUsesTheWholePersistedCartWithoutProductRestatement() throws Exception {
+    void checkoutRequiresAnExplicitUserActionAfterTheModelReadsThePersistedCart() throws Exception {
         persistUser();
         String offerKey = "offer:silk-wave-swim-shorts:navy-small";
         CartResult activeCart = cartResult(List.of(line(
@@ -111,26 +113,26 @@ class AgentConversationCartLifecycleIT extends PostgresIntegrationTestSupport {
         scriptModel(modelRequests,
                 tool("read-cart", "get_active_carts", "{}"),
                 text("Your cart contains 1 x 1082 - Silk Wave Swim Shorts - Navy / Small."),
-                tool("prepare-existing-cart", "prepare_checkout",
-                        "{\"cartIds\":[\"" + CART_ID + "\"]}"),
-                text("Your checkout is ready."));
+                text("Use the checkout confirmation button when you are ready."));
 
         UUID conversationId = conversationService.create(
                 new CreateAgentConversationCommand(USER_ID, "Swim shorts checkout")).conversationId();
         UUID cartReadRunId = runTurn(conversationId, "what is inside my cart?", "cart-read-before-checkout");
         UUID checkoutRunId = runTurn(conversationId, "lets do checkout", "checkout-existing-cart");
 
+        userActionService.perform(new RecordAgentUserActionCommand(
+                USER_ID,
+                conversationId,
+                "prepare_checkout",
+                "{\"cartIds\":[\"" + CART_ID + "\"]}",
+                "checkout-existing-cart-user-action",
+                "Approved checkout preparation"
+        ));
+
         assertThat(invocations(cartReadRunId))
                 .singleElement()
                 .satisfies(invocation -> assertThat(invocation.getToolName()).isEqualTo("get_active_carts"));
-        assertThat(invocations(checkoutRunId))
-                .singleElement()
-                .satisfies(invocation -> {
-                    assertThat(invocation.getToolName()).isEqualTo("prepare_checkout");
-                    assertThat(invocation.getArgumentsJson())
-                            .isEqualTo("{\"cartIds\":[\"" + CART_ID + "\"]}");
-                    assertThat(invocation.getStatus()).isEqualTo(AgentToolInvocationStatus.COMPLETED);
-                });
+        assertThat(invocations(checkoutRunId)).isEmpty();
 
         AgentModelRequest checkoutRequest = modelRequests.stream()
                 .filter(request -> request.messages().stream()
@@ -147,11 +149,8 @@ class AgentConversationCartLifecycleIT extends PostgresIntegrationTestSupport {
                         .contains("label=1082 - Silk Wave Swim Shorts")
                         .contains("productContext=1082 - Silk Wave Swim Shorts | Field Supply | Navy / Small"));
         assertThat(checkoutRequest.tools())
-                .filteredOn(tool -> tool.name().equals("prepare_checkout"))
-                .singleElement()
-                .satisfies(tool -> assertThat(tool.description())
-                        .contains("Each cart is checked out as a whole")
-                        .contains("never ask for or pass product descriptions"));
+                .extracting(tool -> tool.name())
+                .doesNotContain("prepare_checkout");
 
         ArgumentCaptor<GetCheckoutQuery> checkout = ArgumentCaptor.forClass(GetCheckoutQuery.class);
         verify(cartService).checkout(checkout.capture(), any(UUID.class));
@@ -168,7 +167,8 @@ class AgentConversationCartLifecycleIT extends PostgresIntegrationTestSupport {
         );
         String firstOfferKey = jackets.getFirst().offers().getFirst().key();
         String secondOfferKey = jackets.get(1).offers().getFirst().key();
-        when(catalogSearchService.search(any(), any(SearchUserProductsCommand.class)))
+        when(catalogSearchService.search(
+                any(), any(SearchUserProductsCommand.class), any(), any(), any()))
                 .thenReturn(searchResult(jackets));
 
         when(cartService.partitionSelectedOffers(any(PartitionSelectedOffersQuery.class)))
@@ -230,8 +230,8 @@ class AgentConversationCartLifecycleIT extends PostgresIntegrationTestSupport {
                 .extracting(artifact -> artifact.getOfferKey())
                 .containsExactly(firstOfferKey, secondOfferKey);
         ArgumentCaptor<SearchUserProductsCommand> search = ArgumentCaptor.forClass(SearchUserProductsCommand.class);
-        verify(catalogSearchService).search(any(), search.capture());
-        assertThat(search.getValue().query()).isEqualTo("jackets");
+        verify(catalogSearchService).search(any(), search.capture(), any(), any(), any());
+        assertThat(search.getValue().query()).isEqualTo("Find me two jackets.");
         assertThat(search.getValue().limit()).isEqualTo(2);
 
         ArgumentCaptor<PartitionSelectedOffersQuery> partition =

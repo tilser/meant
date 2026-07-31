@@ -17,8 +17,8 @@ function browserSessionStorage(): AgentActionRequestIdentityStorage | undefined 
 
 /** Retains the original request identity whenever the server outcome is unknown or still in flight. */
 export function retainAgentActionIdempotencyKey(error: unknown): boolean {
-  if (!(error instanceof Error)) return true
-  const failure = error as Error & { status?: unknown; code?: unknown }
+  if (error === null || typeof error !== 'object') return true
+  const failure = error as { status?: unknown; code?: unknown }
   if (typeof failure.status !== 'number') return true
   return (
     (typeof failure.code === 'string' && RETRYABLE_ACTION_CODES.has(failure.code)) ||

@@ -203,12 +203,11 @@ export function InlineCheckoutBlock({
         ...current,
         {
           role: 'assistant',
-          content:
-            sanitizeBuyerVisibleText(
-              result?.reply ??
-                'I could not reach the checkout agent. Try again, or continue with the merchant link if one is available.',
-              merchantDisplayOrigin(activeCheckout.merchantOrigin),
-            ),
+          content: sanitizeBuyerVisibleText(
+            result?.reply ??
+              'I could not reach the checkout agent. Try again, or continue with the merchant link if one is available.',
+            merchantDisplayOrigin(activeCheckout.merchantOrigin),
+          ),
         },
       ])
     } catch {

@@ -2,9 +2,10 @@ package com.meant.api.module.agent.service.dto;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.meant.api.module.user.constant.UserProductSearchQuestionTarget;
 import java.util.List;
-import java.util.UUID;
+import java.util.Map;
+import com.meant.api.module.user.constant.UserProductSearchDecisionSource;
+import com.meant.api.module.user.constant.UserProductSearchQuestionTarget;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 
@@ -37,8 +38,7 @@ class AgentProductListResultTest {
     }
 
     @Test
-    void qualificationQuestionCarriesTheServerContinuationIdentifier() throws Exception {
-        UUID qualificationId = UUID.randomUUID();
+    void searchAdviceCarriesAppliedAndUnsetFilterMetadata() throws Exception {
         AgentProductListResult result = new AgentProductListResult(
                 List.of(),
                 null,
@@ -47,14 +47,17 @@ class AgentProductListResultTest {
                 List.of(),
                 null,
                 List.of(),
-                qualificationId,
-                "What boot size do you need?",
-                List.of(UserProductSearchQuestionTarget.SIZE)
+                Map.of("color", new AgentAppliedSearchFilter(
+                        List.of("blue"), UserProductSearchDecisionSource.CURRENT_USER_TURN)),
+                List.of(UserProductSearchQuestionTarget.SIZE),
+                0
         );
 
         var json = objectMapper.readTree(objectMapper.writeValueAsString(result));
 
-        assertThat(json.get("qualificationId").asText()).isEqualTo(qualificationId.toString());
-        assertThat(json.get("qualificationTargets").get(0).asText()).isEqualTo("SIZE");
+        assertThat(json.at("/appliedFilters/color/values/0").asText()).isEqualTo("blue");
+        assertThat(json.get("unsetFilters").get(0).asText()).isEqualTo("SIZE");
+        assertThat(json.get("resultCount").asInt()).isZero();
+        assertThat(json.has("qualificationId")).isFalse();
     }
 }

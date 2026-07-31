@@ -87,7 +87,7 @@ public class AgentVisibleProductContextService {
     public String serialize(AgentVisibleProductContext visibleContext, AgentShelfContext shelfContext) {
         return visibleContext == null && shelfContext == null
                 ? null
-                : json.writeArtifact(new AgentTurnContext(visibleContext, shelfContext, null));
+                : json.writeArtifact(new AgentTurnContext(visibleContext, shelfContext));
     }
 
     public AgentShelfContext resolveShelf(ShelfContextCommand command) {

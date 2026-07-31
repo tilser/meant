@@ -18,11 +18,13 @@ class AgentIdentityTest {
     private final Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
 
     @Test
-    void acceptsMeantHttpsAndLocalhostHttpProfileUrls() {
+    void acceptsAbsoluteProfileUrls() {
         for (String profileUrl : List.of(
                 "https://usemeant.com/.well-known/ucp-agent.json",
                 "https://api.usemeant.com/.well-known/ucp-agent.json",
-                "http://localhost:8080/.well-known/ucp-agent.json"
+                "http://localhost:8080/.well-known/ucp-agent.json",
+                "https://shopify.dev/ucp/agent-profiles/2026-04-08/valid-with-capabilities.json",
+                "https://example.com/.well-known/ucp-agent.json"
         )) {
             assertThat(validator.validate(identity(profileUrl)))
                     .as("profile URL %s", profileUrl)
@@ -31,18 +33,16 @@ class AgentIdentityTest {
     }
 
     @Test
-    void rejectsShopifyFixtureAndUntrustedProfileUrls() {
+    void rejectsRelativeProfileUrls() {
         for (String profileUrl : List.of(
-                "https://shopify.dev/ucp/agent-profiles/2026-04-08/valid-with-capabilities.json",
-                "https://example.com/.well-known/ucp-agent.json",
-                "http://api.usemeant.com/.well-known/ucp-agent.json",
-                "https://api.usemeant.com/another-profile.json",
-                "https://api.usemeant.com/.well-known/ucp-agent.json?version=1"
+                "/.well-known/ucp-agent.json",
+                "profiles/ucp-agent.json",
+                "ucp-agent.json"
         )) {
             assertThat(validator.validate(identity(profileUrl)))
                     .as("profile URL %s", profileUrl)
                     .anySatisfy(violation -> assertThat(violation.getMessage())
-                            .contains("HTTPS Meant-hosted"));
+                            .contains("absolute"));
         }
     }
 

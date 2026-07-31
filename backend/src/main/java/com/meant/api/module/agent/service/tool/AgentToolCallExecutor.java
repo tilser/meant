@@ -7,10 +7,12 @@ import com.meant.api.module.agent.exception.AgentException;
 import com.meant.api.module.agent.properties.AgentProperties;
 import com.meant.api.module.agent.service.AgentJsonSupport;
 import com.meant.api.module.agent.service.AgentMutationExecutionLane;
+import com.meant.api.module.agent.service.ReferenceIntegrityPolicy;
 import com.meant.api.module.agent.service.AgentRunService;
 import com.meant.api.module.agent.service.dto.AgentExecutedToolCall;
 import com.meant.api.module.agent.service.dto.AgentModelToolCall;
 import com.meant.api.module.agent.service.dto.AgentModelToolResult;
+import com.meant.api.module.agent.service.dto.AgentReferenceErrorPayload;
 import com.meant.api.module.agent.service.dto.AgentToolDescriptor;
 import com.meant.api.module.agent.service.dto.AgentToolErrorPayload;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
@@ -42,6 +44,7 @@ public class AgentToolCallExecutor {
     private final AgentRunService runService;
     private final AgentJsonSupport jsonSupport;
     private final AgentToolSchemaValidator schemaValidator;
+    private final ReferenceIntegrityPolicy referenceIntegrityPolicy;
     private final AgentMutationExecutionLane mutationExecutionLane;
     private final AgentProperties properties;
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
@@ -117,17 +120,17 @@ public class AgentToolCallExecutor {
                     false
             );
         }
-        if (!authorizationPolicy.authorizedInvocation(context, descriptor, arguments)) {
+        ReferenceIntegrityPolicy.Validation referenceValidation =
+                referenceIntegrityPolicy.validate(context, descriptor.name(), arguments);
+        if (!referenceValidation.accepted()) {
             invocationService.rejectUnauthorized(context.runId(), call, descriptor, context.executionOwner());
             return new AgentExecutedToolCall(
                     new AgentModelToolResult(
                             call.id(),
                             call.name(),
-                            jsonSupport.write(new AgentToolErrorPayload(
-                                    false,
-                                    "authorization_required",
-                                    "That action could not be resolved to one exact current conversation item.",
-                                    false
+                            jsonSupport.write(new AgentReferenceErrorPayload(
+                                    referenceValidation.code(),
+                                    referenceValidation.field()
                             ))
                     ),
                     false

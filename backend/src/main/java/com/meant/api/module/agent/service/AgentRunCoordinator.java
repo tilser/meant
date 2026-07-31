@@ -15,12 +15,10 @@ import com.meant.api.module.agent.service.dto.AgentModelRequest;
 import com.meant.api.module.agent.service.dto.AgentModelResponse;
 import com.meant.api.module.agent.service.dto.AgentModelToolCall;
 import com.meant.api.module.agent.service.dto.AgentModelToolResult;
-import com.meant.api.module.agent.service.dto.AgentProductClarification;
-import com.meant.api.module.agent.service.dto.AgentResolvedReadIntent;
 import com.meant.api.module.agent.service.dto.AgentToolDescriptor;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
-import com.meant.api.module.agent.service.dto.AgentVisibleProductReference;
 import com.meant.api.module.agent.service.port.AgentModelGateway;
+import com.meant.api.module.agent.service.port.AgentToolConversationHistory;
 import com.meant.api.module.agent.service.tool.AgentToolAuthorizationPolicy;
 import com.meant.api.module.agent.service.tool.AgentToolCallExecutor;
 import com.meant.api.module.agent.service.tool.AgentToolRegistry;
@@ -34,7 +32,6 @@ import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
@@ -45,7 +42,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -57,17 +53,6 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class AgentRunCoordinator {
 
-    private static final String WAITING_PREFIX = "WAITING_FOR_USER:";
-    private static final String RECOVERY_MESSAGE =
-            "I couldn't finish the remaining steps safely. Review the completed actions above; no further actions were started.";
-    private static final String COMPARE_PRODUCTS_TOOL = "compare_products";
-    private static final Pattern DIRECT_COMPARISON_REQUEST = Pattern.compile(
-            "(?iu)^\\s*(?:please\\s+)?(?:(?:can|could|would|will)\\s+you\\s+)?compare\\b"
-    );
-    private static final String MUTATION_NOT_EXECUTED_MESSAGE =
-            "I couldn't complete that requested change, so I left it unchanged. Please try again.";
-    private static final String MUTATION_NOT_CONFIRMED_MESSAGE =
-            "I couldn't confirm that requested change. Please check the current state before trying again.";
     private static final String SEARCH_CATALOG_TOOL = "search_catalog";
     private static final int MAXIMUM_READ_ATTEMPTS_PER_BATCH = 2;
     private static final int QUEUED_RUN_PAGE_SIZE = 100;
@@ -78,11 +63,9 @@ public class AgentRunCoordinator {
     private final AgentToolRegistry toolRegistry;
     private final AgentToolAuthorizationPolicy authorizationPolicy;
     private final AgentToolCallExecutor toolCallExecutor;
-    private final AgentProductClarificationService productClarificationService;
-    private final AgentProductClarificationContextService productClarificationContextService;
-    private final AgentReadIntentResolver readIntentResolver;
     private final AgentMessageLedgerService messageLedgerService;
     private final AgentModelGateway modelGateway;
+    private final AgentToolConversationHistory toolConversationHistory;
     private final AgentMetrics metrics;
     private final AgentJsonSupport jsonSupport;
     private final AgentProperties properties;
@@ -166,7 +149,7 @@ public class AgentRunCoordinator {
                     exception
             );
             if (executionOwner != null) {
-                safelyPersistFailure(runId, executionOwner, "agent_run_failed", RECOVERY_MESSAGE);
+                safelyPersistFailure(runId, executionOwner, "agent_run_failed", null);
             }
         } finally {
             if (heartbeat != null) {
@@ -247,7 +230,6 @@ public class AgentRunCoordinator {
                 run.getTriggeringMessageId(),
                 context.triggeringUserText()
         ).withVisibleProductContext(context.visibleProductContext())
-                .withPendingProductClarification(context.pendingProductClarification())
                 .withMerchantId(context.merchantId())
                 .withExecutionOwner(executionOwner)
                 .withBuyerIp(run.getBuyerIp())
@@ -256,61 +238,17 @@ public class AgentRunCoordinator {
         Map<String, Integer> perToolCounts = new HashMap<>();
         Map<String, Integer> repeatedCalls = new HashMap<>();
         int totalToolCalls = 0;
-        boolean mutationAttempted = false;
-        boolean comparisonToolRequired = requiresComparisonArtifact(context);
-        boolean mutationSucceeded = false;
-        boolean outstandingMutationFailure = false;
-        boolean mutationCorrectionIssued = false;
-        boolean deterministicSearchFollowOnInProgress = false;
 
         for (int iteration = 0; iteration < properties.maximumModelIterations(); iteration++) {
             requireActive(runId, executionOwner, deadline);
-            if (iteration == 0) {
-                Optional<AgentResolvedReadIntent> resolvedReadIntent = readIntentResolver.resolve(toolContext);
-                if (resolvedReadIntent.isPresent()) {
-                    ResolvedReadExecution resolvedRead = executeResolvedReadIntent(
-                            toolContext,
-                            resolvedReadIntent.get(),
-                            executionOwner,
-                            deadline
-                    );
-                    if (!resolvedRead.continueWithModel()) {
-                        return;
-                    }
-                    deterministicSearchFollowOnInProgress = true;
-                    toolContext = toolContext.withTriggeringUserText(resolvedRead.trustedFollowOnAction());
-                    totalToolCalls += 1;
-                    perToolCounts.merge(resolvedRead.call().name(), 1, Integer::sum);
-                    repeatedCalls.merge(fingerprint(resolvedRead.call()), 1, Integer::sum);
-                    modelMessages.add(AgentModelMessage.assistant(
-                            "",
-                            List.of(resolvedRead.call())
-                    ));
-                    modelMessages.add(AgentModelMessage.tools(List.of(resolvedRead.modelResult())));
-                    continue;
-                }
-            }
-            if (!mutationAttempted && !deterministicSearchFollowOnInProgress) {
-                Optional<AgentProductClarification> unresolvedIntent =
-                        productClarificationService.unresolvedIntent(toolContext);
-                if (unresolvedIntent.isPresent()) {
-                    waitForProductClarification(runId, executionOwner, unresolvedIntent.get());
-                    return;
-                }
-            }
             List<AgentToolDescriptor> descriptors = authorizationPolicy.available(
                     toolContext,
                     toolRegistry.descriptors()
             );
-            String requiredToolName = comparisonToolRequired && descriptors.stream()
-                    .anyMatch(descriptor -> COMPARE_PRODUCTS_TOOL.equals(descriptor.name()))
-                    ? COMPARE_PRODUCTS_TOOL
-                    : null;
             DeltaWriter deltaWriter = new DeltaWriter(runId, executionOwner);
             AgentModelResponse response = modelTurnWithFallback(
                     modelMessages,
                     descriptors,
-                    requiredToolName,
                     deltaWriter
             );
             requireActive(runId, executionOwner, deadline);
@@ -318,34 +256,10 @@ public class AgentRunCoordinator {
             runService.recordIteration(runId, executionOwner, response.usage());
 
             List<AgentModelToolCall> calls = normalizeCalls(runId, iteration, response.toolCalls());
-            comparisonToolRequired = comparisonToolRequired
-                    && calls.stream().noneMatch(call -> COMPARE_PRODUCTS_TOOL.equals(call.name()));
             if (calls.isEmpty()) {
-                if (hasAvailableMutation(descriptors) && !waitingForUser(response.text())) {
-                    String correction = null;
-                    String safeMessage = null;
-                    if (!mutationAttempted) {
-                        correction = missingMutationCorrection(descriptors);
-                        safeMessage = MUTATION_NOT_EXECUTED_MESSAGE;
-                    } else if (!mutationSucceeded || outstandingMutationFailure) {
-                        correction = failedMutationCorrection(descriptors);
-                        safeMessage = MUTATION_NOT_CONFIRMED_MESSAGE;
-                    }
-                    if (correction != null && !mutationCorrectionIssued) {
-                        modelMessages.add(AgentModelMessage.assistant(response.text(), List.of()));
-                        modelMessages.add(AgentModelMessage.system(correction));
-                        mutationCorrectionIssued = true;
-                        continue;
-                    }
-                    if (safeMessage != null) {
-                        finish(runId, executionOwner, safeMessage);
-                        return;
-                    }
-                }
                 finish(runId, executionOwner, response.text());
                 return;
             }
-            modelMessages.add(AgentModelMessage.assistant(response.text(), calls));
             totalToolCalls += calls.size();
             if (totalToolCalls > properties.maximumTotalToolInvocations()) {
                 log.warn(
@@ -355,7 +269,7 @@ public class AgentRunCoordinator {
                         totalToolCalls,
                         properties.maximumTotalToolInvocations()
                 );
-                terminateForLimit(runId, executionOwner, "tool_limit", "I reached the safe tool limit before finishing.");
+                terminateForLimit(runId, executionOwner, "tool_limit");
                 return;
             }
             for (AgentModelToolCall call : calls) {
@@ -373,8 +287,7 @@ public class AgentRunCoordinator {
                     terminateForLimit(
                             runId,
                             executionOwner,
-                            "per_tool_limit",
-                            "I stopped because one action repeated too many times."
+                            "per_tool_limit"
                     );
                     return;
                 }
@@ -398,93 +311,37 @@ public class AgentRunCoordinator {
                     terminateForLimit(
                             runId,
                             executionOwner,
-                            "repeated_tool_call",
-                            "I stopped a repeated action loop before changing anything else."
+                            "repeated_tool_call"
                     );
                     return;
                 }
             }
 
-            Optional<AgentProductClarification> clarification =
-                    productClarificationService.preflight(toolContext, calls);
-            if (clarification.isPresent()) {
-                requireActive(runId, executionOwner, deadline);
-                waitForProductClarification(runId, executionOwner, clarification.get());
-                return;
-            }
-
             ToolBatchResult batchResult = executeTools(toolContext, calls, executionOwner, deadline);
-            if (batchResult.waitingForUserMessage() != null) {
-                requireActive(runId, executionOwner, deadline);
-                messageLedgerService.appendTerminalAssistant(
-                        runId,
-                        executionOwner,
-                        batchResult.waitingForUserMessage(),
-                        true
-                );
-                return;
-            }
-            if (batchResult.mutationAttempted()) {
-                mutationAttempted = true;
-                if (batchResult.allAttemptedMutationsSucceeded()) {
-                    mutationSucceeded = true;
-                    outstandingMutationFailure = false;
-                } else {
-                    outstandingMutationFailure = true;
-                }
-            }
-            modelMessages.add(AgentModelMessage.tools(batchResult.modelResults()));
+            modelMessages = new ArrayList<>(toolConversationHistory.afterToolExecution(
+                    modelMessages,
+                    response.text(),
+                    calls,
+                    batchResult.modelResults(),
+                    descriptors.stream().map(AgentToolDescriptor::modelDefinition).toList()
+            ));
         }
         terminateForLimit(
                 runId,
                 executionOwner,
-                "iteration_limit",
-                "I reached the safe reasoning limit before finishing."
+                "iteration_limit"
         );
-    }
-
-    private boolean hasAvailableMutation(List<AgentToolDescriptor> descriptors) {
-        return descriptors.stream().anyMatch(descriptor -> descriptor.riskClass() != AgentToolRisk.READ);
-    }
-
-    private boolean waitingForUser(String text) {
-        return text != null && text.trim().startsWith(WAITING_PREFIX);
-    }
-
-    private String missingMutationCorrection(List<AgentToolDescriptor> descriptors) {
-        String tools = String.join(", ", descriptors.stream()
-                .filter(descriptor -> descriptor.riskClass() != AgentToolRisk.READ)
-                .map(AgentToolDescriptor::name)
-                .sorted()
-                .toList());
-        return "The user explicitly requested a state-changing action, but no mutation tool has run. "
-                + "Do not claim that the action completed. Call one appropriate available mutation tool now ("
-                + tools + "). If an exact target cannot be resolved, return exactly `WAITING_FOR_USER: <question>` "
-                + "with no tool call.";
-    }
-
-    private String failedMutationCorrection(List<AgentToolDescriptor> descriptors) {
-        String tools = String.join(", ", descriptors.stream()
-                .filter(descriptor -> descriptor.riskClass() != AgentToolRisk.READ)
-                .map(AgentToolDescriptor::name)
-                .sorted()
-                .toList());
-        return "The requested state-changing action has not completed successfully. "
-                + "Do not claim that it completed. If another safe attempt can complete it, call one appropriate "
-                + "available mutation tool now (" + tools + "). Otherwise return exactly "
-                + "`WAITING_FOR_USER: <brief failure explanation>` with no tool call.";
     }
 
     private AgentModelResponse modelTurnWithFallback(
             List<AgentModelMessage> messages,
             List<AgentToolDescriptor> descriptors,
-            String requiredToolName,
             DeltaWriter deltaWriter
     ) {
         long primaryStarted = System.nanoTime();
         try {
             AgentModelResponse response = modelGateway.turn(
-                    request(properties.model(), messages, descriptors, requiredToolName),
+                    request(properties.model(), messages, descriptors),
                     deltaWriter::accept,
                     deltaWriter::cancelled
             );
@@ -505,7 +362,7 @@ public class AgentRunCoordinator {
             long fallbackStarted = System.nanoTime();
             try {
                 AgentModelResponse response = modelGateway.turn(
-                        request(properties.fallbackModel(), messages, descriptors, requiredToolName),
+                        request(properties.fallbackModel(), messages, descriptors),
                         deltaWriter::accept,
                         deltaWriter::cancelled
                 );
@@ -546,72 +403,18 @@ public class AgentRunCoordinator {
         }
     }
 
-    private ResolvedReadExecution executeResolvedReadIntent(
-            AgentToolExecutionContext context,
-            AgentResolvedReadIntent intent,
-            UUID executionOwner,
-            long deadline
-    ) {
-        requireActive(context.runId(), executionOwner, deadline);
-        AgentModelToolCall call = normalizeCalls(
-                context.runId(),
-                0,
-                List.of(intent.toolCall())
-        ).getFirst();
-        AgentExecutedToolCall executed = toolCallExecutor.execute(context, call);
-        requireActive(context.runId(), executionOwner, deadline);
-        if (executed.waitingForUserMessage() != null) {
-            messageLedgerService.appendTerminalAssistant(
-                    context.runId(),
-                    executionOwner,
-                    executed.waitingForUserMessage(),
-                    true
-            );
-            return ResolvedReadExecution.terminal();
-        }
-        if (executed.successful() && intent.continueWithModelAfterSuccess()) {
-            return new ResolvedReadExecution(
-                    call,
-                    executed.modelResult(),
-                    intent.trustedFollowOnAction(),
-                    true
-            );
-        }
-        String message = executed.successful()
-                ? readIntentResolver.completionMessage(intent, executed.modelResult().resultJson())
-                : readIntentResolver.failureMessage(intent);
-        finish(context.runId(), executionOwner, message);
-        return ResolvedReadExecution.terminal();
-    }
-
     private AgentModelRequest request(
             String model,
             List<AgentModelMessage> messages,
-            List<AgentToolDescriptor> descriptors,
-            String requiredToolName
+            List<AgentToolDescriptor> descriptors
     ) {
         return new AgentModelRequest(
                 model,
                 List.copyOf(messages),
                 descriptors.stream().map(AgentToolDescriptor::modelDefinition).toList(),
                 properties.temperature(),
-                properties.maximumOutputTokens(),
-                requiredToolName
+                properties.maximumOutputTokens()
         );
-    }
-
-    private boolean requiresComparisonArtifact(AgentModelContext context) {
-        if (context.triggeringUserText() == null
-                || !DIRECT_COMPARISON_REQUEST.matcher(context.triggeringUserText()).find()
-                || context.visibleProductContext() == null) {
-            return false;
-        }
-        return context.visibleProductContext().products().stream()
-                .map(AgentVisibleProductReference::canonicalProductKey)
-                .filter(key -> key != null && !key.isBlank())
-                .distinct()
-                .limit(2)
-                .count() == 2;
     }
 
     private ToolBatchResult executeTools(
@@ -674,14 +477,7 @@ public class AgentRunCoordinator {
             results.put(mutation.id(), executed);
         }
         return new ToolBatchResult(
-                calls.stream().map(call -> results.get(call.id()).modelResult()).toList(),
-                !mutations.isEmpty(),
-                !mutations.isEmpty() && mutations.stream().allMatch(call -> results.get(call.id()).successful()),
-                calls.stream()
-                        .map(call -> results.get(call.id()).waitingForUserMessage())
-                        .filter(java.util.Objects::nonNull)
-                        .findFirst()
-                        .orElse(null)
+                calls.stream().map(call -> results.get(call.id()).modelResult()).toList()
         );
     }
 
@@ -737,35 +533,15 @@ public class AgentRunCoordinator {
 
     private void finish(UUID runId, UUID executionOwner, String rawText) {
         String text = rawText == null ? "" : rawText.trim();
-        boolean waiting = text.startsWith(WAITING_PREFIX);
-        if (waiting) {
-            text = text.substring(WAITING_PREFIX.length()).trim();
-        }
         if (text.isBlank()) {
-            text = RECOVERY_MESSAGE;
+            runService.failOwnedExecution(runId, executionOwner, "empty_model_response", null);
+            return;
         }
-        messageLedgerService.appendTerminalAssistant(runId, executionOwner, text, waiting);
+        messageLedgerService.appendTerminalAssistant(runId, executionOwner, text, false);
     }
 
-    private void waitForProductClarification(
-            UUID runId,
-            UUID executionOwner,
-            AgentProductClarification clarification
-    ) {
-        String question = productClarificationService.question(clarification);
-        String contentJson = productClarificationContextService.serialize(clarification);
-        messageLedgerService.appendTerminalAssistant(
-                runId,
-                executionOwner,
-                question,
-                contentJson,
-                true
-        );
-    }
-
-    private void terminateForLimit(UUID runId, UUID executionOwner, String code, String message) {
-        messageLedgerService.appendAssistant(runId, executionOwner, message);
-        runService.failOwnedExecution(runId, executionOwner, code, message);
+    private void terminateForLimit(UUID runId, UUID executionOwner, String code) {
+        runService.failOwnedExecution(runId, executionOwner, code, null);
     }
 
     private void requireActive(UUID runId, UUID executionOwner, long deadline) {
@@ -809,10 +585,12 @@ public class AgentRunCoordinator {
     }
 
     private void safelyPersistFailure(UUID runId, UUID executionOwner, String code, String message) {
-        try {
-            messageLedgerService.appendAssistant(runId, executionOwner, message);
-        } catch (RuntimeException ignored) {
-            log.debug("Could not append an agent recovery message. runId={}", runId);
+        if (message != null && !message.isBlank()) {
+            try {
+                messageLedgerService.appendAssistant(runId, executionOwner, message);
+            } catch (RuntimeException ignored) {
+                log.debug("Could not append an agent recovery message. runId={}", runId);
+            }
         }
         try {
             runService.failOwnedExecution(runId, executionOwner, code, message);
@@ -842,23 +620,8 @@ public class AgentRunCoordinator {
     }
 
     private record ToolBatchResult(
-            List<AgentModelToolResult> modelResults,
-            boolean mutationAttempted,
-            boolean allAttemptedMutationsSucceeded,
-            String waitingForUserMessage
+            List<AgentModelToolResult> modelResults
     ) {
-    }
-
-    private record ResolvedReadExecution(
-            AgentModelToolCall call,
-            AgentModelToolResult modelResult,
-            String trustedFollowOnAction,
-            boolean continueWithModel
-    ) {
-
-        private static ResolvedReadExecution terminal() {
-            return new ResolvedReadExecution(null, null, null, false);
-        }
     }
 
     private final class DeltaWriter {

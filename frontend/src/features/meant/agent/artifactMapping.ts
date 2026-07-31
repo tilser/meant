@@ -1645,54 +1645,6 @@ export function blocksForAgentMessage(
   return blocks
 }
 
-function jsonObject(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null
-}
-
-function productClarificationReplies(
-  contentJson: string | null,
-): { labels: readonly string[]; submissions: readonly string[] } | undefined {
-  if (!contentJson) return undefined
-  try {
-    const envelope = jsonObject(JSON.parse(contentJson))
-    const clarification = jsonObject(envelope?.pendingProductClarification)
-    if (!Array.isArray(clarification?.products)) return undefined
-
-    const seenOrdinals = new Set<number>()
-    const replies = clarification.products.flatMap((candidate) => {
-      const product = jsonObject(candidate)
-      const ordinal = product?.visibleOrdinal
-      const title =
-        typeof product?.title === 'string'
-          ? plainAgentText(product.title).replace(/\s+/g, ' ').trim()
-          : ''
-      if (
-        typeof ordinal !== 'number' ||
-        !Number.isInteger(ordinal) ||
-        ordinal < 1 ||
-        ordinal > 10 ||
-        !title ||
-        seenOrdinals.has(ordinal)
-      ) {
-        return []
-      }
-      seenOrdinals.add(ordinal)
-      const clippedTitle = title.length <= 80 ? title : `${title.slice(0, 79).trimEnd()}…`
-      return [{ label: `${ordinal}. ${clippedTitle}`, submission: String(ordinal) }]
-    })
-    if (replies.length < 2) return undefined
-    const visibleReplies = replies.slice(0, 6)
-    return {
-      labels: visibleReplies.map((reply) => reply.label),
-      submissions: visibleReplies.map((reply) => reply.submission),
-    }
-  } catch {
-    return undefined
-  }
-}
-
 /** Converts only authoritative ledger rows; transient stream projection is appended by the view. */
 export function discoverMessagesFromAgentConversation(
   conversation: AgentConversationDetailProfile,
@@ -1774,62 +1726,11 @@ export function discoverMessagesFromAgentConversation(
         message.runId && artifactHostMessageByRun.get(message.runId) === message.messageId
           ? (toolBlocksByRun.get(message.runId) ?? [])
           : []
-      const searchProducts = toolBlocks.find(
-        (block): block is Extract<DiscoverChatBlock, { type: 'products' }> =>
-          block.type === 'products' && Boolean(block.query),
-      )
-      const groundedSimilarities = toolBlocks.filter(
-        (block) => block.type === 'similar' && Boolean(block.similarityAnchor),
-      )
-      const groundedSearches = toolBlocks.filter(
-        (block) => block.type === 'products' && Boolean(block.query),
-      )
-      const inlineResultHeadings =
-        groundedSimilarities.length > 0 && groundedSimilarities.length + groundedSearches.length > 0
-      const clarificationReplies = productClarificationReplies(message.contentJson)
-      const text =
-        clarificationReplies && message.textContent
-          ? plainAgentText(message.textContent)
-          : inlineResultHeadings
-            ? null
-            : searchProducts
-              ? conciseProductResultIntroduction(
-                  message.textContent,
-                  searchProducts.query,
-                  searchProducts.products,
-                )
-              : message.textContent
-                ? plainAgentText(message.textContent)
-                : null
-      const displayToolBlocks = inlineResultHeadings
-        ? toolBlocks.flatMap<DiscoverChatBlock>((block) => {
-            if (block.type === 'similar' && block.similarityAnchor) {
-              return [
-                {
-                  type: 'text',
-                  text: similarProductResultIntroduction(block.similarityAnchor, block.products),
-                },
-                block,
-              ]
-            }
-            if (block.type === 'products' && block.query) {
-              return [
-                {
-                  type: 'text',
-                  text: conciseProductResultIntroduction(null, block.query, block.products),
-                },
-                block,
-              ]
-            }
-            return [block]
-          })
-        : toolBlocks
+      const text = message.textContent ? plainAgentText(message.textContent) : null
       messages.push({
         id: message.messageId,
         role: 'ai',
-        blocks: [...(text ? [{ type: 'text' as const, text }] : []), ...displayToolBlocks],
-        suggestedReplies: clarificationReplies?.labels,
-        suggestedReplySubmissions: clarificationReplies?.submissions,
+        blocks: [...(text ? [{ type: 'text' as const, text }] : []), ...toolBlocks],
       })
       continue
     }

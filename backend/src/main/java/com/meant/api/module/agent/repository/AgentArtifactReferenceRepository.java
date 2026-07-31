@@ -15,6 +15,8 @@ public interface AgentArtifactReferenceRepository extends JpaRepository<AgentArt
             Pageable pageable
     );
 
+    List<AgentArtifactReference> findByConversationIdOrderByCreatedAtAscOrdinalAsc(UUID conversationId);
+
     List<AgentArtifactReference> findByConversationIdOrderByCreatedAtDescOrdinalAsc(
             UUID conversationId,
             Pageable pageable

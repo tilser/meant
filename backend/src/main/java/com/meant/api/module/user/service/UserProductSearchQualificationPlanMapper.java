@@ -24,6 +24,18 @@ public class UserProductSearchQualificationPlanMapper {
                 || !plan.missingTargets().isEmpty()) {
             throw new IllegalArgumentException("A complete product-search qualification plan is required");
         }
+        return mapValues(plan);
+    }
+
+    /** Maps every currently known decision while leaving missing dimensions unconstrained. */
+    public CatalogDiscoveryFilters mapAvailable(UserProductSearchQualificationPlan plan) {
+        if (plan == null || !plan.currentSchema()) {
+            throw new IllegalArgumentException("A current product-search qualification plan is required");
+        }
+        return mapValues(plan);
+    }
+
+    private CatalogDiscoveryFilters mapValues(UserProductSearchQualificationPlan plan) {
         return new CatalogDiscoveryFilters(
                 available(plan.available()),
                 conditions(plan.condition()),

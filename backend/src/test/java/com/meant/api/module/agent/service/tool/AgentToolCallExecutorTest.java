@@ -18,6 +18,7 @@ import com.meant.api.module.agent.constant.AgentToolRisk;
 import com.meant.api.module.agent.properties.AgentProperties;
 import com.meant.api.module.agent.service.AgentJsonSupport;
 import com.meant.api.module.agent.service.AgentMutationExecutionLane;
+import com.meant.api.module.agent.service.ReferenceIntegrityPolicy;
 import com.meant.api.module.agent.service.AgentRunService;
 import com.meant.api.module.agent.service.dto.AgentModelToolCall;
 import com.meant.api.module.agent.service.dto.AgentToolDescriptor;
@@ -88,6 +89,7 @@ class AgentToolCallExecutorTest {
                 runService,
                 jsonSupport,
                 mock(AgentToolSchemaValidator.class),
+                acceptingReferences(),
                 new AgentMutationExecutionLane(new UserMutationExecutionLane()),
                 properties()
         );
@@ -136,6 +138,7 @@ class AgentToolCallExecutorTest {
                 runService,
                 jsonSupport,
                 new AgentToolSchemaValidator(objectMapper),
+                acceptingReferences(),
                 new AgentMutationExecutionLane(new UserMutationExecutionLane()),
                 properties()
         );
@@ -152,6 +155,53 @@ class AgentToolCallExecutorTest {
                 .contains("\"code\":\"invalid_arguments\"")
                 .contains("$.query is required.")
                 .contains("\"retryable\":true");
+    }
+
+    @Test
+    void hallucinatedReferenceReturnsStructuredToolErrorWithoutExecutingTheMutation() {
+        AgentTool tool = mock(AgentTool.class);
+        AgentToolDescriptor descriptor = new AgentToolDescriptor(
+                "prepare_carts",
+                "Prepare carts",
+                "{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"offerKey\"],"
+                        + "\"properties\":{\"offerKey\":{\"type\":\"string\"}}}",
+                "v1",
+                AgentToolRisk.REVERSIBLE_MUTATION
+        );
+        when(tool.descriptor()).thenReturn(descriptor);
+        AgentToolAuthorizationPolicy authorizationPolicy = mock(AgentToolAuthorizationPolicy.class);
+        when(authorizationPolicy.authorized(any(), eq(descriptor))).thenReturn(true);
+        AgentToolInvocationService invocationService = mock(AgentToolInvocationService.class);
+        ObjectMapper objectMapper = new ObjectMapper();
+        AgentJsonSupport jsonSupport = new AgentJsonSupport(objectMapper, properties());
+        ReferenceIntegrityPolicy references = mock(ReferenceIntegrityPolicy.class);
+        when(references.validate(any(), eq("prepare_carts"), anyString()))
+                .thenReturn(ReferenceIntegrityPolicy.Validation.rejected(
+                        "reference_not_found", "offerKey"));
+        executor = new AgentToolCallExecutor(
+                new AgentToolRegistry(List.of(tool)),
+                authorizationPolicy,
+                invocationService,
+                mock(AgentRunService.class),
+                jsonSupport,
+                new AgentToolSchemaValidator(objectMapper),
+                references,
+                new AgentMutationExecutionLane(new UserMutationExecutionLane()),
+                properties()
+        );
+        AgentToolExecutionContext context = new AgentToolExecutionContext(
+                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "add it");
+        AgentModelToolCall call = new AgentModelToolCall(
+                "call-reference", "prepare_carts", "{\"offerKey\":\"invented\"}");
+
+        var result = executor.execute(context, call);
+
+        assertThat(result.successful()).isFalse();
+        assertThat(result.modelResult().resultJson())
+                .isEqualTo("{\"error\":\"reference_not_found\",\"field\":\"offerKey\"}");
+        verify(invocationService).rejectUnauthorized(
+                context.runId(), call, descriptor, context.executionOwner());
+        verify(tool, never()).execute(any(), anyString());
     }
 
     @Test
@@ -178,8 +228,9 @@ class AgentToolCallExecutorTest {
         when(invocationService.reserve(any(), any(), eq(descriptor), anyString(), anyString(), isNull()))
                 .thenReturn(new AgentToolInvocationReservation(
                         UUID.randomUUID(), true, null, List.of(), false));
+        AgentProperties stableExecutionProperties = properties(Duration.ofSeconds(5));
         ObjectMapper objectMapper = new ObjectMapper();
-        AgentJsonSupport jsonSupport = new AgentJsonSupport(objectMapper, properties());
+        AgentJsonSupport jsonSupport = new AgentJsonSupport(objectMapper, stableExecutionProperties);
         executor = new AgentToolCallExecutor(
                 new AgentToolRegistry(List.of(tool)),
                 authorizationPolicy,
@@ -187,8 +238,9 @@ class AgentToolCallExecutorTest {
                 mock(AgentRunService.class),
                 jsonSupport,
                 new AgentToolSchemaValidator(objectMapper),
+                acceptingReferences(),
                 new AgentMutationExecutionLane(new UserMutationExecutionLane()),
-                properties()
+                stableExecutionProperties
         );
         AgentToolExecutionContext context = new AgentToolExecutionContext(
                 UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "black jacket");
@@ -233,6 +285,7 @@ class AgentToolCallExecutorTest {
                 mock(AgentRunService.class),
                 jsonSupport,
                 new AgentToolSchemaValidator(objectMapper),
+                acceptingReferences(),
                 new AgentMutationExecutionLane(new UserMutationExecutionLane()),
                 properties()
         );
@@ -318,6 +371,7 @@ class AgentToolCallExecutorTest {
                 mock(AgentRunService.class),
                 jsonSupport,
                 mock(AgentToolSchemaValidator.class),
+                acceptingReferences(),
                 new AgentMutationExecutionLane(sharedLane),
                 properties()
         );
@@ -355,12 +409,23 @@ class AgentToolCallExecutorTest {
     }
 
     private AgentProperties properties() {
+        return properties(Duration.ofMillis(20));
+    }
+
+    private AgentProperties properties(Duration toolDeadline) {
         return new AgentProperties(
                 true, "model", "fallback", "https://example.test", "key", "Meant",
                 "https://example.test", "v1", "v1", 0, 1000, 8, 20, 5, 4, 40,
                 64000, 24000, 2, Duration.ofMinutes(2), Duration.ofSeconds(30),
-                Duration.ofMillis(20), Duration.ofSeconds(10), Duration.ofMillis(10), 128,
+                toolDeadline, Duration.ofSeconds(10), Duration.ofMillis(10), 128,
                 Duration.ofDays(1), Duration.ofMinutes(5)
         );
+    }
+
+    private ReferenceIntegrityPolicy acceptingReferences() {
+        ReferenceIntegrityPolicy policy = mock(ReferenceIntegrityPolicy.class);
+        when(policy.validate(any(), anyString(), anyString()))
+                .thenReturn(ReferenceIntegrityPolicy.Validation.ok());
+        return policy;
     }
 }

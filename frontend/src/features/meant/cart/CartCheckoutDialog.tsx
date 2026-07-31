@@ -136,12 +136,11 @@ export function CartCheckoutDialog({
         ...current,
         {
           role: 'assistant',
-          content:
-            sanitizeBuyerVisibleText(
-              result?.reply ??
-                'I could not reach the checkout agent. Send the details again or continue with the merchant link if one is available.',
-              merchantDisplay,
-            ),
+          content: sanitizeBuyerVisibleText(
+            result?.reply ??
+              'I could not reach the checkout agent. Send the details again or continue with the merchant link if one is available.',
+            merchantDisplay,
+          ),
         },
       ])
     } catch {

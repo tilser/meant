@@ -1,19 +1,14 @@
 package com.meant.api.module.agent.service.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record AgentTurnContext(
         AgentVisibleProductContext visibleProducts,
-        AgentShelfContext shelf,
-        AgentProductClarification pendingProductClarification
+        AgentShelfContext shelf
 ) {
 
     public AgentTurnContext(AgentVisibleProductContext visibleProducts) {
-        this(visibleProducts, null, null);
-    }
-
-    public AgentTurnContext(
-            AgentVisibleProductContext visibleProducts,
-            AgentProductClarification pendingProductClarification
-    ) {
-        this(visibleProducts, null, pendingProductClarification);
+        this(visibleProducts, null);
     }
 }

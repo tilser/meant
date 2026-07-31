@@ -64,7 +64,7 @@ class AgentMessageLedgerServiceTest {
     }
 
     @Test
-    void terminalClarificationPersistsStructuredContextBeforeWaitingForTheUser() {
+    void terminalAssistantPersistsStructuredContextBeforeWaitingForTheUser() {
         UUID runId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();
         UUID userId = UUID.randomUUID();
@@ -93,7 +93,7 @@ class AgentMessageLedgerServiceTest {
                 memoryService,
                 Clock.fixed(NOW, ZoneOffset.UTC)
         );
-        String contextJson = "{\"pendingProductClarification\":{\"toolName\":\"prepare_carts\"}}";
+        String contextJson = "{\"visibleProducts\":{\"sourceMessageId\":null,\"products\":[]}}";
 
         service.appendTerminalAssistant(
                 runId,

@@ -59,13 +59,9 @@ export function safeExternalCheckoutUrl(value: string | null | undefined): strin
     if (host.startsWith('mcp.') || host.includes('.mcp.')) return null
     const path = url.pathname.toLocaleLowerCase().replace(/\/+$/, '') || '/'
     if (
-      [
-        '/.well-known/ucp.json',
-        '/.well-known/ucp',
-        '/api/ucp/mcp',
-        '/api/mcp',
-        '/mcp',
-      ].some((protocolPath) => path === protocolPath || path.startsWith(`${protocolPath}/`))
+      ['/.well-known/ucp.json', '/.well-known/ucp', '/api/ucp/mcp', '/api/mcp', '/mcp'].some(
+        (protocolPath) => path === protocolPath || path.startsWith(`${protocolPath}/`),
+      )
     ) {
       return null
     }

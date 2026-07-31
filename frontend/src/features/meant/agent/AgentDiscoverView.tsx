@@ -101,7 +101,6 @@ import {
   commerceActionQueueFor,
 } from './actionQueue'
 import { PRODUCT_PIN_NOTICE_LIFETIME_MS, isProductPinNotice } from './autoDismissNotices'
-import { checkoutInChatMessage } from './checkoutPreparation'
 import { withProjectedAgentMessages } from './messageProjection'
 import { mergeAnchoredLocalMessages, type AnchoredLocalMessage } from './localMessageOrdering'
 import { AgentWorkingIndicator } from './AgentWorkingIndicator'
@@ -1494,13 +1493,19 @@ export function AgentDiscoverView({
   const openCheckoutInChat = () => {
     const targetConversationId = activeConversationIdRef.current
     if (!targetConversationId) return
-    const message = checkoutInChatMessage(uniqueRequestId('checkout'), onReadAgentCart())
-    if (!message) {
+    const cartIds = Array.from(
+      new Set(
+        onReadAgentCart()
+          .map((item) => item.cartId)
+          .filter((cartId): cartId is string => Boolean(cartId)),
+      ),
+    )
+    if (cartIds.length === 0) {
       setError('Your merchant cart must be ready before checkout can start.')
       return
     }
     setError(null)
-    appendLocalMessage(message, targetConversationId)
+    void performAction('prepare_checkout', { cartIds }, 'Approved checkout preparation')
   }
 
   const returnHome = useCallback(() => {

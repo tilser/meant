@@ -1,12 +1,11 @@
 import { describe, expect, mock, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 
+import { ApiError } from '../../../lib/apiError'
 import type { Product } from '../types'
 
 mock.module('../../../lib/apiClient', () => ({
-  ApiError: class ApiError extends Error {
-    status = 500
-  },
+  ApiError,
   getCanonicalProductDetail: () => new Promise(() => undefined),
   getMerchantProductDetails: () => new Promise(() => undefined),
   getProductReviews: () => new Promise(() => undefined),

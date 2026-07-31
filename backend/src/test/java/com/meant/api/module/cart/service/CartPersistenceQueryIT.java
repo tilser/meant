@@ -68,6 +68,7 @@ class CartPersistenceQueryIT extends PostgresIntegrationTestSupport {
                 .provider("GENERIC_UCP")
                 .externalMerchantId("merchant-1")
                 .merchantDomain("merchant.example")
+                .routingDomain("merchant.example")
                 .routingScopeKey("GENERIC_UCP:merchant:merchant-1")
                 .endpoint("https://merchant.example/mcp")
                 .remoteCartId("remote-cart-" + index)
