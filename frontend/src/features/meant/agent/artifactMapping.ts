@@ -278,14 +278,6 @@ function productCategorySubject(products: readonly Pick<Product, 'name' | 'categ
   return pluralResultSubject(leaf)
 }
 
-function unsafeCatalogSearchSubject(subject: string): boolean {
-  return (
-    /^(?:check|inspect|compare|use|tell|recommend)\b/i.test(subject) ||
-    /\b(?:and|then)\s+(?:please\s+)?(?:find|show|search|look|get|give|check)\b/i.test(subject) ||
-    /\b(?:inventory|similar(?:\s+to)?|already\s+own|i\s+(?:own|have))\b/i.test(subject)
-  )
-}
-
 function similarityResultSubject(
   anchor: SimilarityAnchor,
   products: readonly Pick<Product, 'name' | 'category'>[],
@@ -299,76 +291,6 @@ function similarityResultSubject(
     }
   }
   return productCategorySubject(products)
-}
-
-function similarProductResultIntroduction(
-  anchor: SimilarityAnchor,
-  products: readonly Pick<Product, 'name' | 'category'>[],
-): string {
-  const subject = similarityResultSubject(anchor, products)
-  const target = anchor.inventoryItemId
-    ? /^my\s+/i.test(anchor.label)
-      ? 'your ' + anchor.label.replace(/^my\s+/i, '')
-      : /^your\s+/i.test(anchor.label)
-        ? anchor.label.charAt(0).toLowerCase() + anchor.label.slice(1)
-        : 'your ' + anchor.label
-    : anchor.label
-  return 'Here are similar ' + subject + ' to ' + target + ':'
-}
-
-function catalogSearchSubject(query: string | null | undefined): string {
-  let subject = plainAgentText(query ?? '')
-    .replace(/[?!.,:;]+$/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-
-  const requestPrefixes = [
-    /^(?:please\s+)?(?:i\s+am|i'm|im)\s+(?:looking|searching)\s+for\s+/i,
-    /^(?:please\s+)?(?:looking|searching)\s+for\s+/i,
-    /^(?:please\s+)?(?:can|could|would)\s+you\s+(?:find|show me|search for|look for)\s+/i,
-    /^(?:please\s+)?(?:help me\s+)?(?:find|show me|search for|look for)\s+/i,
-  ]
-  for (const prefix of requestPrefixes) {
-    subject = subject.replace(prefix, '')
-  }
-  subject = subject
-    .replace(/^(?:(?:some|any|a|an)\s+)+/i, '')
-    .replace(/^(?:(?:cool|good|nice|great|best|new)\s+)+/i, '')
-    .replace(/\s+(?:under|below|for less than)\s+[$€£]?\d.*$/i, '')
-    .trim()
-
-  if (!subject || subject.length > 72 || unsafeCatalogSearchSubject(subject)) return 'products'
-  return `${subject.charAt(0).toLowerCase()}${subject.slice(1)}`
-}
-
-/** Replaces model-generated product enumeration with the short lead-in used by product cards. */
-export function conciseProductResultIntroduction(
-  value: string | null | undefined,
-  query: string | null | undefined,
-  products: readonly Pick<Product, 'name' | 'category'>[] = [],
-): string {
-  const text = plainAgentText(value ?? '')
-  const existing =
-    text.match(/^I found these\s+([^:\n]{1,72}):/i)?.[1]?.trim() ??
-    text.match(/^I found (?:(?:many|several|some|a few)\s+)([^:.\n]{1,72})[.:]/i)?.[1]?.trim()
-  const genericSubject = existing
-    ? genericResultSubject(existing) || unsafeCatalogSearchSubject(existing)
-    : true
-  const repeatsProductName = existing
-    ? products.some((product) => existing.toLowerCase().includes(product.name.toLowerCase()))
-    : false
-  const querySubject = catalogSearchSubject(query)
-  const contextlessQuery =
-    /^(?:i (?:do not|don't|dont) see any|more|try again|show me (?:more|others)|other ones)$/i.test(
-      querySubject,
-    )
-  const subject =
-    existing && !genericSubject && !repeatsProductName
-      ? existing
-      : !contextlessQuery && querySubject !== 'products'
-        ? querySubject
-        : productCategorySubject(products)
-  return `I found these ${subject}:`
 }
 
 function providerValue(value: unknown): string | null {
@@ -1731,31 +1653,12 @@ export function discoverMessagesFromAgentConversation(
         deliveryLocations,
       )
       const searchQuery = message.runId ? userQueryByRun.get(message.runId) : undefined
-      let displayBlocks: DiscoverChatBlock[] =
+      const displayBlocks: DiscoverChatBlock[] =
         message.correlationId?.split(':').at(-1) === 'search_catalog' && searchQuery
-          ? blocks.flatMap<DiscoverChatBlock>((block) =>
-              block.type === 'products'
-                ? [
-                    {
-                      type: 'text' as const,
-                      text: conciseProductResultIntroduction(null, searchQuery, block.products),
-                    },
-                    { ...block, query: searchQuery },
-                  ]
-                : [block],
+          ? blocks.map((block) =>
+              block.type === 'products' ? { ...block, query: searchQuery } : block,
             )
           : blocks
-      displayBlocks = displayBlocks.flatMap<DiscoverChatBlock>((block) =>
-        block.type === 'similar' && block.similarityAnchor
-          ? [
-              {
-                type: 'text',
-                text: similarProductResultIntroduction(block.similarityAnchor, block.products),
-              },
-              block,
-            ]
-          : [block],
-      )
       if (displayBlocks.length > 0) {
         messages.push({ id: message.messageId, role: 'ai', blocks: displayBlocks })
       }

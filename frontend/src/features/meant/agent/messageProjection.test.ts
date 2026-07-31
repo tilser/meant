@@ -42,7 +42,6 @@ const similarResults: DiscoverChatMessage = {
   id: 'current-similar-results',
   role: 'ai',
   blocks: [
-    { type: 'text', text: 'Here are similar jackets to your Black Quilted Jacket:' },
     {
       type: 'similar',
       products: [],
@@ -93,13 +92,17 @@ describe('agent message projection', () => {
       projection('WAITING_FOR_USER'),
     )
 
-    expect(messages.map((message) => message.id)).toEqual([
-      productResults.id,
-      'clarification-message',
-    ])
+    expect(messages).toHaveLength(1)
+    expect(messages[0]).toMatchObject({
+      id: 'clarification-message',
+      blocks: [
+        { type: 'text', text: clarification },
+        { type: 'products', query: 'caps' },
+      ],
+    })
   })
 
-  test('still suppresses a duplicate running summary for current-run product cards', () => {
+  test('hosts a completed live assistant message together with current-run product cards', () => {
     const messages = withProjectedAgentMessages(
       [productResults],
       new Set([productResults.id]),
@@ -108,10 +111,17 @@ describe('agent message projection', () => {
       projection('RUNNING'),
     )
 
-    expect(messages).toEqual([productResults])
+    expect(messages).toHaveLength(1)
+    expect(messages[0]).toMatchObject({
+      id: 'clarification-message',
+      blocks: [
+        { type: 'text', text: clarification },
+        { type: 'products', query: 'caps' },
+      ],
+    })
   })
 
-  test('suppresses duplicate live assistant prose behind grounded similarity cards', () => {
+  test('hosts grounded similarity cards under the live assistant message', () => {
     const messages = withProjectedAgentMessages(
       [similarResults],
       new Set([similarResults.id]),
@@ -120,7 +130,65 @@ describe('agent message projection', () => {
       projection('RUNNING'),
     )
 
-    expect(messages).toEqual([similarResults])
+    expect(messages).toHaveLength(1)
+    expect(messages[0]).toMatchObject({
+      id: 'clarification-message',
+      blocks: [{ type: 'text', text: clarification }, { type: 'similar' }],
+    })
+  })
+
+  test('keeps early product artifacts disabled and visibly finishing before assistant copy arrives', () => {
+    const running = {
+      ...projection('RUNNING'),
+      assistantMessages: [],
+    }
+
+    const messages = withProjectedAgentMessages(
+      [productResults],
+      new Set([productResults.id]),
+      new Set([productResults.id]),
+      'run-current',
+      running,
+    )
+
+    expect(messages).toEqual([
+      {
+        ...productResults,
+        pending: true,
+        pendingText: 'Finishing…',
+        settling: true,
+      },
+    ])
+  })
+
+  test('moves early product artifacts under streaming assistant copy until it finishes', () => {
+    const streaming = {
+      ...projection('RUNNING'),
+      assistantMessages: [],
+      streamingAssistantText: 'Here are the strongest matches so far:',
+    }
+
+    const messages = withProjectedAgentMessages(
+      [productResults],
+      new Set([productResults.id]),
+      new Set([productResults.id]),
+      'run-current',
+      streaming,
+    )
+
+    expect(messages).toEqual([
+      {
+        id: 'run-current:streaming',
+        role: 'ai',
+        blocks: [
+          { type: 'text', text: 'Here are the strongest matches so far:' },
+          { type: 'products', products: [], query: 'caps' },
+        ],
+        pending: true,
+        pendingText: 'Finishing…',
+        settling: true,
+      },
+    ])
   })
 
   test('does not duplicate a clarification already present in the durable transcript', () => {

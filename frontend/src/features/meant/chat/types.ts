@@ -127,6 +127,8 @@ export interface DiscoverChatMessage {
   blocks?: readonly DiscoverChatBlock[]
   pending?: boolean
   pendingText?: string
+  /** Product artifacts arrived before the assistant message and are not interactive yet. */
+  settling?: boolean
   suggestedReplies?: readonly string[]
   /** Values submitted by suggestion chips when their display labels include extra context. */
   suggestedReplySubmissions?: readonly string[]

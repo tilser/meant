@@ -10,7 +10,6 @@ import {
   blocksForAgentMessage,
   cartItemsFromAgentArtifacts,
   cartStateReplacementsFromAgentArtifacts,
-  conciseProductResultIntroduction,
   currentAgentProductSnapshots,
   discoverMessagesFromAgentConversation,
   latestCartSnapshotArtifacts,
@@ -234,42 +233,6 @@ describe('agent artifact mapping', () => {
         },
       },
     ])
-  })
-
-  test('uses the model result subject when a follow-up query is context-only', () => {
-    expect(
-      conciseProductResultIntroduction(
-        'I found many running shoes. Here are a few options: Grounded trail shoe for $129.',
-        "I don't see any",
-      ),
-    ).toBe('I found these running shoes:')
-  })
-
-  test('never echoes a compound inventory instruction as a catalog result subject', () => {
-    const query = 'check my black jacket in inventory and find me some new that are similar'
-
-    expect(
-      conciseProductResultIntroduction(
-        'I found these check my black jacket in inventory and find me some new that are similar:',
-        query,
-        [{ name: 'Black field jacket', category: 'Jacket' }],
-      ),
-    ).toBe('I found these jackets:')
-  })
-
-  test('preserves unknown taxonomy categories instead of inventing plurals', () => {
-    const query = 'check my saved shoes and find something similar'
-
-    expect(
-      conciseProductResultIntroduction('I found some options.', query, [
-        { name: 'Trail shoe', category: 'Footwear' },
-      ]),
-    ).toBe('I found these footwear:')
-    expect(
-      conciseProductResultIntroduction('I found some options.', query, [
-        { name: 'Smart speaker', category: 'Home & Kitchen' },
-      ]),
-    ).toBe('I found these home & kitchen:')
   })
 
   test('does not let an older conversation replace a fresher same-id product snapshot', () => {
@@ -1500,11 +1463,8 @@ describe('agent artifact mapping', () => {
     const messages = discoverMessagesFromAgentConversation(conversation, [])
 
     expect(messages[0]).toMatchObject({ role: 'you', text: 'Find trail shoes' })
-    expect(messages[1]?.blocks?.[0]).toEqual({
-      type: 'text',
-      text: 'I found these trail shoes:',
-    })
-    expect(messages[1]?.blocks?.[1]).toMatchObject({
+    expect(messages[1]?.blocks).toHaveLength(1)
+    expect(messages[1]?.blocks?.[0]).toMatchObject({
       type: 'products',
       query: 'Find trail shoes',
       products: [{ id: 'product-1' }],
@@ -1552,7 +1512,7 @@ describe('agent artifact mapping', () => {
       sequenceNumber: 4,
       role: 'ASSISTANT',
       contentKind: 'TEXT',
-      textContent: `I found these ${query}:`,
+      textContent: 'Here are some jackets similar to your Black Quilted Jacket:',
       contentJson: null,
       correlationId: null,
       createdAt,
@@ -1624,7 +1584,7 @@ describe('agent artifact mapping', () => {
     expect(messages).toHaveLength(2)
     expect(messages[1]?.blocks?.[0]).toEqual({
       type: 'text',
-      text: `I found these ${query}:`,
+      text: 'Here are some jackets similar to your Black Quilted Jacket:',
     })
     expect(messages[1]?.blocks?.[1]).toMatchObject({
       type: 'similar',
@@ -1903,7 +1863,7 @@ describe('agent artifact mapping', () => {
       role: 'ASSISTANT',
       contentKind: 'TEXT',
       textContent:
-        'I found these sunglasses: Fashion Square Vintage Polarized Sunglasses for $9.00 Classic Original for $59.00. Do any of these look interesting?',
+        'Here are some sunglasses worth considering: Fashion Square Vintage Polarized Sunglasses for $9.00 and Classic Original for $59.00. Do any of these look interesting?',
       contentJson: null,
       correlationId: null,
       createdAt,
@@ -1941,7 +1901,7 @@ describe('agent artifact mapping', () => {
       blocks: [
         {
           type: 'text',
-          text: 'I found these sunglasses: Fashion Square Vintage Polarized Sunglasses for $9.00 Classic Original for $59.00. Do any of these look interesting?',
+          text: 'Here are some sunglasses worth considering: Fashion Square Vintage Polarized Sunglasses for $9.00 and Classic Original for $59.00. Do any of these look interesting?',
         },
         {
           type: 'products',

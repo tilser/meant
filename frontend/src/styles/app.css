@@ -531,6 +531,19 @@
   gap: 14px;
 }
 
+.mt-ct-message-blocks {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.mt-ct-msg-settling .mt-ct-message-blocks {
+  pointer-events: none;
+  user-select: none;
+  animation: mt-agent-text-pulse 1.2s ease-in-out infinite;
+}
+
 .mt-ct-intro {
   position: relative;
   align-self: flex-start;

@@ -358,7 +358,8 @@ export function DiscoverChatMessageRow({
   const onShelf = shelfMessageSet.has(message.id)
   const copyMessage = () => copyTextToClipboard(discoverChatMessageCopyText(message))
   const containsCheckoutBlock = message.blocks?.some((block) => block.type === 'checkout') ?? false
-  const messageDraggable = !containsCheckoutBlock
+  const settling = message.settling === true
+  const messageDraggable = !containsCheckoutBlock && !settling
 
   if (message.role === 'you') {
     return (
@@ -394,8 +395,10 @@ export function DiscoverChatMessageRow({
     <div
       className={`mt-ct-msg mt-ct-meant ${flash ? 'flash' : ''} ${
         celebrateArrival ? 'mt-ct-arrival' : ''
-      } ${messageDraggable ? '' : 'no-drag'}`}
+      } ${settling ? 'mt-ct-msg-settling' : ''} ${messageDraggable ? '' : 'no-drag'}`}
       data-mid={message.id}
+      aria-busy={settling || undefined}
+      aria-disabled={settling || undefined}
       draggable={messageDraggable}
       onDragStart={messageDraggable ? (event) => onDragMessage(event, message) : undefined}
       onDragEnd={messageDraggable ? () => document.body.classList.remove('mt-dragging') : undefined}
@@ -403,11 +406,13 @@ export function DiscoverChatMessageRow({
       <DustWrap
         side="meant"
         onGone={() => onDelete(message.id)}
-        onSetAside={(sourceElement) => onShelfAddMessage(message, sourceElement)}
+        onSetAside={
+          settling ? undefined : (sourceElement) => onShelfAddMessage(message, sourceElement)
+        }
         onShelfDragStart={messageDraggable ? (event) => onDragMessage(event, message) : undefined}
-        onCopy={copyMessage}
+        onCopy={settling ? undefined : copyMessage}
         saved={onShelf}
-        deletable={deletable ?? !immutable}
+        deletable={settling ? false : (deletable ?? !immutable)}
         removing={removing}
       >
         <div className="mt-ct-meant-inner">
@@ -415,73 +420,75 @@ export function DiscoverChatMessageRow({
             <MeantHeartMark size={18} />
           </span>
           <div className="mt-ct-meant-body">
-            {message.blocks?.map((block, index) => (
-              <DiscoverChatBlockView
-                key={`${message.id}-${index}`}
-                threadId={threadId}
-                block={block}
-                researchQuery={discoverProductResearchQuery(block, message.query)}
-                deliveryLocations={deliveryLocations}
-                preferences={preferences}
-                cart={cart}
-                cartProducts={cartProducts}
-                savedSet={savedSet}
-                savePendingSet={savePendingSet}
-                pinnedSet={pinnedSet}
-                watchedSet={watchedSet}
-                shelfProductSet={shelfProductSet}
-                onOpen={onOpen}
-                onToggleSave={onToggleSave}
-                onAddCart={onAddCart}
-                onPin={onPin}
-                onWatch={onWatch}
-                onDig={onDig}
-                onJustPick={onJustPick}
-                onCompareHere={onCompareHere}
-                onOpenFullCompare={onOpenFullCompare}
-                onOpenSaved={onOpenSaved}
-                onOpenOrders={onOpenOrders}
-                onOpenPrefs={onOpenPrefs}
-                onOpenCart={onOpenCart}
-                onReviewCartHere={onReviewCartHere}
-                onRestoreCartLine={onRestoreCartLine}
-                onCartQty={(id, merchant, qty, nextCart, identity, quantityDelta, sourceItem) =>
-                  onCartQty(
-                    message.id,
-                    index,
-                    id,
-                    merchant,
-                    qty,
-                    nextCart,
-                    identity,
-                    quantityDelta,
-                    sourceItem,
-                  )
-                }
-                onCartRemove={(id, merchant, nextCart, identity, sourceItem) =>
-                  onCartRemove(message.id, index, id, merchant, nextCart, identity, sourceItem)
-                }
-                onCheckout={onCheckout}
-                activeCheckout={activeCheckout}
-                checkoutBusy={checkoutBusy}
-                checkoutError={checkoutError}
-                onCheckoutAssistant={onCheckoutAssistant}
-                onRefreshCheckout={onRefreshCheckout}
-                onReleaseCheckout={onReleaseCheckout}
-                onCheckoutHere={onCheckoutHere}
-                newsletter={newsletter}
-                newsletterPending={newsletterPending}
-                onNewsletterSignup={onNewsletterSignup}
-                onShelfAddProduct={onShelfAddProduct}
-                onDragProduct={onDragProduct}
-                onVisibleProductContextChange={onVisibleProductContextChange}
-                immutable={immutable}
-                useLiveCart={useLiveCart}
-                agentActionsDisabled={agentActionsDisabled}
-              />
-            ))}
+            <div className="mt-ct-message-blocks" inert={settling || undefined}>
+              {message.blocks?.map((block, index) => (
+                <DiscoverChatBlockView
+                  key={`${message.id}-${index}`}
+                  threadId={threadId}
+                  block={block}
+                  researchQuery={discoverProductResearchQuery(block, message.query)}
+                  deliveryLocations={deliveryLocations}
+                  preferences={preferences}
+                  cart={cart}
+                  cartProducts={cartProducts}
+                  savedSet={savedSet}
+                  savePendingSet={savePendingSet}
+                  pinnedSet={pinnedSet}
+                  watchedSet={watchedSet}
+                  shelfProductSet={shelfProductSet}
+                  onOpen={onOpen}
+                  onToggleSave={onToggleSave}
+                  onAddCart={onAddCart}
+                  onPin={onPin}
+                  onWatch={onWatch}
+                  onDig={onDig}
+                  onJustPick={onJustPick}
+                  onCompareHere={onCompareHere}
+                  onOpenFullCompare={onOpenFullCompare}
+                  onOpenSaved={onOpenSaved}
+                  onOpenOrders={onOpenOrders}
+                  onOpenPrefs={onOpenPrefs}
+                  onOpenCart={onOpenCart}
+                  onReviewCartHere={onReviewCartHere}
+                  onRestoreCartLine={onRestoreCartLine}
+                  onCartQty={(id, merchant, qty, nextCart, identity, quantityDelta, sourceItem) =>
+                    onCartQty(
+                      message.id,
+                      index,
+                      id,
+                      merchant,
+                      qty,
+                      nextCart,
+                      identity,
+                      quantityDelta,
+                      sourceItem,
+                    )
+                  }
+                  onCartRemove={(id, merchant, nextCart, identity, sourceItem) =>
+                    onCartRemove(message.id, index, id, merchant, nextCart, identity, sourceItem)
+                  }
+                  onCheckout={onCheckout}
+                  activeCheckout={activeCheckout}
+                  checkoutBusy={checkoutBusy}
+                  checkoutError={checkoutError}
+                  onCheckoutAssistant={onCheckoutAssistant}
+                  onRefreshCheckout={onRefreshCheckout}
+                  onReleaseCheckout={onReleaseCheckout}
+                  onCheckoutHere={onCheckoutHere}
+                  newsletter={newsletter}
+                  newsletterPending={newsletterPending}
+                  onNewsletterSignup={onNewsletterSignup}
+                  onShelfAddProduct={onShelfAddProduct}
+                  onDragProduct={onDragProduct}
+                  onVisibleProductContextChange={onVisibleProductContextChange}
+                  immutable={immutable}
+                  useLiveCart={useLiveCart}
+                  agentActionsDisabled={agentActionsDisabled}
+                />
+              ))}
+            </div>
             {message.pending ? (
-              <div className="mt-ct-system">
+              <div className="mt-ct-system" role="status" aria-live="polite">
                 <span className="mt-scan-pulse" />
                 {message.pendingText ?? 'Meant is checking merchants and ranking matches.'}
               </div>
