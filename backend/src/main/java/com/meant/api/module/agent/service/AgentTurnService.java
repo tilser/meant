@@ -17,6 +17,8 @@ import jakarta.validation.Valid;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Objects;
+
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -60,7 +62,7 @@ public class AgentTurnService {
             if (existing.isPresent()) {
                 AgentMessage message = existing.get();
                 if (!command.message().trim().equals(message.getTextContent())
-                        || !java.util.Objects.equals(turnContextJson, message.getContentJson())) {
+                        || !Objects.equals(turnContextJson, message.getContentJson())) {
                     throw AgentException.conflict("This client turn identifier was already used.");
                 }
                 AgentRun run = runRepository.findByTriggeringMessageId(message.getId())

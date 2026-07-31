@@ -37,15 +37,4 @@ public record SubmitAgentTurnRequest(
         AgentShelfContextRequest shelfContext
 ) {
 
-    public SubmitAgentTurnRequest(String message, String clientTurnId) {
-        this(message, clientTurnId, null, null);
-    }
-
-    public SubmitAgentTurnRequest(
-            String message,
-            String clientTurnId,
-            AgentVisibleProductContextRequest visibleProductContext
-    ) {
-        this(message, clientTurnId, visibleProductContext, null);
-    }
 }

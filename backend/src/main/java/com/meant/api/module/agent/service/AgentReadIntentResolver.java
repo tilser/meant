@@ -113,11 +113,7 @@ public class AgentReadIntentResolver {
                 return continuation;
             }
         }
-        Optional<AgentResolvedReadIntent> similarity = resolvedSimilarity(context, turn);
-        if (similarity.isPresent()) {
-            return similarity;
-        }
-        return Optional.empty();
+        return resolvedSimilarity(context, turn);
     }
 
     public String completionMessage(AgentResolvedReadIntent intent, String resultJson) {
