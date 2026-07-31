@@ -12,6 +12,7 @@ export function InlineCartBlock({
   onAddCart,
   onOpenCart,
   onCheckoutHere,
+  loading = false,
   agentActionsDisabled = false,
 }: Readonly<{
   cart: readonly CartItem[]
@@ -35,12 +36,14 @@ export function InlineCartBlock({
   onAddCart: (product: Product) => void
   onOpenCart: () => void
   onCheckoutHere: () => void
+  loading?: boolean
   agentActionsDisabled?: boolean
 }>) {
   const lines = cartLines(cart, products)
   const alerts = computeSmartAlerts(lines, products)
   const groups = cartGroups(lines)
   const itemCount = lines.reduce((sum, line) => sum + line.qty, 0)
+  const showInitialLoading = loading && lines.length === 0
   const total = groups.reduce((sum, group) => sum + group.total, 0)
   const productById = new Map(products.map((product) => [product.id, product]))
   const cartAfterQty = (target: CartItem, qty: number) =>
@@ -57,7 +60,7 @@ export function InlineCartBlock({
       <div className="mt-ct-block-head">
         <div className="mt-mono mt-ct-block-key">Cart in chat</div>
         <span className="mt-ct-code-save mt-mono">
-          {itemCount} item{itemCount === 1 ? '' : 's'}
+          {showInitialLoading ? 'Adding item…' : `${itemCount} item${itemCount === 1 ? '' : 's'}`}
         </span>
       </div>
       {alerts.length > 0 ? (
@@ -85,7 +88,15 @@ export function InlineCartBlock({
           ))}
         </div>
       ) : null}
-      {lines.length > 0 ? (
+      {showInitialLoading ? (
+        <div className="mt-ct-cart-loading" role="status" aria-live="polite">
+          <span className="mt-ct-cart-loading-spinner" aria-hidden="true" />
+          <span>
+            <strong>Adding item to cart…</strong>
+            <span>Confirming availability with the merchant.</span>
+          </span>
+        </div>
+      ) : lines.length > 0 ? (
         <div className="mt-ct-cart-list">
           {lines.map((line) => (
             <div className="mt-ct-cart-row" key={cartItemIdentity(line)}>
@@ -171,27 +182,29 @@ export function InlineCartBlock({
       ) : (
         <p className="mt-ct-cart-empty">Your cart is empty.</p>
       )}
-      <div className="mt-ct-cart-foot">
-        <div>
-          <span className="mt-mono mt-ct-cart-foot-label">
-            {groups.length} merchant{groups.length === 1 ? '' : 's'}
-          </span>
-          <strong>{money(total)}</strong>
+      {!showInitialLoading ? (
+        <div className="mt-ct-cart-foot">
+          <div>
+            <span className="mt-mono mt-ct-cart-foot-label">
+              {groups.length} merchant{groups.length === 1 ? '' : 's'}
+            </span>
+            <strong>{money(total)}</strong>
+          </div>
+          <div className="mt-ct-cart-foot-actions">
+            <button className="mt-ct-cart-openfull" type="button" onClick={onOpenCart}>
+              Full cart
+            </button>
+            <button
+              className="mt-ct-cart-checkout"
+              type="button"
+              disabled={lines.length === 0}
+              onClick={onCheckoutHere}
+            >
+              Checkout here
+            </button>
+          </div>
         </div>
-        <div className="mt-ct-cart-foot-actions">
-          <button className="mt-ct-cart-openfull" type="button" onClick={onOpenCart}>
-            Full cart
-          </button>
-          <button
-            className="mt-ct-cart-checkout"
-            type="button"
-            disabled={lines.length === 0}
-            onClick={onCheckoutHere}
-          >
-            Checkout here
-          </button>
-        </div>
-      </div>
+      ) : null}
     </div>
   )
 }

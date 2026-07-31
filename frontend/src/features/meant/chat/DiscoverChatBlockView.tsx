@@ -121,6 +121,7 @@ export function DiscoverChatBlockView({
   onVisibleProductContextChange,
   immutable,
   useLiveCart,
+  cartAdditionPending = false,
   agentActionsDisabled,
   compactText = false,
 }: Readonly<{
@@ -188,6 +189,7 @@ export function DiscoverChatBlockView({
   onVisibleProductContextChange?: VisibleProductContextChange
   immutable: boolean
   useLiveCart: boolean
+  cartAdditionPending?: boolean
   agentActionsDisabled: boolean
   compactText?: boolean
 }>) {
@@ -671,6 +673,7 @@ export function DiscoverChatBlockView({
         onAddCart={onAddCart}
         onOpenCart={onOpenCart}
         onCheckoutHere={onCheckoutHere}
+        loading={useLiveCart && cartAdditionPending}
         agentActionsDisabled={agentActionsDisabled}
       />
     )

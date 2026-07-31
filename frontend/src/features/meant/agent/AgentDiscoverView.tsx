@@ -348,6 +348,9 @@ export function AgentDiscoverView({
   )
   const [loading, setLoading] = useState(true)
   const [pendingSubmissions, setPendingSubmissions] = useState(0)
+  const [pendingCartAdditionsByConversationId, setPendingCartAdditionsByConversationId] = useState<
+    Record<string, number>
+  >({})
   const [actionPending, setActionPending] = useState<ReadonlySet<string>>(new Set())
   const [optimisticCart, setOptimisticCart] = useState<readonly CartItem[] | null>(null)
   const [autoRemovingMessageKeys, setAutoRemovingMessageKeys] = useState<ReadonlySet<string>>(
@@ -1376,21 +1379,43 @@ export function AgentDiscoverView({
   }
   const addToCart = (product: Product) => {
     setError(null)
+    let pendingConversationId: string | null = null
     void addChatProductToCart(product, onAddSelectedOfferToCart, () => {
       const conversationId = activeConversationIdRef.current
-      if (!conversationId || liveCartMessageIdRef.current) return
-      const messageId = uniqueRequestId('cart')
-      liveCartMessageIdRef.current = messageId
-      appendLocalMessage(cartInChatMessage(messageId), conversationId)
-    }).then((result) => {
-      if (result !== 'added') {
-        setError(
-          result === 'missing-offer'
-            ? 'This product does not have an exact purchasable offer yet.'
-            : 'Could not add this item to the merchant cart.',
-        )
+      if (!conversationId) return
+      pendingConversationId = conversationId
+      setPendingCartAdditionsByConversationId((current) => ({
+        ...current,
+        [conversationId]: (current[conversationId] ?? 0) + 1,
+      }))
+      if (!liveCartMessageIdRef.current) {
+        const messageId = uniqueRequestId('cart')
+        liveCartMessageIdRef.current = messageId
+        appendLocalMessage(cartInChatMessage(messageId), conversationId)
       }
     })
+      .then((result) => {
+        if (result !== 'added') {
+          setError(
+            result === 'missing-offer'
+              ? 'This product does not have an exact purchasable offer yet.'
+              : 'Could not add this item to the merchant cart.',
+          )
+        }
+      })
+      .finally(() => {
+        const conversationId = pendingConversationId
+        if (!conversationId) return
+        setPendingCartAdditionsByConversationId((current) => {
+          const pendingCount = current[conversationId] ?? 0
+          if (pendingCount > 1) {
+            return { ...current, [conversationId]: pendingCount - 1 }
+          }
+          const next = { ...current }
+          delete next[conversationId]
+          return next
+        })
+      })
   }
   const dig = (kind: 'reviews' | 'code' | 'similar', product: Product) => {
     const key = product.id
@@ -1838,6 +1863,10 @@ export function AgentDiscoverView({
               celebrateArrival={false}
               immutable
               useLiveCart={message.id === liveCartMessageId}
+              cartAdditionPending={
+                message.id === liveCartMessageId &&
+                (pendingCartAdditionsByConversationId[activeConversationId ?? ''] ?? 0) > 0
+              }
               agentActionsDisabled={agentActionsDisabled}
               deletable
               removing={autoRemovingMessageKeys.has(

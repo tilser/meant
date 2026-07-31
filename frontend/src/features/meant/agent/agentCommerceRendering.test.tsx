@@ -967,6 +967,42 @@ describe('agent commerce artifacts reuse the established components', () => {
     )
   })
 
+  test('shows a pending cart addition instead of an empty cart before the first line arrives', () => {
+    const loadingMarkup = renderToStaticMarkup(
+      <InlineCartBlock
+        cart={[]}
+        products={[first]}
+        onQty={() => undefined}
+        onRemove={() => undefined}
+        onAddCart={() => undefined}
+        onOpenCart={() => undefined}
+        onCheckoutHere={() => undefined}
+        loading
+      />,
+    )
+    const loadedMarkup = renderToStaticMarkup(
+      <InlineCartBlock
+        cart={cart}
+        products={[first, second]}
+        onQty={() => undefined}
+        onRemove={() => undefined}
+        onAddCart={() => undefined}
+        onOpenCart={() => undefined}
+        onCheckoutHere={() => undefined}
+        loading
+      />,
+    )
+
+    expect(loadingMarkup).toContain('role="status"')
+    expect(loadingMarkup).toContain('Adding item to cart…')
+    expect(loadingMarkup).toContain('Confirming availability with the merchant.')
+    expect(loadingMarkup).not.toContain('Your cart is empty.')
+    expect(loadingMarkup).not.toContain('Checkout here')
+    expect(loadedMarkup).toContain('Quantity for Grounded trail shoe')
+    expect(loadedMarkup).toContain('1 item')
+    expect(loadedMarkup).not.toContain('Adding item to cart…')
+  })
+
   test('renders comparison, cart, and checkout artifacts through their existing blocks', () => {
     const comparison: Extract<DiscoverChatBlock, { type: 'minicompare' }> = {
       type: 'minicompare',
