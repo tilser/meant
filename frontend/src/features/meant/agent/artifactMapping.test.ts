@@ -7,6 +7,7 @@ import type {
   CanonicalProductProfile,
 } from '../../../lib/apiClient'
 import {
+  agentMarkdownText,
   blocksForAgentMessage,
   cartItemsFromAgentArtifacts,
   cartStateReplacementsFromAgentArtifacts,
@@ -164,6 +165,12 @@ function artifact(
 }
 
 describe('agent artifact mapping', () => {
+  test('preserves safe Markdown structure for assistant messages', () => {
+    expect(agentMarkdownText('## Picks\n\n1. **Jacket**\n2. *Coat*')).toBe(
+      '## Picks\n\n1. **Jacket**\n2. *Coat*',
+    )
+  })
+
   test('neutralizes transport coordinates inside agent prose without collapsing the sentence', () => {
     expect(
       plainAgentText(

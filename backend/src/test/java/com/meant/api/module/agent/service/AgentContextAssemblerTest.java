@@ -133,6 +133,9 @@ class AgentContextAssemblerTest {
                 .contains("Server-issued artifacts and their stable IDs are authoritative references")
                 .contains("search_catalog returns products together with appliedFilters and unsetFilters")
                 .contains("Checkout requires explicit user approval")
+                .contains("Buyer-visible prose supports concise Markdown")
+                .contains("put every list item on its own line")
+                .contains("Never emit raw HTML, images, or tables")
                 .doesNotContain("WAITING_FOR_USER");
 
         String grounding = context.messages().get(1).text();

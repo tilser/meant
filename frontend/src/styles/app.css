@@ -576,9 +576,114 @@
   background: var(--surface);
 }
 
-.mt-ct-intro b {
-  font-weight: 500;
+.mt-ct-intro b,
+.mt-ct-intro strong {
+  font-weight: 600;
   color: var(--ink);
+}
+
+.mt-agent-markdown > :first-child {
+  margin-top: 0;
+}
+
+.mt-agent-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.mt-agent-markdown p {
+  margin: 0.72em 0 0;
+  white-space: pre-wrap;
+}
+
+.mt-agent-markdown h1,
+.mt-agent-markdown h2,
+.mt-agent-markdown h3,
+.mt-agent-markdown h4,
+.mt-agent-markdown h5,
+.mt-agent-markdown h6 {
+  margin: 0.9em 0 0.35em;
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 0.78em;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+
+.mt-agent-markdown ul,
+.mt-agent-markdown ol {
+  margin: 0.68em 0 0;
+  padding-left: 1.45em;
+}
+
+.mt-agent-markdown li {
+  padding-left: 0.18em;
+}
+
+.mt-agent-markdown li + li {
+  margin-top: 0.5em;
+}
+
+.mt-agent-markdown li::marker {
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 0.78em;
+  font-weight: 700;
+}
+
+.mt-agent-markdown li > p {
+  margin: 0;
+}
+
+.mt-agent-markdown a {
+  color: var(--accent);
+  text-decoration-color: color-mix(in srgb, var(--accent) 42%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+
+.mt-agent-markdown a:hover {
+  text-decoration-color: currentColor;
+}
+
+.mt-agent-markdown blockquote {
+  margin: 0.72em 0 0;
+  padding-left: 0.85em;
+  border-left: 2px solid var(--accent-line);
+  color: var(--muted);
+}
+
+.mt-agent-markdown code {
+  padding: 0.12em 0.32em;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--line-soft);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 0.82em;
+}
+
+.mt-agent-markdown pre {
+  max-width: 100%;
+  margin: 0.72em 0 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--line-soft);
+}
+
+.mt-agent-markdown pre code {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.mt-agent-markdown hr {
+  margin: 0.9em 0;
+  border: 0;
+  border-top: 1px solid var(--line);
 }
 
 .mt-ct-empty-prompts {

@@ -155,9 +155,14 @@ function looksCanonical(value: JsonRecord): boolean {
   )
 }
 
-/** Keeps agent prose inside the established plain-text chat treatment, including old messages. */
+/** Preserves safe agent-authored Markdown while neutralizing transport-only seller details. */
+export function agentMarkdownText(value: string): string {
+  return sanitizeBuyerVisibleText(value).trim()
+}
+
+/** Reduces agent prose to plain text for labels, summaries, and other non-message projections. */
 export function plainAgentText(value: string): string {
-  return sanitizeBuyerVisibleText(value)
+  return agentMarkdownText(value)
     .replace(/\[([^\]]+)]\([^)]+\)/g, '$1')
     .replace(/(^|\n)\s{0,3}#{1,6}\s+/g, '$1')
     .replace(/\*\*([^*\n]+)\*\*/g, '$1')
@@ -1726,7 +1731,7 @@ export function discoverMessagesFromAgentConversation(
         message.runId && artifactHostMessageByRun.get(message.runId) === message.messageId
           ? (toolBlocksByRun.get(message.runId) ?? [])
           : []
-      const text = message.textContent ? plainAgentText(message.textContent) : null
+      const text = message.textContent ? agentMarkdownText(message.textContent) : null
       messages.push({
         id: message.messageId,
         role: 'ai',

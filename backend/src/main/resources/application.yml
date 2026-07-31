@@ -155,7 +155,7 @@ commerce:
     api-key: ${OPENROUTER_API_KEY:}
     app-title: ${OPENROUTER_APP_TITLE:Meant}
     site-url: ${COMMERCE_AGENT_SITE_URL:https://usemeant.com}
-    prompt-version: ${COMMERCE_AGENT_PROMPT_VERSION:v2}
+    prompt-version: ${COMMERCE_AGENT_PROMPT_VERSION:v3}
     tool-version: ${COMMERCE_AGENT_TOOL_VERSION:v1}
     temperature: ${COMMERCE_AGENT_TEMPERATURE:0.2}
     maximum-output-tokens: ${COMMERCE_AGENT_MAXIMUM_OUTPUT_TOKENS:4096}

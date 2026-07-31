@@ -57,6 +57,20 @@ const similarResults: DiscoverChatMessage = {
 }
 
 describe('agent message projection', () => {
+  test('preserves Markdown while an assistant message is streaming', () => {
+    const streaming = {
+      ...projection('RUNNING'),
+      assistantMessages: [],
+      streamingAssistantText: '## Picks\n\n1. **Jacket**\n2. *Coat*',
+    }
+
+    const messages = withProjectedAgentMessages([], new Set(), new Set(), 'run-current', streaming)
+
+    expect(messages[0]?.blocks).toEqual([
+      { type: 'text', text: '## Picks\n\n1. **Jacket**\n2. *Coat*' },
+    ])
+  })
+
   test('renders a waiting clarification immediately when prior product results exist', () => {
     const messages = withProjectedAgentMessages(
       [productResults],

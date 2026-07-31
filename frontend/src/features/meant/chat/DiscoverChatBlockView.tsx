@@ -20,6 +20,7 @@ import { ProductReviewsPanel } from '../product/ProductReviewsPanel'
 import { CopyIcon } from '../shared/icons'
 import { CartIcon, ProductArtwork, SparkMark } from '../shared/ui'
 import { DiscoverProductBatch } from './DiscoverProductBatch'
+import { AgentMarkdown } from './AgentMarkdown'
 import { InlineCartBlock } from './blocks/InlineCartBlock'
 import { InlineCheckoutBlock } from './blocks/InlineCheckoutBlock'
 import { InlineMiniCompareBlock } from './blocks/InlineMiniCompareBlock'
@@ -191,7 +192,7 @@ export function DiscoverChatBlockView({
   const openProduct = productOpenWithResearchQuery(onOpen, researchQuery)
 
   if (block.type === 'text') {
-    return <p className="mt-ct-intro">{block.text}</p>
+    return <AgentMarkdown text={block.text} />
   }
   if (block.type === 'system') {
     return (

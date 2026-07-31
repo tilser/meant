@@ -1,5 +1,5 @@
 import type { DiscoverChatMessage } from '../chat/types'
-import { plainAgentText } from './artifactMapping'
+import { agentMarkdownText } from './artifactMapping'
 import type { AgentRunProjection } from './eventReducer'
 
 function hasCatalogResult(message: DiscoverChatMessage): boolean {
@@ -36,7 +36,7 @@ export function withProjectedAgentMessages(
           {
             id: message.messageId ?? `${activeRunId}:assistant:${index}`,
             role: 'ai' as const,
-            blocks: [{ type: 'text' as const, text: plainAgentText(message.text) }],
+            blocks: [{ type: 'text' as const, text: agentMarkdownText(message.text) }],
           },
         ],
   )
@@ -44,7 +44,7 @@ export function withProjectedAgentMessages(
     transient.push({
       id: `${activeRunId}:streaming`,
       role: 'ai',
-      blocks: [{ type: 'text', text: plainAgentText(projection.streamingAssistantText) }],
+      blocks: [{ type: 'text', text: agentMarkdownText(projection.streamingAssistantText) }],
       pending: true,
       pendingText: 'Meant is still working…',
     })
