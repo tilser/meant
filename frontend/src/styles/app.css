@@ -599,22 +599,6 @@
   position: relative;
 }
 
-.mt-agent-markdown.is-collapsed .mt-agent-markdown-content {
-  max-height: 218px;
-  overflow: hidden;
-}
-
-.mt-agent-markdown.is-collapsed .mt-agent-markdown-content::after {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  height: 70px;
-  pointer-events: none;
-  background: linear-gradient(transparent, var(--surface) 88%);
-  content: '';
-}
-
 .mt-agent-markdown-toggle {
   position: relative;
   z-index: 1;
@@ -2589,10 +2573,6 @@
     padding: 10px 13px 11px;
     font-size: 15px;
     line-height: 1.45;
-  }
-
-  .mt-agent-markdown.is-collapsed .mt-agent-markdown-content {
-    max-height: 174px;
   }
 
   .mt-ct-block,

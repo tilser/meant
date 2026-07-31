@@ -55,13 +55,24 @@ Want me to narrow these by *size* or price?`}
   })
 
   test('offers progressive disclosure for long product-result messages', () => {
-    const text = `## Top picks\n\n${'A useful product detail. '.repeat(24)}`
+    const text = `## Top picks\n\n${'A useful product detail. '.repeat(24)}\n\nUnique full-message ending.`
     const markup = renderToStaticMarkup(<AgentMarkdown text={text} compact />)
 
     expect(markup).toContain('is-collapsed')
     expect(markup).toContain('aria-expanded="false"')
     expect(markup).toContain('Show full message')
-    expect(markup).toContain(text.slice(-40).trim())
+    expect(markup).toContain('<h2>Top picks</h2>')
+    expect(markup).toContain('…')
+    expect(markup).not.toContain('Unique full-message ending.')
+  })
+
+  test('does not expose links from outside the collapsed preview', () => {
+    const text = `${'Useful shopping context. '.repeat(24)}\n\n[Hidden action](https://shop.example/hidden)`
+    const markup = renderToStaticMarkup(<AgentMarkdown text={text} compact />)
+
+    expect(markup).toContain('is-collapsed')
+    expect(markup).not.toContain('Hidden action')
+    expect(markup).not.toContain('href=')
   })
 
   test('keeps short product-result messages fully visible', () => {

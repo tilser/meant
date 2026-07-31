@@ -4,6 +4,22 @@ import Markdown from 'react-markdown'
 import { ChevronIcon } from '../shared/icons'
 
 const COMPACT_MESSAGE_MIN_LENGTH = 420
+const COMPACT_PREVIEW_MAX_LENGTH = 280
+
+function compactAgentPreview(text: string): string {
+  if (text.length <= COMPACT_PREVIEW_MAX_LENGTH) {
+    return text
+  }
+
+  const candidate = text.slice(0, COMPACT_PREVIEW_MAX_LENGTH + 1)
+  const lastLineBreak = candidate.lastIndexOf('\n')
+  const lastSpace = candidate.lastIndexOf(' ')
+  const boundary = lastLineBreak >= COMPACT_PREVIEW_MAX_LENGTH * 0.6 ? lastLineBreak : lastSpace
+
+  return `${candidate
+    .slice(0, boundary > 0 ? boundary : COMPACT_PREVIEW_MAX_LENGTH)
+    .trimEnd()}\n\n…`
+}
 
 function safeAgentLink(href: string | undefined): string | null {
   if (!href) return null
@@ -45,6 +61,8 @@ export function AgentMarkdown({
   const [expanded, setExpanded] = useState(false)
   const contentId = useId()
   const collapsible = compact && text.trim().length >= COMPACT_MESSAGE_MIN_LENGTH
+  const collapsed = collapsible && !expanded
+  const renderedText = collapsed ? compactAgentPreview(text) : text
 
   return (
     <div
@@ -69,7 +87,7 @@ export function AgentMarkdown({
             },
           }}
         >
-          {text}
+          {renderedText}
         </Markdown>
       </div>
       {collapsible ? (
