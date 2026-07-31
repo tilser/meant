@@ -82,10 +82,10 @@ public class UserProductSearchQualificationService {
                     command.userId(), previous.qualificationId())));
         }
         String originalQuery = previous == null ? command.message().trim() : previous.originalQuery();
-        catalogInputBuilder.validateSupportedCurrency(command.message());
         UUID merchantId = previous == null ? command.merchantId() : previous.merchantId();
         var durablePreferences = preferenceService.list(command.userId());
         var settings = userSettingsService.get(profileCommand);
+        catalogInputBuilder.validateSupportedCurrency(command.message(), settings.currency());
         var tasteProfile = userTasteProfileService.profile(command.userId(), settings);
         log.info(
                 "Product-search qualification invoking model. userId={}, conversationId={}, "

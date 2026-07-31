@@ -19,6 +19,13 @@ public record UpdateUserSettingsRequest(
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         @Pattern(regexp = "men|women|other|none")
         String clothingFit,
+        @Schema(
+                description = "Preferred ISO 4217 currency used for catalog prices",
+                example = "USD",
+                requiredMode = Schema.RequiredMode.NOT_REQUIRED
+        )
+        @Pattern(regexp = "(?i)[A-Z]{3}")
+        String currency,
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED)
         @Valid
         UserLocationRequest location,

@@ -32,7 +32,7 @@ public class MerchantProductDetailsService {
                 null,
                 null,
                 query.language(),
-                null,
+                query.currency(),
                 "Product detail"
         );
         CatalogLookupResult lookupResult = merchantCatalogPluginDispatchService.lookupCatalog(

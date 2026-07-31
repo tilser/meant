@@ -43,6 +43,7 @@ public class UserProductSearchHashService {
         return sha256(String.join("\n",
                 "promptVersion=" + userProductSearchProperties.explanationPromptVersion(),
                 "budget=" + value(settings.budget()),
+                "currency=" + value(settings.currency()),
                 "clothingFit=" + value(settings.clothingFit()),
                 "locations=" + locationsValue(settings.locations()),
                 "filters=" + filtersValue(settings.filters())

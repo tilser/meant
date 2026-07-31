@@ -12,13 +12,14 @@ public interface UserSettingsRepository extends JpaRepository<UserSettings, UUID
 
     @Modifying(flushAutomatically = true)
     @Query(value = """
-            INSERT INTO user_settings (user_id, budget, created_at, updated_at)
-            VALUES (:userId, :budget, :now, :now)
+            INSERT INTO user_settings (user_id, budget, currency, created_at, updated_at)
+            VALUES (:userId, :budget, :currency, :now, :now)
             ON CONFLICT (user_id) DO NOTHING
             """, nativeQuery = true)
     int insertDefaultIfMissing(
             @Param("userId") UUID userId,
             @Param("budget") Integer budget,
+            @Param("currency") String currency,
             @Param("now") Instant now
     );
 }

@@ -7,6 +7,7 @@ import com.meant.api.common.util.CountryCodeNormalizer;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryFilters;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryLocation;
 import com.meant.api.module.user.constant.UserClothingFit;
+import com.meant.api.module.user.constant.UserCurrency;
 import com.meant.api.module.user.exception.UnsupportedProductSearchCurrencyException;
 import com.meant.api.module.user.service.dto.ShoppingFilterResult;
 import com.meant.api.module.user.service.dto.UserLocationResult;
@@ -32,11 +33,10 @@ import org.springframework.stereotype.Service;
 @Service
 public class UserProductSearchCatalogInputBuilder {
 
-    private static final String SEARCH_CURRENCY = "USD";
     private static final String AMOUNT_NUMBER_PATTERN =
             "(?:\\d{1,3}(?:[\\s\\.,]\\d{3})+|\\d+)(?:[\\.,]\\d{1,2})?";
-    private static final String NON_USD_CURRENCY_SYMBOLS = "€£¥₹₩₽₺₴₫฿₱₪₦₲₵";
-    private static final String AMOUNT_PATTERN = "(?:[$" + NON_USD_CURRENCY_SYMBOLS + "]\\s*)?"
+    private static final String CURRENCY_SYMBOLS = "$€£¥₹₩₽₺₴₫฿₱₪₦₲₵";
+    private static final String AMOUNT_PATTERN = "(?:[" + CURRENCY_SYMBOLS + "]\\s*)?"
             + AMOUNT_NUMBER_PATTERN;
     private static final String ISO_CURRENCY_CODE_PATTERN = Currency.getAvailableCurrencies().stream()
             .map(Currency::getCurrencyCode)
@@ -50,13 +50,12 @@ public class UserProductSearchCatalogInputBuilder {
                     + "cny|rmb|chinese yuan|renminbi|hkd|hong kong dollars?|sgd|singapore dollars?|mxn|"
                     + "mexican pesos?|brl|brazilian reais?|zar|south african rand|krw|korean won|aed|sar|"
                     + "ils|thb|idr|myr|php|twd|(?-i:" + ISO_CURRENCY_CODE_PATTERN + "))";
-    private static final String NON_USD_CURRENCY_SYMBOL_CLASS = "[" + NON_USD_CURRENCY_SYMBOLS + "]";
-    private static final Pattern EXPLICIT_NON_USD_SYMBOL_AMOUNT_PATTERN = Pattern.compile(
-            "(?:%s\\s*%s|%s\\s*%s)".formatted(
-                    NON_USD_CURRENCY_SYMBOL_CLASS,
-                    AMOUNT_NUMBER_PATTERN,
-                    AMOUNT_NUMBER_PATTERN,
-                    NON_USD_CURRENCY_SYMBOL_CLASS)
+    private static final String CURRENCY_SYMBOL_CLASS = "[" + CURRENCY_SYMBOLS + "]";
+    private static final Pattern PREFIXED_SYMBOL_CURRENCY_AMOUNT_PATTERN = Pattern.compile(
+            "(?<currency>%s)\\s*%s".formatted(CURRENCY_SYMBOL_CLASS, AMOUNT_NUMBER_PATTERN)
+    );
+    private static final Pattern SUFFIXED_SYMBOL_CURRENCY_AMOUNT_PATTERN = Pattern.compile(
+            "%s\\s*(?<currency>%s)".formatted(AMOUNT_NUMBER_PATTERN, CURRENCY_SYMBOL_CLASS)
     );
     private static final Pattern PREFIXED_TEXT_CURRENCY_AMOUNT_PATTERN = Pattern.compile(
             "(?<![\\p{L}\\p{N}])(?<currency>%s)(?![\\p{L}\\p{N}])\\s+(?<amount>%s)"
@@ -160,24 +159,28 @@ public class UserProductSearchCatalogInputBuilder {
             String language,
             CatalogDiscoveryFilters qualifiedFilters
     ) {
-        validateSupportedCurrency(originalQuery);
+        String preferredCurrency = settings == null
+                ? UserCurrency.DEFAULT
+                : UserCurrency.normalizeOrDefault(settings.currency());
+        validateSupportedCurrency(originalQuery, preferredCurrency);
         ParsedPrice detectedPrice = parsePrice(originalQuery, queryIntent.searchQuery());
-        validateCurrency(detectedPrice);
+        validateCurrency(detectedPrice, preferredCurrency);
+        detectedPrice = withDefaultCurrency(detectedPrice, preferredCurrency);
         boolean qualifiedPriceActive = qualifiedFilters != null && qualifiedFilters.price() != null;
         ParsedPrice parsedPrice = detectedPrice != null
                 && (qualifiedPriceActive
-                || qualifiedFilters == null && SEARCH_CURRENCY.equalsIgnoreCase(detectedPrice.currency()))
+                || qualifiedFilters == null)
                 ? detectedPrice
                 : null;
         ParsedPrice priceFilter = qualifiedFilters == null
                 ? parsedPrice
-                : parsedPrice(qualifiedFilters);
+                : parsedPrice(qualifiedFilters, preferredCurrency);
         String searchQuery = searchQuery(queryIntent.searchQuery(), parsedPrice);
         CatalogDiscoveryLocation contextLocation = qualifiedFilters == null
                 ? catalogLocation(settings.location())
                 : qualifiedFilters.shipsTo();
         String country = contextLocation == null ? null : contextLocation.country();
-        String currency = priceFilter == null ? null : SEARCH_CURRENCY;
+        String currency = preferredCurrency;
         CatalogSearchContext context = context(
                 country,
                 contextLocation == null ? null : contextLocation.region(),
@@ -209,32 +212,36 @@ public class UserProductSearchCatalogInputBuilder {
 
     /** Rejects explicitly stated non-USD prices before an LLM can rewrite them out of the catalog query. */
     public void validateSupportedCurrency(String value) {
-        rejectExplicitNonUsdAmount(value);
+        validateSupportedCurrency(value, UserCurrency.DEFAULT);
+    }
+
+    public void validateSupportedCurrency(String value, String preferredCurrency) {
+        String normalizedPreferredCurrency = UserCurrency.normalizeOrDefault(preferredCurrency);
+        rejectExplicitDifferentCurrencyAmount(value, normalizedPreferredCurrency);
         ParsedPrice parsedPrice = parsePrice(value);
         if (parsedPrice == null && value != null && !value.isBlank()) {
             parsedPrice = parsePrice("under " + value.trim());
         }
-        validateCurrency(parsedPrice);
+        validateCurrency(parsedPrice, normalizedPreferredCurrency);
     }
 
-    private void rejectExplicitNonUsdAmount(String value) {
+    private void rejectExplicitDifferentCurrencyAmount(String value, String preferredCurrency) {
         if (value == null || value.isBlank()) {
             return;
         }
-        if (EXPLICIT_NON_USD_SYMBOL_AMOUNT_PATTERN.matcher(value).find()
-                || containsNonUsdTextCurrency(PREFIXED_TEXT_CURRENCY_AMOUNT_PATTERN.matcher(value))
-                || containsNonUsdTextCurrency(SUFFIXED_TEXT_CURRENCY_AMOUNT_PATTERN.matcher(value))) {
-            throw new UnsupportedProductSearchCurrencyException("NON_USD");
-        }
+        rejectDifferentCurrency(PREFIXED_SYMBOL_CURRENCY_AMOUNT_PATTERN.matcher(value), preferredCurrency);
+        rejectDifferentCurrency(SUFFIXED_SYMBOL_CURRENCY_AMOUNT_PATTERN.matcher(value), preferredCurrency);
+        rejectDifferentCurrency(PREFIXED_TEXT_CURRENCY_AMOUNT_PATTERN.matcher(value), preferredCurrency);
+        rejectDifferentCurrency(SUFFIXED_TEXT_CURRENCY_AMOUNT_PATTERN.matcher(value), preferredCurrency);
     }
 
-    private boolean containsNonUsdTextCurrency(Matcher matcher) {
+    private void rejectDifferentCurrency(Matcher matcher, String preferredCurrency) {
         while (matcher.find()) {
-            if ("NON_USD".equals(currencyFromToken(matcher.group("currency")))) {
-                return true;
+            String currency = currencyFromToken(matcher.group("currency"));
+            if (currency != null && !preferredCurrency.equals(currency)) {
+                throw new UnsupportedProductSearchCurrencyException(currency, preferredCurrency);
             }
         }
-        return false;
     }
 
     private CatalogSearchSignals signals(String buyerIp, String userAgent) {
@@ -246,15 +253,21 @@ public class UserProductSearchCatalogInputBuilder {
         return new CatalogSearchSignals(sanitizedBuyerIp, sanitizedUserAgent);
     }
 
-    private ParsedPrice parsedPrice(CatalogDiscoveryFilters filters) {
+    private ParsedPrice parsedPrice(CatalogDiscoveryFilters filters, String preferredCurrency) {
         if (filters.price() == null) {
             return null;
         }
         return new ParsedPrice(
-                majorUnits(filters.price().min()),
-                majorUnits(filters.price().max()),
-                SEARCH_CURRENCY
+                majorUnits(filters.price().min(), preferredCurrency),
+                majorUnits(filters.price().max(), preferredCurrency),
+                preferredCurrency
         );
+    }
+
+    private ParsedPrice withDefaultCurrency(ParsedPrice price, String preferredCurrency) {
+        return price == null || price.currency() != null
+                ? price
+                : new ParsedPrice(price.minAmount(), price.maxAmount(), preferredCurrency);
     }
 
     private String searchQuery(String queryIntentSearchQuery, ParsedPrice parsedPrice) {
@@ -301,8 +314,8 @@ public class UserProductSearchCatalogInputBuilder {
         return new CatalogSearchFilters(
                 categories,
                 parsedPrice == null ? null : new CatalogSearchPriceFilter(
-                        minorUnits(parsedPrice.minAmount()),
-                        minorUnits(parsedPrice.maxAmount())
+                        minorUnits(parsedPrice.minAmount(), parsedPrice.currency()),
+                        minorUnits(parsedPrice.maxAmount(), parsedPrice.currency())
                 )
         );
     }
@@ -504,17 +517,22 @@ public class UserProductSearchCatalogInputBuilder {
         );
     }
 
-    private BigDecimal majorUnits(Long amount) {
-        return amount == null ? null : BigDecimal.valueOf(amount, 2);
+    private BigDecimal majorUnits(Long amount, String currency) {
+        return amount == null ? null : BigDecimal.valueOf(amount, fractionDigits(currency));
     }
 
-    private Long minorUnits(BigDecimal amount) {
+    private Long minorUnits(BigDecimal amount, String currency) {
         if (amount == null) {
             return null;
         }
-        return amount.movePointRight(2)
+        return amount.movePointRight(fractionDigits(currency))
                 .setScale(0, RoundingMode.HALF_UP)
                 .longValue();
+    }
+
+    private int fractionDigits(String currency) {
+        int digits = Currency.getInstance(currency).getDefaultFractionDigits();
+        return digits < 0 ? 2 : digits;
     }
 
     private BigDecimal amount(String amount) {
@@ -577,10 +595,11 @@ public class UserProductSearchCatalogInputBuilder {
             return null;
         }
         String trimmed = amount.trim();
-        if (!trimmed.isEmpty() && NON_USD_CURRENCY_SYMBOLS.indexOf(trimmed.charAt(0)) >= 0) {
-            return "NON_USD";
+        if (trimmed.isEmpty()) {
+            return null;
         }
-        return null;
+        String prefix = currencyFromSymbol(trimmed.charAt(0));
+        return prefix == null ? currencyFromSymbol(trimmed.charAt(trimmed.length() - 1)) : prefix;
     }
 
     private String currencyFromToken(String token) {
@@ -588,38 +607,83 @@ public class UserProductSearchCatalogInputBuilder {
             return null;
         }
         String normalized = token.trim().toLowerCase(Locale.ROOT);
-        if (normalized.equals("usd")
-                || normalized.matches("u\\.s\\. dollars?")
-                || normalized.matches("us dollars?")) {
-            return "USD";
+        if (normalized.length() == 1) {
+            return currencyFromSymbol(normalized.charAt(0));
+        }
+        if (normalized.length() == 3) {
+            try {
+                return Currency.getInstance(normalized.toUpperCase(Locale.ROOT)).getCurrencyCode();
+            } catch (IllegalArgumentException ignored) {
+                return null;
+            }
         }
         if (normalized.matches("dollars?")) {
             return null;
         }
-        return "NON_USD";
-    }
-
-    private String parsedCurrency(String... currencies) {
-        for (String currency : currencies) {
-            if (currency != null && !SEARCH_CURRENCY.equalsIgnoreCase(currency)) {
-                return currency;
-            }
-        }
-        for (String currency : currencies) {
-            if (currency != null && !currency.isBlank()) {
-                return currency;
-            }
-        }
+        if (normalized.matches("u\\.s\\. dollars?|us dollars?")) return "USD";
+        if (normalized.matches("euros?")) return "EUR";
+        if (normalized.matches("pounds?")) return "GBP";
+        if (normalized.matches("kč|czech crowns?|crowns?|koruna|koruny")) return "CZK";
+        if (normalized.matches("canadian dollars?")) return "CAD";
+        if (normalized.matches("australian dollars?")) return "AUD";
+        if (normalized.matches("new zealand dollars?")) return "NZD";
+        if (normalized.matches("yen")) return "JPY";
+        if (normalized.matches("swiss francs?")) return "CHF";
+        if (normalized.matches("swedish kronor?")) return "SEK";
+        if (normalized.matches("norwegian kroner?")) return "NOK";
+        if (normalized.matches("danish kroner?")) return "DKK";
+        if (normalized.matches("polish zloty")) return "PLN";
+        if (normalized.matches("indian rupees?")) return "INR";
+        if (normalized.matches("chinese yuan|renminbi|rmb")) return "CNY";
+        if (normalized.matches("hong kong dollars?")) return "HKD";
+        if (normalized.matches("singapore dollars?")) return "SGD";
+        if (normalized.matches("mexican pesos?")) return "MXN";
+        if (normalized.matches("brazilian reais?")) return "BRL";
+        if (normalized.matches("south african rand")) return "ZAR";
+        if (normalized.matches("korean won")) return "KRW";
         return null;
     }
 
-    private void validateCurrency(ParsedPrice parsedPrice) {
+    private String parsedCurrency(String... currencies) {
+        List<String> distinctCurrencies = java.util.Arrays.stream(currencies)
+                .filter(currency -> currency != null && !currency.isBlank())
+                .map(currency -> currency.toUpperCase(Locale.ROOT))
+                .distinct()
+                .toList();
+        return distinctCurrencies.size() > 1
+                ? "MIXED"
+                : distinctCurrencies.stream().findFirst().orElse(null);
+    }
+
+    private void validateCurrency(ParsedPrice parsedPrice, String preferredCurrency) {
         if (parsedPrice == null || parsedPrice.currency() == null) {
             return;
         }
-        if (!SEARCH_CURRENCY.equalsIgnoreCase(parsedPrice.currency())) {
-            throw new UnsupportedProductSearchCurrencyException(parsedPrice.currency());
+        if (!preferredCurrency.equalsIgnoreCase(parsedPrice.currency())) {
+            throw new UnsupportedProductSearchCurrencyException(parsedPrice.currency(), preferredCurrency);
         }
+    }
+
+    private String currencyFromSymbol(char symbol) {
+        return switch (symbol) {
+            case '$' -> "USD";
+            case '€' -> "EUR";
+            case '£' -> "GBP";
+            case '¥' -> "JPY";
+            case '₹' -> "INR";
+            case '₩' -> "KRW";
+            case '₽' -> "RUB";
+            case '₺' -> "TRY";
+            case '₴' -> "UAH";
+            case '₫' -> "VND";
+            case '฿' -> "THB";
+            case '₱' -> "PHP";
+            case '₪' -> "ILS";
+            case '₦' -> "NGN";
+            case '₲' -> "PYG";
+            case '₵' -> "GHS";
+            default -> null;
+        };
     }
 
     private String value(Object value) {

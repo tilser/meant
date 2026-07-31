@@ -1905,6 +1905,8 @@ export interface components {
         UserSettingsResponse: {
             /** Format: int32 */
             budget: number;
+            /** @description Preferred ISO 4217 currency used for catalog prices */
+            currency: string;
             clothingFit: string;
             location: components["schemas"]["UserLocationResponse"];
             locations: components["schemas"]["UserLocationResponse"][];
@@ -3186,6 +3188,8 @@ export interface components {
             budget?: number;
             budgetUnlimited?: boolean;
             clothingFit?: string;
+            /** @description Preferred ISO 4217 currency used for catalog prices */
+            currency?: string;
             location?: components["schemas"]["UserLocationRequest"];
             locations: components["schemas"]["UserLocationRequest"][];
             filterIds: string[];

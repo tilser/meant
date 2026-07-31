@@ -837,6 +837,7 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
                         {
                           "budget": 95,
                           "clothingFit": "men",
+                          "currency": "eur",
                           "locations": [
                             {
                               "id": "geonames:5128581"
@@ -856,6 +857,7 @@ class UserControllerIT extends PostgresIntegrationTestSupport {
 
         assertThat(body).isNotNull();
         assertThat(body.budget()).isEqualTo(95);
+        assertThat(body.currency()).isEqualTo("EUR");
         assertThat(body.clothingFit()).isEqualTo("men");
         assertThat(body.location()).isNotNull();
         assertThat(body.location().code()).isEqualTo("US");

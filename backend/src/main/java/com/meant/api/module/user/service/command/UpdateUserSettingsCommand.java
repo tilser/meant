@@ -22,6 +22,9 @@ public record UpdateUserSettingsCommand(
         @Pattern(regexp = "men|women|other|none")
         String clothingFit,
 
+        @Pattern(regexp = "(?i)[A-Z]{3}")
+        String currency,
+
         @Valid
         UserLocationCommand location,
 
@@ -36,4 +39,29 @@ public record UpdateUserSettingsCommand(
         @NotNull
         List<@NotBlank String> unmappedPreferences
 ) {
+
+    public UpdateUserSettingsCommand(
+            UUID id,
+            Integer budget,
+            boolean budgetUnlimited,
+            String clothingFit,
+            UserLocationCommand location,
+            List<UserLocationCommand> locations,
+            Set<String> filterIds,
+            Set<String> parsedFilterIds,
+            List<String> unmappedPreferences
+    ) {
+        this(
+                id,
+                budget,
+                budgetUnlimited,
+                clothingFit,
+                null,
+                location,
+                locations,
+                filterIds,
+                parsedFilterIds,
+                unmappedPreferences
+        );
+    }
 }

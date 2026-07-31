@@ -1,12 +1,13 @@
 package com.meant.api.module.catalog.service;
 
 import com.meant.api.module.catalog.service.dto.CanonicalProduct;
-import com.meant.api.plugin.catalog.common.dto.CatalogSearchFilters;
-import com.meant.api.plugin.catalog.common.dto.CatalogSearchPriceFilter;
 import com.meant.api.module.catalog.service.dto.Money;
+import com.meant.api.module.catalog.service.dto.Offer;
 import com.meant.api.module.catalog.service.dto.OfferAvailabilityStatus;
 import com.meant.api.module.catalog.service.dto.ProductAttribute;
 import com.meant.api.module.catalog.service.dto.ProductRankingContext;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchFilters;
+import com.meant.api.plugin.catalog.common.dto.CatalogSearchPriceFilter;
 import java.text.Normalizer;
 import java.util.List;
 import java.util.Locale;
@@ -26,9 +27,29 @@ public class ProductHardEligibilityPolicy {
     List<CanonicalProduct> eligible(List<CanonicalProduct> products, ProductRankingContext context) {
         return products == null ? List.of() : products.stream()
                 .filter(Objects::nonNull)
+                .map(product -> preferredCurrencyOffers(product, context))
+                .filter(Objects::nonNull)
                 .filter(product -> offerEligible(product, context))
                 .filter(product -> categoryEligible(product, context.hardFilters()))
                 .toList();
+    }
+
+    private CanonicalProduct preferredCurrencyOffers(CanonicalProduct product, ProductRankingContext context) {
+        String currency = context.searchContext() == null
+                ? null
+                : normalizedCurrency(context.searchContext().currency());
+        if (currency == null) {
+            return product;
+        }
+        List<Offer> offers = product.offers().stream()
+                .filter(offer -> currencyEligible(offer.price(), currency))
+                .filter(offer -> currencyEligible(offer.listPrice(), currency))
+                .toList();
+        return offers.isEmpty() ? null : product.withOffers(offers);
+    }
+
+    private boolean currencyEligible(Money price, String currency) {
+        return price == null || currency.equals(price.currency());
     }
 
     private boolean offerEligible(CanonicalProduct product, ProductRankingContext context) {

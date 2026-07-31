@@ -9,6 +9,12 @@ import java.util.List;
 public record UserSettingsResponse(
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         Integer budget,
+        @Schema(
+                description = "Preferred ISO 4217 currency used for catalog prices",
+                example = "USD",
+                requiredMode = Schema.RequiredMode.REQUIRED
+        )
+        String currency,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
         String clothingFit,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
@@ -40,6 +46,7 @@ public record UserSettingsResponse(
     ) {
         return new UserSettingsResponse(
                 result.budget(),
+                result.currency(),
                 result.clothingFit(),
                 UserLocationResponse.from(result.location()),
                 result.locations().stream().map(UserLocationResponse::from).toList(),

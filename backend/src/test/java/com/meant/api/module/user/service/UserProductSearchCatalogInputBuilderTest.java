@@ -67,11 +67,11 @@ class UserProductSearchCatalogInputBuilderTest {
         assertThat(input.context().addressRegion()).isEqualTo("NY");
         assertThat(input.context().postalCode()).isEqualTo("10001");
         assertThat(input.context().language()).isNull();
-        assertThat(input.context().currency()).isNull();
+        assertThat(input.context().currency()).isEqualTo("USD");
         assertThat(input.context().intent()).doesNotContain("USD");
         assertThat(input.cacheKey())
-                .contains("language=\n", "currency=\n")
-                .doesNotContain("language=en", "currency=USD");
+                .contains("language=\n", "currency=USD")
+                .doesNotContain("language=en");
     }
 
     @Test
@@ -133,7 +133,7 @@ class UserProductSearchCatalogInputBuilderTest {
     }
 
     @Test
-    void doesNotManufactureUsdForAmbiguousUnqualifiedPriceBounds() {
+    void usesPreferredUsdForUnqualifiedPriceBounds() {
         for (String request : List.of(
                 "linen shirt under 100",
                 "linen shirt under $100",
@@ -145,16 +145,70 @@ class UserProductSearchCatalogInputBuilderTest {
                     settings(new UserLocationResult("United States", "US", "New York"))
             );
 
-            assertThat(input.context().currency()).as(request).isNull();
-            assertThat(input.filters()).as(request).isNull();
-            assertThat(input.searchQuery()).as(request).isEqualTo(request.toLowerCase());
+            assertThat(input.context().currency()).as(request).isEqualTo("USD");
+            assertThat(input.filters().price().max()).as(request).isEqualTo(10_000L);
+            assertThat(input.searchQuery()).as(request).isEqualTo("linen shirt");
             assertThat(input.context().intent())
                     .as(request)
-                    .doesNotContain("Hard price filter");
+                    .contains("Hard price filter: at most 100 USD");
             assertThat(input.cacheKey())
                     .as(request)
-                    .contains("currency=\n", "priceMin=\n", "priceMax=");
+                    .contains("currency=USD", "priceMin=\n", "priceMax=10000");
         }
+    }
+
+    @Test
+    void usesTheAccountCurrencyForCatalogContextAndPriceFilters() {
+        UserSettingsResult preferredEur = new UserSettingsResult(
+                120,
+                "EUR",
+                null,
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                Instant.parse("2026-06-17T10:00:00Z"),
+                Instant.parse("2026-06-17T10:00:00Z")
+        );
+
+        UserProductSearchCatalogInput input = builder.build(
+                "linen shirt under €100",
+                intent("linen shirt under €100"),
+                preferredEur
+        );
+
+        assertThat(input.context().currency()).isEqualTo("EUR");
+        assertThat(input.filters().price().max()).isEqualTo(10_000L);
+        assertThat(input.context().intent()).contains("Hard price filter: at most 100 EUR");
+        assertThat(input.cacheKey()).contains("currency=EUR");
+    }
+
+    @Test
+    void respectsThePreferredCurrenciesMinorUnitExponent() {
+        UserSettingsResult preferredJpy = new UserSettingsResult(
+                120,
+                "JPY",
+                null,
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                Instant.parse("2026-06-17T10:00:00Z"),
+                Instant.parse("2026-06-17T10:00:00Z")
+        );
+
+        UserProductSearchCatalogInput input = builder.build(
+                "linen shirt under 100 JPY",
+                intent("linen shirt under 100 JPY"),
+                preferredJpy
+        );
+
+        assertThat(input.context().currency()).isEqualTo("JPY");
+        assertThat(input.filters().price().max()).isEqualTo(100L);
     }
 
     @Test
@@ -254,7 +308,7 @@ class UserProductSearchCatalogInputBuilderTest {
         assertThat(input.searchQuery()).isEqualTo("throw pillow");
         assertThat(input.context().addressCountry()).isEqualTo("CZ");
         assertThat(input.context().language()).isNull();
-        assertThat(input.context().currency()).isNull();
+        assertThat(input.context().currency()).isEqualTo("USD");
         assertThat(input.context().intent())
                 .contains("User delivery location signals: Prague, Czechia (CZ)")
                 .contains("Hard apparel audience filter: men's sizing")
@@ -264,10 +318,9 @@ class UserProductSearchCatalogInputBuilderTest {
         assertThat(input.signals().userAgent()).isEqualTo("Meant Test");
         assertThat(input.filters()).isNull();
         assertThat(input.cacheKey())
-                .contains("country=CZ", "language=\n", "currency=\n", "priceMax=")
+                .contains("country=CZ", "language=\n", "currency=USD", "priceMax=")
                 .doesNotContain(
                         "language=en",
-                        "currency=USD",
                         "buyerIp",
                         "userAgent",
                         "203.0.113.4",
@@ -306,7 +359,7 @@ class UserProductSearchCatalogInputBuilderTest {
         assertThat(input.context().addressRegion()).isEqualTo("NY");
         assertThat(input.context().postalCode()).isEqualTo("10001");
         assertThat(input.context().language()).isNull();
-        assertThat(input.context().currency()).isNull();
+        assertThat(input.context().currency()).isEqualTo("USD");
         assertThat(input.context().intent())
                 .contains("Catalog query: trail running shoes")
                 .contains("Organic - Prefer organic materials.")
@@ -455,7 +508,7 @@ class UserProductSearchCatalogInputBuilderTest {
         assertThat(input.context().addressRegion()).isNull();
         assertThat(input.context().postalCode()).isNull();
         assertThat(input.context().language()).isNull();
-        assertThat(input.context().currency()).isNull();
+        assertThat(input.context().currency()).isEqualTo("USD");
         assertThat(input.discoveryFilters()).isSameAs(qualifiedFilters);
     }
 
@@ -484,7 +537,7 @@ class UserProductSearchCatalogInputBuilderTest {
         );
 
         assertThat(input.searchQuery()).isEqualTo("desk lamp under 100 usd");
-        assertThat(input.context().currency()).isNull();
+        assertThat(input.context().currency()).isEqualTo("USD");
         assertThat(input.filters()).isNull();
         assertThat(input.context().intent()).doesNotContain("Hard price filter");
     }

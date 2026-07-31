@@ -191,7 +191,8 @@ public class UserCanonicalProductDetailService {
                 settings.location() == null
                         ? null
                         : CountryCodeNormalizer.normalizeAlpha2(settings.location().code()),
-                null
+                null,
+                settings.currency()
         );
     }
 

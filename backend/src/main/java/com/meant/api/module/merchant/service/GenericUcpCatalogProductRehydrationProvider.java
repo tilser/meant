@@ -147,17 +147,20 @@ public class GenericUcpCatalogProductRehydrationProvider
     ) {
         String country = context == null ? null : context.country();
         String language = context == null ? null : context.language();
+        String currency = context == null ? null : context.currency();
         GetMerchantProductDetailsQuery query = selection == null
                 ? new GetMerchantProductDetailsQuery(
                         integration.merchantId(),
                         reference.externalProductReference().value(),
                         country,
-                        language)
+                        language,
+                        currency)
                 : new GetMerchantProductDetailsQuery(
                         integration.merchantId(),
                         reference.externalProductReference().value(),
                         country,
                         language,
+                        currency,
                         selection.selectedOptions(),
                         selection.preferences());
         return productDetailsService.get(query);

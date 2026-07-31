@@ -21,7 +21,7 @@ class OfferRankingCorrectnessTest {
     private final ProductRankingService service = ProductRankingTestFactory.service();
 
     @Test
-    void usdAndEurPricesNeverCompeteAndRemainPermutationStable() {
+    void nonPreferredCurrencyOffersAreExcludedAndRankingRemainsPermutationStable() {
         Offer eur = offer("EUR", "eur", new Money(100, "EUR"), OfferAvailabilityStatus.IN_STOCK, 9_000, List.of());
         Offer usd = offer("USD", "usd", new Money(10_000, "USD"), OfferAvailabilityStatus.IN_STOCK, 9_000, List.of());
         List<Offer> reversed = new ArrayList<>(List.of(eur, usd));
@@ -32,9 +32,8 @@ class OfferRankingCorrectnessTest {
 
         assertThat(first.products().getFirst().offers()).extracting(Offer::key)
                 .containsExactlyElementsOf(second.products().getFirst().offers().stream().map(Offer::key).toList());
-        assertThat(first.products().getFirst().offers().getFirst()).isSameAs(usd);
-        assertUnknown(first.offerExplanations().get(eur.key()), OfferRankingExplanation.Name.ITEM_PRICE);
-        assertUnknown(first.offerExplanations().get(eur.key()), OfferRankingExplanation.Name.LANDED_PRICE);
+        assertThat(first.products().getFirst().offers()).containsExactly(usd);
+        assertThat(first.offerExplanations()).containsKey(usd.key()).doesNotContainKey(eur.key());
     }
 
     @Test

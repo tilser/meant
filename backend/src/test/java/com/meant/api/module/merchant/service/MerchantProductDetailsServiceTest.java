@@ -33,7 +33,8 @@ class MerchantProductDetailsServiceTest {
                 merchantId,
                 "gid://shopify/Product/1",
                 "US",
-                "en"
+                "en",
+                "EUR"
         ));
 
         assertThat(merchantLookupService.requestedMerchantId).isEqualTo(merchantId);
@@ -47,6 +48,7 @@ class MerchantProductDetailsServiceTest {
                 .isEqualTo("gid://shopify/Product/1");
         assertThat(merchantCatalogPluginDispatchService.requestedGetProductContext.addressCountry()).isEqualTo("US");
         assertThat(merchantCatalogPluginDispatchService.requestedGetProductContext.language()).isEqualTo("en");
+        assertThat(merchantCatalogPluginDispatchService.requestedGetProductContext.currency()).isEqualTo("EUR");
         assertThat(merchantCatalogPluginDispatchService.requestedGetProductContext.intent()).isEqualTo("Product detail");
         assertThat(result.product().title()).isEqualTo("Blue Shirt");
         assertThat(result.product().options()).extracting("name").containsExactly("Size");

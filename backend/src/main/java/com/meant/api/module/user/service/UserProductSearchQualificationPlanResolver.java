@@ -1,21 +1,23 @@
 package com.meant.api.module.user.service;
 
-import com.meant.api.common.util.CountryCodeNormalizer;
 import com.meant.api.common.exception.OpenRouterException;
+import com.meant.api.common.util.CountryCodeNormalizer;
+import com.meant.api.module.user.constant.UserCurrency;
 import com.meant.api.module.user.constant.UserProductSearchAttributeName;
 import com.meant.api.module.user.constant.UserProductSearchDecisionSource;
 import com.meant.api.module.user.constant.UserProductSearchFilterState;
 import com.meant.api.module.user.constant.UserProductSearchQuestionTarget;
 import com.meant.api.module.user.constant.UserProductSearchQueryLimits;
 import com.meant.api.module.user.constant.UserTasteSignalStatus;
+import com.meant.api.module.user.service.dto.UserLocationResult;
 import com.meant.api.module.user.service.dto.UserProductSearchPreferenceResult;
 import com.meant.api.module.user.service.dto.UserProductSearchQualificationPlan;
-import com.meant.api.module.user.service.dto.UserLocationResult;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
 import com.meant.api.module.user.service.query.GenerateUserProductSearchQualificationQuery;
 import java.math.BigDecimal;
 import java.text.Normalizer;
 import java.util.ArrayList;
+import java.util.Currency;
 import java.util.EnumMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -89,9 +91,6 @@ public class UserProductSearchQualificationPlanResolver {
     );
     private static final Pattern LOCATION_ANYWHERE_QUERY_PATTERN = Pattern.compile(
             "(?iu)\\b(?:ship(?:ping)?\\s+)?anywhere\\b"
-    );
-    private static final Pattern EXPLICIT_USD_DENOMINATION_PATTERN = Pattern.compile(
-            "(?iu)(?:\\busd\\b|\\bu\\.s\\.\\s+dollars?\\b|\\bus\\s+dollars?\\b)"
     );
     private static final String PRICE_AMOUNT_PATTERN =
             "(?:\\d{1,3}(?:[\\s.,]\\d{3})+|\\d+)(?:[.,]\\d{1,2})?";
@@ -223,20 +222,14 @@ public class UserProductSearchQualificationPlanResolver {
                         UserProductSearchQualificationPlan.PriceFilter::state,
                         UserProductSearchQualificationPlan.PriceFilter::provenance
                 );
-        if (price.state() == UserProductSearchFilterState.VALUE
-                && !explicitUsdDenomination(price.provenance().evidence())) {
-            violations.add("PRICE VALUE requires an explicit USD denomination");
-            price = missingPrice();
-        } else if (!priceUnchanged
+        if (!priceUnchanged
                 && price.state() == UserProductSearchFilterState.VALUE
                 && !priceBoundsMatchEvidence(price, query)) {
             violations.add("PRICE typed bounds do not match the buyer's grounded bound direction and values");
             price = missingPrice();
         } else if (price.state() == UserProductSearchFilterState.NOT_APPLICABLE
                 && hasPriceBound(query)) {
-            violations.add(hasCurrencyAmbiguousPriceBound(query)
-                    ? "PRICE cannot be irrelevant while a currency-ambiguous bound is present"
-                    : "PRICE cannot be irrelevant while an explicit USD bound is present");
+            violations.add("PRICE cannot be irrelevant while a price bound is present");
             price = missingPrice();
         }
         var rating = unchanged(previous == null ? null : previous.rating(), candidate.rating())
@@ -773,10 +766,10 @@ public class UserProductSearchQualificationPlanResolver {
         UserProductSearchQualificationPlan previous = currentPreviousPlan(query);
         if (previous != null) {
             if (previous.price().minUsdMinor() != null) {
-                values.add(usdMajor(previous.price().minUsdMinor()));
+                values.add(majorAmount(previous.price().minUsdMinor(), preferredCurrency(query)));
             }
             if (previous.price().maxUsdMinor() != null) {
-                values.add(usdMajor(previous.price().maxUsdMinor()));
+                values.add(majorAmount(previous.price().maxUsdMinor(), preferredCurrency(query)));
             }
         }
         return List.copyOf(values);
@@ -870,6 +863,13 @@ public class UserProductSearchQualificationPlanResolver {
     }
 
     public UserProductSearchQualificationPlan safeFallback(UserProductSearchQualificationPlan plan) {
+        return safeFallback(plan, UserCurrency.DEFAULT);
+    }
+
+    private UserProductSearchQualificationPlan safeFallback(
+            UserProductSearchQualificationPlan plan,
+            String preferredCurrency
+    ) {
         requireSafeFallbackQuery(plan.effectiveQuery());
         List<UserProductSearchQuestionTarget> missing = plan.missingTargets();
         if (missing.isEmpty()) {
@@ -888,9 +888,12 @@ public class UserProductSearchQualificationPlanResolver {
             );
         }
         if (missing.size() == 1 && missing.getFirst() == UserProductSearchQuestionTarget.PRICE) {
-            return priceFallbackQuestion(plan, missing);
+            return priceFallbackQuestion(plan, missing, preferredCurrency);
         }
-        String labels = missing.stream().map(this::label).reduce((left, right) -> left + ", " + right).orElse("");
+        String labels = missing.stream()
+                .map(target -> label(target, preferredCurrency))
+                .reduce((left, right) -> left + ", " + right)
+                .orElse("");
         return plan.withConversation(
                 "I still need your preferences for " + labels + ". Please answer each one, or say explicitly "
                         + "which ones do not matter to you.",
@@ -905,7 +908,7 @@ public class UserProductSearchQualificationPlanResolver {
     ) {
         UserProductSearchQualificationPlan continuation =
                 conservativeContinuation(query).orElse(plan);
-        return safeFallback(categoryPolicy.enforceConservativeFallback(continuation, query));
+        return safeFallback(categoryPolicy.enforceConservativeFallback(continuation, query), preferredCurrency(query));
     }
 
     public UserProductSearchQualificationPlan safeFallback(GenerateUserProductSearchQualificationQuery query) {
@@ -921,7 +924,7 @@ public class UserProductSearchQualificationPlanResolver {
             return safeFallback(categoryPolicy.enforceConservativeFallback(
                     continuation.get(),
                     query
-            ));
+            ), preferredCurrency(query));
         }
         String denialReason = categoryPolicy.conservativeFallbackDenialReason(query);
         if (denialReason != null) {
@@ -975,7 +978,7 @@ public class UserProductSearchQualificationPlanResolver {
                         UserProductSearchFilterState.NOT_APPLICABLE, List.of(), none),
                 List.of()
         );
-        return safeFallback(categoryPolicy.enforceConservativeFallback(fallback, query));
+        return safeFallback(categoryPolicy.enforceConservativeFallback(fallback, query), preferredCurrency(query));
     }
 
     private void requireSafeFallbackQuery(String effectiveQuery) {
@@ -991,29 +994,26 @@ public class UserProductSearchQualificationPlanResolver {
 
     private UserProductSearchQualificationPlan priceFallbackQuestion(
             UserProductSearchQualificationPlan plan,
-            List<UserProductSearchQuestionTarget> missing
+            List<UserProductSearchQuestionTarget> missing,
+            String preferredCurrency
     ) {
         String query = plan.effectiveQuery();
         boolean directionalBound = directionalPriceBoundMentioned(query);
         boolean standaloneAmount = STANDALONE_DENOMINATED_PRICE_PATTERN.matcher(query).find()
                 && !directionalBound;
-        if (directionalBound && !explicitUsdDenomination(query)) {
+        if (standaloneAmount) {
             return plan.withConversation(
-                    "What currency is your price bound in? Product price filtering currently supports USD.",
-                    List.of("USD"),
+                    "Should the stated " + preferredCurrency
+                            + " amount be a minimum, a maximum, or one end of a range?",
+                    List.of(),
                     missing
             );
         }
-        if (standaloneAmount) {
-            String message = explicitUsdDenomination(query)
-                    ? "Should the stated USD amount be a minimum, a maximum, or one end of a range?"
-                    : "What currency is the stated amount in, and should it be a minimum, a maximum, "
-                            + "or one end of a range? Product price filtering currently supports USD.";
-            return plan.withConversation(message, List.of(), missing);
-        }
         return plan.withConversation(
-                "What minimum, maximum, or price range should I use? "
-                        + "Product price filtering currently supports USD. "
+                directionalBound
+                        ? "Please confirm the price bound I should use in " + preferredCurrency + "."
+                        : "What minimum, maximum, or price range should I use? "
+                        + "Your Account settings currently use " + preferredCurrency + ". "
                         + "You can also say that price does not matter.",
                 List.of("Price does not matter"),
                 missing
@@ -1080,7 +1080,7 @@ public class UserProductSearchQualificationPlanResolver {
         }
 
         UserProductSearchQualificationPlan candidate =
-                applyDirectAnswers(previous, turn, answers);
+                applyDirectAnswers(previous, turn, answers, preferredCurrency(query));
         Resolution resolution = resolve(candidate, query);
         return resolution.valid() ? Optional.of(resolution.plan()) : Optional.empty();
     }
@@ -1113,7 +1113,8 @@ public class UserProductSearchQualificationPlanResolver {
     private UserProductSearchQualificationPlan applyDirectAnswers(
             UserProductSearchQualificationPlan previous,
             String turn,
-            EnumMap<UserProductSearchQuestionTarget, DirectAnswer> answers
+            EnumMap<UserProductSearchQuestionTarget, DirectAnswer> answers,
+            String preferredCurrency
     ) {
         UserProductSearchQualificationPlan.Provenance current =
                 new UserProductSearchQualificationPlan.Provenance(
@@ -1209,7 +1210,7 @@ public class UserProductSearchQualificationPlanResolver {
         String assistantMessage = remaining.isEmpty()
                 ? "I have everything I need to search."
                 : "Please provide " + remaining.stream()
-                        .map(this::label)
+                        .map(target -> label(target, preferredCurrency))
                         .reduce((left, right) -> left + ", " + right)
                         .orElseThrow() + " before I search.";
 
@@ -1497,28 +1498,21 @@ public class UserProductSearchQualificationPlanResolver {
             List<String> violations
     ) {
         if (filter.state() == UserProductSearchFilterState.VALUE
-                && !explicitUsdDenomination(filter.provenance().evidence())) {
-            violations.add("PRICE VALUE requires an explicit USD denomination");
-            return missingPrice();
-        }
-        if (filter.state() == UserProductSearchFilterState.VALUE
                 && !priceBoundsMatchEvidence(filter, query)) {
             violations.add("PRICE typed bounds do not match the buyer's grounded bound direction and values");
             return missingPrice();
         }
         if (filter.state() == UserProductSearchFilterState.NOT_APPLICABLE
                 && hasPriceBound(query)) {
-            violations.add(hasCurrencyAmbiguousPriceBound(query)
-                    ? "PRICE cannot be irrelevant while a currency-ambiguous bound is present"
-                    : "PRICE cannot be irrelevant while an explicit USD bound is present");
+            violations.add("PRICE cannot be irrelevant while a price bound is present");
             return missingPrice();
         }
         List<String> values = new ArrayList<>();
         if (filter.minUsdMinor() != null) {
-            values.add(usdMajor(filter.minUsdMinor()));
+            values.add(majorAmount(filter.minUsdMinor(), preferredCurrency(query)));
         }
         if (filter.maxUsdMinor() != null) {
-            values.add(usdMajor(filter.maxUsdMinor()));
+            values.add(majorAmount(filter.maxUsdMinor(), preferredCurrency(query)));
         }
         if (validResolution(filter.state(), filter.provenance(), UserProductSearchQuestionTarget.PRICE,
                 values, query, violations)) {
@@ -1527,12 +1521,6 @@ public class UserProductSearchQualificationPlanResolver {
         return new UserProductSearchQualificationPlan.PriceFilter(
                 UserProductSearchFilterState.MISSING, null, null,
                 UserProductSearchQualificationPlan.Provenance.none());
-    }
-
-    private boolean hasCurrencyAmbiguousPriceBound(GenerateUserProductSearchQualificationQuery query) {
-        return priceConstraintSources(query).stream()
-                .anyMatch(source -> priceExpressionMentioned(source)
-                        && !explicitUsdDenomination(source));
     }
 
     private boolean hasPriceBound(GenerateUserProductSearchQualificationQuery query) {
@@ -1572,8 +1560,35 @@ public class UserProductSearchQualificationPlanResolver {
         return false;
     }
 
-    private boolean explicitUsdDenomination(String value) {
-        return value != null && EXPLICIT_USD_DENOMINATION_PATTERN.matcher(value).find();
+    private boolean explicitPreferredCurrencyDenomination(
+            String value,
+            GenerateUserProductSearchQualificationQuery query
+    ) {
+        return explicitCurrencyDenomination(value, preferredCurrency(query));
+    }
+
+    private boolean explicitCurrencyDenomination(String value, String currency) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        if (Pattern.compile("(?iu)(?<![\\p{L}\\p{N}])" + Pattern.quote(currency)
+                + "(?![\\p{L}\\p{N}])").matcher(value).find()) {
+            return true;
+        }
+        return switch (currency) {
+            case "USD" -> Pattern.compile("(?iu)\\b(?:u\\.s\\.|us)\\s+dollars?\\b").matcher(value).find();
+            case "EUR" -> Pattern.compile("(?iu)\\beuros?\\b|€").matcher(value).find();
+            case "GBP" -> Pattern.compile("(?iu)\\b(?:british\\s+)?pounds?\\b|£").matcher(value).find();
+            case "CZK" -> Pattern.compile("(?iu)\\b(?:czech\\s+)?crowns?\\b|\\bkorun(?:a|y)?\\b|kč")
+                    .matcher(value).find();
+            default -> false;
+        };
+    }
+
+    private String preferredCurrency(GenerateUserProductSearchQualificationQuery query) {
+        return query == null || query.settings() == null
+                ? UserCurrency.DEFAULT
+                : UserCurrency.normalizeOrDefault(query.settings().currency());
     }
 
     private boolean priceBoundsMatchEvidence(
@@ -1590,7 +1605,7 @@ public class UserProductSearchQualificationPlanResolver {
         PriceBounds grounded = parsePriceBounds(source);
         if (grounded == null
                 && provenance.source() == UserProductSearchDecisionSource.CURRENT_USER_TURN
-                && explicitUsdDenomination(provenance.evidence())
+                && explicitPreferredCurrencyDenomination(provenance.evidence(), query)
                 && query.previousPlan() != null
                 && query.previousPlan().questionTargets()
                 .contains(UserProductSearchQuestionTarget.PRICE)) {
@@ -1600,8 +1615,8 @@ public class UserProductSearchQualificationPlanResolver {
             }
         }
         return grounded != null
-                && minorUnitsMatch(filter.minUsdMinor(), grounded.min())
-                && minorUnitsMatch(filter.maxUsdMinor(), grounded.max());
+                && minorUnitsMatch(filter.minUsdMinor(), grounded.min(), preferredCurrency(query))
+                && minorUnitsMatch(filter.maxUsdMinor(), grounded.max(), preferredCurrency(query));
     }
 
     private PriceBounds parsePriceBounds(String source) {
@@ -1630,11 +1645,12 @@ public class UserProductSearchQualificationPlanResolver {
         return amount;
     }
 
-    private boolean minorUnitsMatch(Long actualMinor, BigDecimal expectedMajor) {
+    private boolean minorUnitsMatch(Long actualMinor, BigDecimal expectedMajor, String currency) {
         if (actualMinor == null || expectedMajor == null) {
             return actualMinor == null && expectedMajor == null;
         }
-        return BigDecimal.valueOf(actualMinor, 2)
+        int fractionDigits = Currency.getInstance(currency).getDefaultFractionDigits();
+        return BigDecimal.valueOf(actualMinor, fractionDigits < 0 ? 2 : fractionDigits)
                 .compareTo(expectedMajor) == 0;
     }
 
@@ -2141,7 +2157,7 @@ public class UserProductSearchQualificationPlanResolver {
                     && directCountryCode(source).isPresent();
             case PRICE -> priceExpressionMentioned(source)
                     || currentAnswer && (source.matches("(?iu).*\\d.*")
-                    || explicitUsdDenomination(source));
+                    || explicitPreferredCurrencyDenomination(source, query));
             case COLOR -> COLOR_CONSTRAINT_PATTERN.matcher(source).find();
             case SIZE -> SIZE_CONSTRAINT_PATTERN.matcher(source).find()
                     || currentAnswer && directSizeValue(source).isPresent();
@@ -2426,12 +2442,12 @@ public class UserProductSearchQualificationPlanResolver {
         };
     }
 
-    private String label(UserProductSearchQuestionTarget target) {
+    private String label(UserProductSearchQuestionTarget target, String preferredCurrency) {
         return switch (target) {
             case CONDITION -> "condition";
             case SHIPS_TO -> "delivery destination";
             case SHIPS_FROM -> "shipping origin";
-            case PRICE -> "price and currency (USD is currently supported)";
+            case PRICE -> "price and currency (" + preferredCurrency + " is selected in Account settings)";
             case COLOR -> "color";
             case SIZE -> "size";
             case TARGET_GENDER -> "target gender";
@@ -2869,7 +2885,7 @@ public class UserProductSearchQualificationPlanResolver {
         ) || "0".equals(expected) && containsPhrase(normalize(evidence), "free");
         boolean currencyContinuation = provenance.source()
                 == UserProductSearchDecisionSource.CURRENT_USER_TURN
-                && explicitUsdDenomination(evidence)
+                && explicitPreferredCurrencyDenomination(evidence, query)
                 && query.previousPlan() != null
                 && query.previousPlan().questionTargets()
                 .contains(UserProductSearchQuestionTarget.PRICE)
@@ -2974,8 +2990,11 @@ public class UserProductSearchQualificationPlanResolver {
         }
     }
 
-    private String usdMajor(long minor) {
-        return BigDecimal.valueOf(minor, 2).stripTrailingZeros().toPlainString();
+    private String majorAmount(long minor, String currency) {
+        int fractionDigits = Currency.getInstance(currency).getDefaultFractionDigits();
+        return BigDecimal.valueOf(minor, fractionDigits < 0 ? 2 : fractionDigits)
+                .stripTrailingZeros()
+                .toPlainString();
     }
 
     private record PriceBounds(BigDecimal min, BigDecimal max) {

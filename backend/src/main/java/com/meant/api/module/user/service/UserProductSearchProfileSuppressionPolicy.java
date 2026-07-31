@@ -86,6 +86,7 @@ public class UserProductSearchProfileSuppressionPolicy {
         boolean suppressDestination = targets.contains(UserProductSearchQuestionTarget.SHIPS_TO);
         return new UserSettingsResult(
                 suppressPrice ? null : settings.budget(),
+                settings.currency(),
                 targets.contains(UserProductSearchQuestionTarget.TARGET_GENDER)
                         ? null
                         : settings.clothingFit(),

@@ -436,7 +436,7 @@ public class ShopifyCatalogProductRehydrationProvider
                 null,
                 null,
                 context == null ? null : context.language(),
-                null,
+                context == null ? null : context.currency(),
                 "Rehydrate selected product"
         );
     }
@@ -447,7 +447,7 @@ public class ShopifyCatalogProductRehydrationProvider
                 null,
                 null,
                 context == null ? null : context.language(),
-                null,
+                context == null ? null : context.currency(),
                 "Open saved product detail"
         );
     }

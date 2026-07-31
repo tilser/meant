@@ -3,6 +3,7 @@ package com.meant.api.module.user.service;
 import com.meant.api.common.util.CountryCodeNormalizer;
 import com.meant.api.module.user.constant.ShoppingFilterDefaults;
 import com.meant.api.module.user.constant.UserClothingFit;
+import com.meant.api.module.user.constant.UserCurrency;
 import com.meant.api.module.user.entity.ShoppingFilter;
 import com.meant.api.module.user.entity.UserSettings;
 import com.meant.api.module.user.entity.UserSettingsLocation;
@@ -84,6 +85,9 @@ public class UserSettingsService {
         if (command.clothingFit() != null) {
             settings.updateClothingFit(UserClothingFit.persistedValue(command.clothingFit()), now);
         }
+        if (command.currency() != null) {
+            settings.updateCurrency(UserCurrency.normalize(command.currency()), now);
+        }
         List<UserLocationResult> locations = null;
         if (command.locations() != null) {
             locations = replaceLocations(settings, command.locations(), now);
@@ -149,7 +153,8 @@ public class UserSettingsService {
     private UserSettings findOrCreateSettings(UUID userId, Instant now) {
         return userSettingsRepository.findById(userId)
                 .orElseGet(() -> {
-                    int inserted = userSettingsRepository.insertDefaultIfMissing(userId, DEFAULT_BUDGET, now);
+                    int inserted = userSettingsRepository.insertDefaultIfMissing(
+                            userId, DEFAULT_BUDGET, UserCurrency.DEFAULT, now);
                     if (inserted > 0) {
                         userShoppingFilterRepository.insertIfMissing(
                                 userId,

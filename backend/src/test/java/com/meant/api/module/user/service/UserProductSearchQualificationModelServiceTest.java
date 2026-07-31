@@ -62,6 +62,7 @@ class UserProductSearchQualificationModelServiceTest {
                         "blue jeans",
                         "United States",
                         "men",
+                        "\"priceCurrency\":\"USD\"",
                         "\"budget\":{\"value\":999,\"authority\":\"NON_AUTHORITATIVE_DEFAULT_NO_PROVENANCE\"}"
                 );
 
@@ -106,6 +107,41 @@ class UserProductSearchQualificationModelServiceTest {
         });
         assertThat(result.model()).isEqualTo("chat-model");
         assertThat(result.promptVersion()).isEqualTo("qualification-v1");
+    }
+
+    @Test
+    void suppliesTheAccountCurrencyAsTrustedQualificationContext() {
+        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient(combinedQuestionResponse());
+        GenerateUserProductSearchQualificationQuery request = new GenerateUserProductSearchQualificationQuery(
+                "blue jeans",
+                "blue jeans",
+                null,
+                settingsWithCurrency("EUR"),
+                List.of()
+        );
+
+        service(client).generate(request);
+
+        assertThat(client.userPrompts.getFirst()).contains("\"priceCurrency\":\"EUR\"");
+    }
+
+    @Test
+    void convertsModelPriceBoundsUsingTheAccountCurrenciesMinorUnitExponent() {
+        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient(
+                missingRatingRepairResponse().replace("100 USD", "100 JPY")
+        );
+        String request = "new desk lamp under 100 JPY shipped to US from CA, low price tier";
+        GenerateUserProductSearchQualificationQuery query = new GenerateUserProductSearchQualificationQuery(
+                request,
+                request,
+                null,
+                settingsWithCurrency("JPY"),
+                List.of()
+        );
+
+        UserProductSearchQualificationPlan plan = service(client).generate(query).plan();
+
+        assertThat(plan.price().maxUsdMinor()).isEqualTo(100L);
     }
 
     @Test
@@ -489,6 +525,23 @@ class UserProductSearchQualificationModelServiceTest {
                 List.of(),
                 Instant.parse("2026-07-17T10:00:00Z"),
                 Instant.parse("2026-07-17T10:00:00Z")
+        );
+    }
+
+    private UserSettingsResult settingsWithCurrency(String currency) {
+        UserSettingsResult base = settings();
+        return new UserSettingsResult(
+                base.budget(),
+                currency,
+                base.clothingFit(),
+                base.location(),
+                base.locations(),
+                base.filters(),
+                base.availableFilters(),
+                base.parsedFilterIds(),
+                base.unmappedPreferences(),
+                base.createdAt(),
+                base.updatedAt()
         );
     }
 

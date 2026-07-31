@@ -85,6 +85,7 @@ public final class UserCommandMapper {
                 request.budget(),
                 Boolean.TRUE.equals(request.budgetUnlimited()),
                 request.clothingFit(),
+                request.currency(),
                 null,
                 resolvedLocations,
                 request.filterIds() == null ? null : new LinkedHashSet<>(request.filterIds()),

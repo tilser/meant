@@ -318,7 +318,10 @@ public class UserProductVariantSelectionService {
         String country = settings == null || settings.location() == null
                 ? null
                 : CountryCodeNormalizer.normalizeAlpha2(settings.location().code());
-        return new CatalogRehydrationContext(country, null);
+        return new CatalogRehydrationContext(
+                country,
+                null,
+                settings == null ? null : settings.currency());
     }
 
     private void validateOptions(SelectUserProductVariantCommand command) {

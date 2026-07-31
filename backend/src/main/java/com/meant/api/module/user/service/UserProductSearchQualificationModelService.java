@@ -7,6 +7,7 @@ import com.meant.api.common.service.OpenRouterJsonExtractor;
 import com.meant.api.common.service.dto.OpenRouterJsonSchemaDefinition;
 import com.meant.api.common.util.CountryCodeNormalizer;
 import com.meant.api.module.catalog.service.port.CatalogSearchParameterContractProvider;
+import com.meant.api.module.user.constant.UserCurrency;
 import com.meant.api.module.user.constant.UserProductCondition;
 import com.meant.api.module.user.constant.UserProductPriceTier;
 import com.meant.api.module.user.constant.UserProductSearchAttributeName;
@@ -24,6 +25,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.Currency;
 import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -82,7 +84,8 @@ public class UserProductSearchQualificationModelService {
             When the previous verified question asked for multiple targets and explicitly offered a bare “I don’t
             care” answer for all of them, that bare answer resolves every target in that question to ANY. If the user
             names only one target, apply ANY only to that named target.
-            PROFILE may resolve only SHIPS_TO from primaryLocation and TARGET_GENDER from clothing fit. Other saved
+            PROFILE may resolve only SHIPS_TO from primaryLocation and TARGET_GENDER from clothing fit; its
+            priceCurrency supplies denomination context but not hard-filter provenance or a price value. Other saved
             locations are reference context only and must never be used as PROFILE provenance. A stored
             DURABLE_PREFERENCE may resolve only SIZE and only when its scope clearly matches the current product noun.
             When PROFILE resolves SHIPS_TO, copy country, region, and postalCode exactly from primaryLocation.
@@ -99,15 +102,15 @@ public class UserProductSearchQualificationModelService {
             IDs and never output these filters. Preserve natural-language shop, brand, and category constraints in
             effectiveQuery instead.
 
-            Decide CONDITION, SHIPS_TO, SHIPS_FROM, PRICE, RATING, and PRICE_TIER independently. PRICE is USD only
-            and one valid bound is sufficient, but never infer USD from an unqualified number, a bare “$” symbol,
-            or the generic word “dollar(s)”. A price value requires an explicit USD, US dollar(s), or U.S. dollar(s)
-            denomination in trusted user evidence. If the denomination is ambiguous, keep PRICE missing and ask
-            which currency they mean, noting that this search currently supports USD. A later explicit “USD” answer
-            may qualify a numeric bound only from this same pending search, never from an older search in the
-            conversation. RATING may contain min, minCount, or both. A missing optional bound does not make an
+            Decide CONDITION, SHIPS_TO, SHIPS_FROM, PRICE, RATING, and PRICE_TIER independently. PRICE uses only the
+            profile priceCurrency (USD when absent), and one valid bound is sufficient. Treat an unqualified numeric
+            price bound as denominated in that profile currency. An explicit different currency is rejected before
+            this assessment. The profile supplies only the denomination, never a minimum, maximum, or budget value.
+            A later answer may qualify a numeric bound only from this same pending search, never from an older search
+            in the conversation. RATING may contain min, minCount, or both. A missing optional bound does not make an
             otherwise valid filter unresolved. CONDITION supports NEW and SECONDHAND. Location countries use ISO
-            3166-1 alpha-2. PRICE_TIER supports LOW, MEDIUM, and HIGH.
+            3166-1 alpha-2. PRICE_TIER supports LOW, MEDIUM, and HIGH. The legacy price fields minUsd and maxUsd always
+            contain major units in the profile priceCurrency, despite their names.
 
             Relevance and criticality are category-specific. A filter is relevant only when it would materially
             improve this particular search, and a missing relevant value should block search only when results would
@@ -274,7 +277,7 @@ public class UserProductSearchQualificationModelService {
                 responseSchema(),
                 searchProperties.qualificationMaximumOutputTokens()
         );
-        return sanitize(parse(response));
+        return sanitize(parse(response), UserCurrency.normalizeOrDefault(query.settings().currency()));
     }
 
     private String userPrompt(GenerateUserProductSearchQualificationQuery query, String repairFeedback) {
@@ -344,6 +347,7 @@ public class UserProductSearchQualificationModelService {
                         settings.budget(),
                         "NON_AUTHORITATIVE_DEFAULT_NO_PROVENANCE"
                 ),
+                UserCurrency.normalizeOrDefault(settings.currency()),
                 blankToNull(settings.clothingFit()),
                 locationPrompt(primaryLocation),
                 safe(settings.locations()).stream()
@@ -543,7 +547,7 @@ public class UserProductSearchQualificationModelService {
         }
     }
 
-    private UserProductSearchQualificationPlan sanitize(ModelResponse response) {
+    private UserProductSearchQualificationPlan sanitize(ModelResponse response, String currency) {
         if (response == null) {
             throw invalid("response was empty");
         }
@@ -579,7 +583,7 @@ public class UserProductSearchQualificationModelService {
                 condition(condition),
                 shipsTo(shipsTo),
                 shipsFrom(shipsFrom),
-                price(price),
+                price(price, currency),
                 new UserProductSearchQualificationPlan.ReferenceFilter(
                         UserProductSearchFilterState.NOT_APPLICABLE,
                         List.of(),
@@ -652,12 +656,16 @@ public class UserProductSearchQualificationModelService {
         );
     }
 
-    private UserProductSearchQualificationPlan.PriceFilter price(RawPrice raw) {
+    private UserProductSearchQualificationPlan.PriceFilter price(RawPrice raw, String currency) {
         boolean hasValue = raw.minUsd() != null || raw.maxUsd() != null;
         UserProductSearchFilterState state = state(
                 raw.relevant(), raw.explicitAny(), hasValue, "price");
-        Long min = state == UserProductSearchFilterState.VALUE ? usdMinor(raw.minUsd(), "price.minUsd") : null;
-        Long max = state == UserProductSearchFilterState.VALUE ? usdMinor(raw.maxUsd(), "price.maxUsd") : null;
+        Long min = state == UserProductSearchFilterState.VALUE
+                ? minorUnits(raw.minUsd(), currency, "price.minUsd")
+                : null;
+        Long max = state == UserProductSearchFilterState.VALUE
+                ? minorUnits(raw.maxUsd(), currency, "price.maxUsd")
+                : null;
         if (state == UserProductSearchFilterState.VALUE && min == null && max == null) {
             throw invalid("price VALUE requires minUsd or maxUsd");
         }
@@ -819,15 +827,18 @@ public class UserProductSearchQualificationModelService {
                 .toList();
     }
 
-    private Long usdMinor(BigDecimal value, String field) {
+    private Long minorUnits(BigDecimal value, String currency, String field) {
         BigDecimal normalized = nonNegativeOrNull(value);
         if (normalized == null) {
             return null;
         }
         try {
-            return normalized.movePointRight(2).setScale(0, RoundingMode.HALF_UP).longValueExact();
+            int fractionDigits = Currency.getInstance(currency).getDefaultFractionDigits();
+            return normalized.movePointRight(fractionDigits < 0 ? 2 : fractionDigits)
+                    .setScale(0, RoundingMode.HALF_UP)
+                    .longValueExact();
         } catch (ArithmeticException exception) {
-            throw invalid(field + " is outside the supported USD range");
+            throw invalid(field + " is outside the supported " + currency + " range");
         }
     }
 
@@ -933,6 +944,7 @@ public class UserProductSearchQualificationModelService {
 
     private record SettingsPrompt(
             BudgetPrompt budget,
+            String priceCurrency,
             String clothingFit,
             LocationPrompt primaryLocation,
             List<LocationPrompt> otherSavedLocations,

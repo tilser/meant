@@ -157,7 +157,10 @@ public class UserSavedProductService {
         String countryCode = settings == null || settings.location() == null
                 ? null
                 : CountryCodeNormalizer.normalizeAlpha2(settings.location().code());
-        return new CatalogRehydrationContext(countryCode, null);
+        return new CatalogRehydrationContext(
+                countryCode,
+                null,
+                settings == null ? null : settings.currency());
     }
 
     private boolean retentionPolicyMatches(

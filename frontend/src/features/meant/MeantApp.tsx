@@ -293,12 +293,14 @@ function applySettingsPayload(
   setAvailablePrefs: Dispatch<SetStateAction<Preference[]>>,
   setPrefsOn: Dispatch<SetStateAction<PreferenceId[]>>,
   setBudget: Dispatch<SetStateAction<number | null>>,
+  setCurrency: Dispatch<SetStateAction<string>>,
   setDeliveryLocations: Dispatch<SetStateAction<UserLocation[]>>,
   setClothingFit: Dispatch<SetStateAction<ClothingFit>>,
 ) {
   setAvailablePrefs(settings.availableFilters.map(preferenceFromFilter))
   setPrefsOn(settings.filters.map((filter) => filter.id))
   setBudget(settings.budget)
+  setCurrency(settings.currency?.trim().toUpperCase() || 'USD')
   setDeliveryLocations(settingsLocations(settings))
   setClothingFit(clothingFitFromSettings(settings))
 }
@@ -699,6 +701,10 @@ export function MeantApp() {
   const [budget, setBudget] = useStoredState<number | null>(
     accountStorageKey('meant.budget', userId),
     DEFAULT_BUDGET,
+  )
+  const [currency, setCurrency] = useStoredState<string>(
+    accountStorageKey('meant.currency', userId),
+    'USD',
   )
   const [deliveryLocations, setDeliveryLocations] = useStoredState<UserLocation[]>(
     accountStorageKey('meant.locations', userId),
@@ -1531,6 +1537,7 @@ export function MeantApp() {
           setAvailablePrefs,
           setPrefsOn,
           setBudget,
+          setCurrency,
           setDeliveryLocations,
           setClothingFit,
         )
@@ -1592,6 +1599,7 @@ export function MeantApp() {
     setUser,
     setPrefsOn,
     setBudget,
+    setCurrency,
     setDeliveryLocations,
     setClothingFit,
   ])
@@ -2371,6 +2379,7 @@ export function MeantApp() {
       setAvailablePrefs,
       setPrefsOn,
       setBudget,
+      setCurrency,
       setDeliveryLocations,
       setClothingFit,
     )
@@ -2444,6 +2453,7 @@ export function MeantApp() {
 
   const saveSettings = async (input: {
     budget?: number | null
+    currency?: string
     clothingFit?: ClothingFit
     locations?: readonly UserLocation[]
     filterIds?: readonly PreferenceId[]
@@ -3100,6 +3110,7 @@ export function MeantApp() {
           <AccountView
             key={userId ?? 'anonymous'}
             user={user}
+            currency={currency}
             userId={userId}
             providerAvatar={providerAvatar}
             merchants={currentMerchants}
@@ -3116,6 +3127,11 @@ export function MeantApp() {
             onConnectMerchant={connectMerchantIdentity}
             onRevokeMerchant={revokeMerchantIdentity}
             onNewsletterChange={updateNewsletter}
+            onCurrencyChange={async (nextCurrency) => {
+              if (!(await saveSettings({ currency: nextCurrency }))) {
+                throw new Error('Could not update currency')
+              }
+            }}
             onDone={() => nav('discover')}
           />
         )

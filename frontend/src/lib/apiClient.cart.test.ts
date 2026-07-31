@@ -485,6 +485,12 @@ describe('qualified product search API', () => {
 })
 
 describe('product search preferences API', () => {
+  test('sends the preferred display currency with settings updates', async () => {
+    await updateUserSettings({ currency: 'EUR' })
+
+    expect(await requests[0]?.json()).toEqual({ currency: 'EUR' })
+  })
+
   test('sends one scoped size preference for merge', async () => {
     await updateUserSettings({
       productSearchPreferences: [

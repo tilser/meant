@@ -1072,7 +1072,65 @@ class UserProductSearchQualificationPlanResolverTest {
     }
 
     @Test
-    void rejectsACurrencyAmbiguousPriceBoundInsteadOfAssumingUsd() {
+    void acceptsAnExplicitPriceInTheAccountCurrency() {
+        UserProductSearchQualificationPlan candidate = plan(
+                "running shoes",
+                List.of(),
+                notApplicableCondition(),
+                notApplicableShipsFrom(),
+                new UserProductSearchQualificationPlan.PriceFilter(
+                        UserProductSearchFilterState.VALUE,
+                        null,
+                        1_500L,
+                        originalQuery("under 15.00 EUR")
+                ),
+                notApplicableAttributes(),
+                notApplicableRating(),
+                notApplicablePriceTier()
+        );
+
+        var resolution = resolver.resolve(candidate, query(
+                "running shoes under 15.00 EUR",
+                "running shoes under 15.00 EUR",
+                null,
+                settingsWithCurrency("EUR")
+        ));
+
+        assertThat(resolution.valid()).isTrue();
+        assertThat(resolution.plan().price().maxUsdMinor()).isEqualTo(1_500L);
+    }
+
+    @Test
+    void validatesPriceEvidenceWithTheAccountCurrenciesMinorUnitExponent() {
+        UserProductSearchQualificationPlan candidate = plan(
+                "running shoes",
+                List.of(),
+                notApplicableCondition(),
+                notApplicableShipsFrom(),
+                new UserProductSearchQualificationPlan.PriceFilter(
+                        UserProductSearchFilterState.VALUE,
+                        null,
+                        100L,
+                        originalQuery("under 100 JPY")
+                ),
+                notApplicableAttributes(),
+                notApplicableRating(),
+                notApplicablePriceTier()
+        );
+
+        var resolution = resolver.resolve(candidate, query(
+                "running shoes under 100 JPY",
+                "running shoes under 100 JPY",
+                null,
+                settingsWithCurrency("JPY")
+        ));
+
+        assertThat(resolution.valid()).isTrue();
+        assertThat(resolution.plan().price().maxUsdMinor()).isEqualTo(100L);
+    }
+
+    @Test
+    void acceptsAnUnqualifiedPriceBoundInTheAccountCurrency() {
         UserProductSearchQualificationPlan candidate = plan(
                 "desk lamp",
                 List.of(UserProductSearchQuestionTarget.PRICE),
@@ -1093,17 +1151,15 @@ class UserProductSearchQualificationPlanResolverTest {
                 "desk lamp under 100",
                 "desk lamp under 100",
                 null,
-                settingsWithDestination()
+                settingsWithCurrency("EUR")
         ));
 
-        assertThat(resolution.valid()).isFalse();
-        assertThat(resolution.violations())
-                .contains("PRICE VALUE requires an explicit USD denomination");
-        assertThat(resolution.plan().price().state()).isEqualTo(UserProductSearchFilterState.MISSING);
+        assertThat(resolution.valid()).isTrue();
+        assertThat(resolution.plan().price().maxUsdMinor()).isEqualTo(10_000L);
     }
 
     @Test
-    void treatsBareDollarAndGenericDollarBoundsAsCurrencyAmbiguous() {
+    void usesTheDefaultAccountCurrencyForBareAndGenericDollarBounds() {
         for (String request : List.of(
                 "desk lamp under $100",
                 "desk lamp under 100 dollars"
@@ -1131,13 +1187,10 @@ class UserProductSearchQualificationPlanResolverTest {
                     settingsWithDestination()
             ));
 
-            assertThat(resolution.valid()).as(request).isFalse();
-            assertThat(resolution.violations())
+            assertThat(resolution.valid()).as(request).isTrue();
+            assertThat(resolution.plan().price().maxUsdMinor())
                     .as(request)
-                    .contains("PRICE VALUE requires an explicit USD denomination");
-            assertThat(resolution.plan().price().state())
-                    .as(request)
-                    .isEqualTo(UserProductSearchFilterState.MISSING);
+                    .isEqualTo(10_000L);
         }
     }
 
@@ -1227,7 +1280,7 @@ class UserProductSearchQualificationPlanResolverTest {
 
         assertThat(resolution.valid()).isFalse();
         assertThat(resolution.violations())
-                .contains("PRICE cannot be irrelevant while a currency-ambiguous bound is present");
+                .contains("PRICE cannot be irrelevant while a price bound is present");
         assertThat(resolution.plan().price().state()).isEqualTo(UserProductSearchFilterState.MISSING);
     }
 
@@ -1282,7 +1335,7 @@ class UserProductSearchQualificationPlanResolverTest {
 
         assertThat(resolution.valid()).isFalse();
         assertThat(resolution.violations())
-                .contains("PRICE cannot be irrelevant while an explicit USD bound is present");
+                .contains("PRICE cannot be irrelevant while a price bound is present");
         assertThat(resolution.plan().price().state()).isEqualTo(UserProductSearchFilterState.MISSING);
     }
 
@@ -1543,7 +1596,7 @@ class UserProductSearchQualificationPlanResolverTest {
     }
 
     @Test
-    void outageFallbackAsksForCurrencyBeforeUsingAnUnqualifiedPriceBound() {
+    void outageFallbackUsesTheAccountCurrencyForAnUnqualifiedPriceBound() {
         UserProductSearchQualificationPlan fallback = resolver.safeFallback(query(
                 "desk lamp under 100",
                 "desk lamp under 100",
@@ -1553,7 +1606,7 @@ class UserProductSearchQualificationPlanResolverTest {
 
         assertThat(fallback.price().state()).isEqualTo(UserProductSearchFilterState.MISSING);
         assertThat(fallback.questionTargets()).containsExactly(UserProductSearchQuestionTarget.PRICE);
-        assertThat(fallback.assistantMessage()).contains("currency", "USD");
+        assertThat(fallback.assistantMessage()).contains("price bound", "USD");
     }
 
     @Test
@@ -3484,6 +3537,23 @@ class UserProductSearchQualificationPlanResolverTest {
                 List.of(),
                 now,
                 now
+        );
+    }
+
+    private UserSettingsResult settingsWithCurrency(String currency) {
+        UserSettingsResult base = settings();
+        return new UserSettingsResult(
+                base.budget(),
+                currency,
+                base.clothingFit(),
+                base.location(),
+                base.locations(),
+                base.filters(),
+                base.availableFilters(),
+                base.parsedFilterIds(),
+                base.unmappedPreferences(),
+                base.createdAt(),
+                base.updatedAt()
         );
     }
 

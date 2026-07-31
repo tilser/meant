@@ -72,6 +72,26 @@ class ProductHardEligibilityPolicyTest {
     }
 
     @Test
+    void preferredCurrencyRemovesMismatchedPricedOffersWithoutAPriceFilter() {
+        CanonicalProduct mixed = product("mixed", List.of(category("apparel")),
+                offer("A", "m1", "mixed", "usd", new Money(8_000, "USD")),
+                offer("A", "m2", "mixed", "eur", new Money(7_000, "EUR")));
+        CanonicalProduct eurOnly = product("eur", List.of(category("apparel")),
+                offer("B", "m3", "eur", "eur", new Money(7_000, "EUR")));
+
+        List<CanonicalProduct> products = service.rank(
+                List.of(mixed, eurOnly),
+                RankingTestFixtures.context("shirt", "USD", "US", null, List.of(), 20)
+        ).products();
+
+        assertThat(products).singleElement().satisfies(product -> {
+            assertThat(product.key()).isEqualTo("mixed");
+            assertThat(product.offers()).singleElement().satisfies(offer ->
+                    assertThat(offer.price().currency()).isEqualTo("USD"));
+        });
+    }
+
+    @Test
     void categoryConstraintFailsClosedWhenEvidenceIsAbsentAndDoesNotSubstringMatchMenToWomen() {
         CanonicalProduct absent = product("absent", List.of(), offer("A", "m1", "absent", "v", new Money(1_000, "USD")));
         CanonicalProduct women = product("women", List.of(category("womens")), offer("B", "m2", "women", "v", new Money(1_000, "USD")));

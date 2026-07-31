@@ -9,13 +9,16 @@ import org.springframework.http.HttpStatusCode;
 @Getter
 public class UnsupportedProductSearchCurrencyException extends RuntimeException implements ApiException {
 
-    private static final String SAFE_MESSAGE = "Product search currently supports prices in USD only.";
-
     private final HttpStatusCode status = HttpStatus.BAD_REQUEST;
     private final ApiErrorCode errorCode = ApiErrorCode.BAD_REQUEST;
-    private final String safeMessage = SAFE_MESSAGE;
+    private final String safeMessage;
 
     public UnsupportedProductSearchCurrencyException(String currency) {
-        super("Unsupported product search currency: " + currency);
+        this(currency, "USD");
+    }
+
+    public UnsupportedProductSearchCurrencyException(String currency, String preferredCurrency) {
+        super("Product search currency " + currency + " does not match preferred currency " + preferredCurrency);
+        this.safeMessage = "Use " + preferredCurrency + " for prices, or change your currency in Account settings.";
     }
 }

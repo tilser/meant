@@ -28,6 +28,9 @@ public class UserSettings {
 
     private Integer budget;
 
+    @Column(nullable = false)
+    private String currency;
+
     private String clothingFit;
 
     private String locationCountry;
@@ -77,6 +80,15 @@ public class UserSettings {
             return false;
         }
         this.clothingFit = clothingFit;
+        this.updatedAt = now;
+        return true;
+    }
+
+    public boolean updateCurrency(String currency, Instant now) {
+        if (Objects.equals(this.currency, currency)) {
+            return false;
+        }
+        this.currency = currency;
         this.updatedAt = now;
         return true;
     }

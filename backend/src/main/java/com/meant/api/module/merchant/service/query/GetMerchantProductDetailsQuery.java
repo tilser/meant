@@ -18,6 +18,8 @@ public record GetMerchantProductDetailsQuery(
 
         String language,
 
+        String currency,
+
         @NotNull
         @Size(max = 20)
         List<ProductAttribute> selectedOptions,
@@ -47,7 +49,19 @@ public record GetMerchantProductDetailsQuery(
             List<ProductAttribute> selectedOptions,
             List<String> preferences
     ) {
-        this(merchantId, productId, addressCountry, language, selectedOptions, preferences, true);
+        this(merchantId, productId, addressCountry, language, null, selectedOptions, preferences, true);
+    }
+
+    public GetMerchantProductDetailsQuery(
+            UUID merchantId,
+            String productId,
+            String addressCountry,
+            String language,
+            String currency,
+            List<ProductAttribute> selectedOptions,
+            List<String> preferences
+    ) {
+        this(merchantId, productId, addressCountry, language, currency, selectedOptions, preferences, true);
     }
 
     public GetMerchantProductDetailsQuery(
@@ -56,6 +70,16 @@ public record GetMerchantProductDetailsQuery(
             String addressCountry,
             String language
     ) {
-        this(merchantId, productId, addressCountry, language, List.of(), List.of(), false);
+        this(merchantId, productId, addressCountry, language, null, List.of(), List.of(), false);
+    }
+
+    public GetMerchantProductDetailsQuery(
+            UUID merchantId,
+            String productId,
+            String addressCountry,
+            String language,
+            String currency
+    ) {
+        this(merchantId, productId, addressCountry, language, currency, List.of(), List.of(), false);
     }
 }

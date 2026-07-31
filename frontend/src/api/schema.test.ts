@@ -134,12 +134,14 @@ test('settings expose editable scoped product size preferences', () => {
   type Settings = components['schemas']['UserSettingsResponse']
   type UpdateSettings = components['schemas']['UpdateUserSettingsRequest']
   type Preference = components['schemas']['UserProductSearchPreferenceResponse']
-  const settingsFields: Array<keyof Settings> = ['productSearchPreferences']
-  const updateFields: Array<keyof UpdateSettings> = ['productSearchPreferences']
+  const settingsFields: Array<keyof Settings> = ['currency', 'productSearchPreferences']
+  const updateFields: Array<keyof UpdateSettings> = ['currency', 'productSearchPreferences']
   const preferenceFields: Array<keyof Preference> = ['scope', 'attributeName', 'values']
 
   expect(settingsFields).toContain('productSearchPreferences')
+  expect(settingsFields).toContain('currency')
   expect(updateFields).toContain('productSearchPreferences')
+  expect(updateFields).toContain('currency')
   expect(preferenceFields).toContain('values')
 
   const preferencePaths: Array<keyof paths> = [

@@ -71,6 +71,7 @@ export interface UserProductSearchPreferenceProfile {
 
 export interface UserSettingsProfile {
   budget: number | null
+  currency: string
   clothingFit: 'men' | 'women' | 'other' | null
   location: UserSettingsLocation | null
   locations: UserSettingsLocation[]
@@ -1090,6 +1091,7 @@ export async function revokeMerchantIdentityLink(
 export async function updateUserSettings(
   input: {
     budget?: number | null
+    currency?: string
     clothingFit?: 'men' | 'women' | 'other' | 'none'
     location?: UserSettingsLocation | null
     locations?: readonly UserSettingsLocation[]
@@ -1108,6 +1110,7 @@ export async function updateUserSettings(
     body: JSON.stringify({
       budget: typeof input.budget === 'number' ? input.budget : undefined,
       budgetUnlimited: input.budget === null ? true : undefined,
+      currency: input.currency,
       clothingFit: input.clothingFit,
       location: input.location ? { id: input.location.id } : input.location,
       locations: input.locations?.map((location) => ({ id: location.id })),

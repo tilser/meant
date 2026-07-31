@@ -9799,6 +9799,22 @@ button:disabled {
   gap: 10px;
 }
 
+.mt-acct-currency {
+  display: grid;
+  gap: 16px;
+}
+
+.mt-acct-currency-control {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  align-items: end;
+  gap: 14px;
+}
+
+.mt-acct-currency-control .mt-acct-save {
+  min-height: 43px;
+}
+
 .mt-acct-switch-row {
   display: flex;
   align-items: center;
@@ -11160,6 +11176,7 @@ button:disabled {
   .mt-modal-body,
   .mt-loc-fields,
   .mt-acct-fields,
+  .mt-acct-currency-control,
   .mt-procon,
   .mt-inv-form-grid {
     grid-template-columns: 1fr;

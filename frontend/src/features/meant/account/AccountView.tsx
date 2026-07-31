@@ -27,9 +27,31 @@ function splitName(fullName: string): { firstName: string; surname: string | nul
 
 const PROFILE_PICTURE_ALLOWED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
 const PROFILE_PICTURE_MAX_BYTES = 5 * 1024 * 1024
+const CURRENCY_OPTIONS = [
+  ['USD', 'US Dollar'],
+  ['EUR', 'Euro'],
+  ['GBP', 'British Pound'],
+  ['CZK', 'Czech Koruna'],
+  ['CAD', 'Canadian Dollar'],
+  ['AUD', 'Australian Dollar'],
+  ['NZD', 'New Zealand Dollar'],
+  ['JPY', 'Japanese Yen'],
+  ['CHF', 'Swiss Franc'],
+  ['PLN', 'Polish Zloty'],
+  ['SEK', 'Swedish Krona'],
+  ['NOK', 'Norwegian Krone'],
+  ['DKK', 'Danish Krone'],
+  ['HUF', 'Hungarian Forint'],
+  ['CNY', 'Chinese Yuan'],
+  ['HKD', 'Hong Kong Dollar'],
+  ['SGD', 'Singapore Dollar'],
+  ['INR', 'Indian Rupee'],
+  ['KRW', 'South Korean Won'],
+] as const
 
 export function AccountView({
   user,
+  currency,
   userId,
   providerAvatar,
   merchants,
@@ -42,9 +64,11 @@ export function AccountView({
   onConnectMerchant,
   onRevokeMerchant,
   onNewsletterChange,
+  onCurrencyChange,
   onDone,
 }: Readonly<{
   user: UserAccount
+  currency: string
   userId?: string
   providerAvatar: string | null
   merchants: readonly MerchantProfile[]
@@ -57,6 +81,7 @@ export function AccountView({
   onConnectMerchant: (merchant: MerchantProfile) => void
   onRevokeMerchant: (merchantId: string) => void
   onNewsletterChange: (newsletter: boolean) => Promise<void> | void
+  onCurrencyChange: (currency: string) => Promise<void> | void
   onDone: () => void
 }>) {
   const [name, setName] = useState(user.name)
@@ -66,6 +91,10 @@ export function AccountView({
   const [newsletterSaving, setNewsletterSaving] = useState(false)
   const [newsletterSaved, setNewsletterSaved] = useState(false)
   const [newsletterError, setNewsletterError] = useState<string | null>(null)
+  const [selectedCurrency, setSelectedCurrency] = useState(currency)
+  const [currencySaving, setCurrencySaving] = useState(false)
+  const [currencySaved, setCurrencySaved] = useState(false)
+  const [currencyError, setCurrencyError] = useState<string | null>(null)
   const [pendingFile, setPendingFile] = useState<File | null>(null)
   const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -99,6 +128,12 @@ export function AccountView({
   useEffect(() => {
     setNewsletter(user.newsletter)
   }, [user.newsletter])
+
+  useEffect(() => {
+    setSelectedCurrency(currency)
+    setCurrencySaved(false)
+    setCurrencyError(null)
+  }, [currency])
 
   const showSaved = () => {
     if (savedTimeoutRef.current !== null) {
@@ -244,6 +279,25 @@ export function AccountView({
     }
   }
 
+  const saveCurrency = async () => {
+    const nextCurrency = selectedCurrency.trim().toUpperCase()
+    setCurrencySaving(true)
+    setCurrencySaved(false)
+    setCurrencyError(null)
+    try {
+      await onCurrencyChange(nextCurrency)
+      if (activeUserIdRef.current !== userId) return
+      setCurrencySaved(true)
+    } catch {
+      if (activeUserIdRef.current !== userId) return
+      setCurrencyError('Could not update your currency. Please try again.')
+    } finally {
+      if (activeUserIdRef.current === userId) {
+        setCurrencySaving(false)
+      }
+    }
+  }
+
   return (
     <main className="mt-feed mt-view">
       <ViewHead
@@ -327,6 +381,50 @@ export function AccountView({
           {error ? <span className="mt-acct-save-error">{error}</span> : null}
         </div>
       </div>
+      <section className="mt-acct-card mt-acct-currency">
+        <div>
+          <div className="mt-acct-link-t">Price currency</div>
+          <div className="mt-acct-link-s">
+            Meant requests and compares catalog prices in this currency. USD is used by default.
+          </div>
+        </div>
+        <div className="mt-acct-currency-control">
+          <label className="mt-field">
+            <span className="mt-field-label mt-mono">Currency</span>
+            <select
+              className="mt-select"
+              value={selectedCurrency}
+              disabled={currencySaving}
+              onChange={(event) => {
+                setSelectedCurrency(event.target.value)
+                setCurrencySaved(false)
+                setCurrencyError(null)
+              }}
+            >
+              {!CURRENCY_OPTIONS.some(([code]) => code === selectedCurrency) ? (
+                <option value={selectedCurrency}>{selectedCurrency}</option>
+              ) : null}
+              {CURRENCY_OPTIONS.map(([code, label]) => (
+                <option key={code} value={code}>
+                  {code} — {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            className="mt-acct-save"
+            type="button"
+            disabled={selectedCurrency === currency || currencySaving}
+            onClick={() => void saveCurrency()}
+          >
+            {currencySaving ? 'Saving…' : 'Save currency'}
+          </button>
+        </div>
+        <div className="mt-acct-newsletter-state">
+          {currencySaved ? <span className="mt-acct-saved-note">Saved</span> : null}
+          {currencyError ? <span className="mt-acct-save-error">{currencyError}</span> : null}
+        </div>
+      </section>
       <button className="mt-acct-link" type="button" onClick={onEditPrefs}>
         <div>
           <div className="mt-acct-link-t">Shopping preferences</div>

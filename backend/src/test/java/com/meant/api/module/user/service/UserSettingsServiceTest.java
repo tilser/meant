@@ -45,6 +45,7 @@ class UserSettingsServiceTest {
         UserSettings settings = UserSettings.builder()
                 .userId(USER_ID)
                 .budget(120)
+                .currency("USD")
                 .createdAt(NOW)
                 .updatedAt(NOW)
                 .build();
@@ -110,6 +111,27 @@ class UserSettingsServiceTest {
         assertThat(result.filters())
                 .extracting("id")
                 .containsExactly("organic", "cotton");
+    }
+
+    @Test
+    void updateNormalizesAndPersistsPreferredCurrency() {
+        UserSettingsResult result = service.update(
+                profileCommand(),
+                new UpdateUserSettingsCommand(
+                        USER_ID,
+                        null,
+                        false,
+                        null,
+                        "eur",
+                        null,
+                        null,
+                        null,
+                        Set.of(),
+                        List.of()
+                )
+        );
+
+        assertThat(result.currency()).isEqualTo("EUR");
     }
 
     @Test

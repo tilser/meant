@@ -207,7 +207,7 @@ class ShopifyCatalogProductRehydrationProviderTest {
     }
 
     @Test
-    void propagatesAvailableCountryAndLanguageToShopifyLookup() {
+    void propagatesAvailableCountryLanguageAndCurrencyToShopifyLookup() {
         ShopifyGlobalCatalogProvider global = providerSource(50);
         CatalogSourceResult lookupResult = successful(List.of(candidate(
                 "product-1", "variant-1", "seller", 1000, available())));
@@ -215,7 +215,7 @@ class ShopifyCatalogProductRehydrationProviderTest {
 
         rehydrator(global, 50).rehydrate(
                 List.of(reference("saved", "product-1", "variant-1", "seller", List.of())),
-                new CatalogRehydrationContext("CZ", "cs")
+                new CatalogRehydrationContext("CZ", "cs", "EUR")
         );
 
         ArgumentCaptor<ShopifyGlobalCatalogLookupRequest> request =
@@ -223,6 +223,7 @@ class ShopifyCatalogProductRehydrationProviderTest {
         org.mockito.Mockito.verify(global).lookupCatalog(request.capture());
         assertThat(request.getValue().context().addressCountry()).isEqualTo("CZ");
         assertThat(request.getValue().context().language()).isEqualTo("cs");
+        assertThat(request.getValue().context().currency()).isEqualTo("EUR");
     }
 
     @Test
