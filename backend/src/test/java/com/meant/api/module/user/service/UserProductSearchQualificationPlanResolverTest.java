@@ -295,9 +295,9 @@ class UserProductSearchQualificationPlanResolverTest {
     }
 
     @Test
-    void oldProductAdjectivesCannotEnterTheActiveEffectiveQuery() {
+    void trustsModelEffectiveQueryVocabularyAndProductTerminology() {
         UserProductSearchQualificationPlan candidate = plan(
-                "red running shoes",
+                "soccer cleats",
                 List.of(),
                 notApplicableCondition(),
                 notApplicableShipsFrom(),
@@ -306,26 +306,12 @@ class UserProductSearchQualificationPlanResolverTest {
                 notApplicableRating(),
                 notApplicablePriceTier()
         );
-        var query = new GenerateUserProductSearchQualificationQuery(
-                "running shoes",
-                "running shoes",
-                null,
-                settingsWithUsDestination(),
-                List.of(),
-                List.of(
-                        userMessage("red luxury jacket"),
-                        assistantMessage("Here are jackets."),
-                        userMessage("running shoes")
-                )
-        );
+        var query = query("soccer shoes", "soccer shoes", null, settingsWithUsDestination());
 
         var resolution = resolver.resolve(candidate, query);
 
-        assertThat(resolution.valid()).isFalse();
-        assertThat(resolution.violations())
-                .anyMatch(violation -> violation.contains("effectiveQuery contains unsupported terms")
-                        && violation.contains("red"));
-        assertThat(resolution.plan().effectiveQuery()).isEqualTo("running shoes");
+        assertThat(resolution.valid()).as(resolution.violations().toString()).isTrue();
+        assertThat(resolution.plan().effectiveQuery()).isEqualTo("soccer cleats");
     }
 
     @Test
@@ -2193,31 +2179,6 @@ class UserProductSearchQualificationPlanResolverTest {
     }
 
     @Test
-    void rejectsEffectiveQueryTermsThatDoNotComeFromTrustedBuyerContext() {
-        UserProductSearchQualificationPlan candidate = plan(
-                "gaming laptops",
-                List.of(),
-                notApplicableCondition(),
-                notApplicableShipsFrom(),
-                notApplicablePrice(),
-                notApplicableAttributes(),
-                notApplicableRating(),
-                notApplicablePriceTier()
-        );
-
-        var resolution = resolver.resolve(candidate, query(
-                "ebook",
-                "ebook",
-                null
-        ));
-
-        assertThat(resolution.valid()).isFalse();
-        assertThat(resolution.violations())
-                .anyMatch(violation -> violation.contains("effectiveQuery"));
-        assertThat(resolution.plan().effectiveQuery()).isEqualTo("ebook");
-    }
-
-    @Test
     void acceptsEffectiveQuerySoftTermsFromAPriorUserConversationMessage() {
         UserProductSearchQualificationPlan candidate = plan(
                 "accessible ebook",
@@ -2715,114 +2676,6 @@ class UserProductSearchQualificationPlanResolverTest {
         assertThat(resolution.valid()).as(resolution.violations().toString()).isTrue();
         assertThat(resolution.plan().effectiveQuery()).isEqualTo("men black jacket");
         assertThat(resolution.violations()).isEmpty();
-    }
-
-    @Test
-    void doesNotLetAPreviousModelGeneratedEffectiveQueryAuthorizeItself() {
-        UserProductSearchQualificationPlan previous = plan(
-                "gaming ebook",
-                List.of(),
-                notApplicableCondition(),
-                notApplicableShipsFrom(),
-                notApplicablePrice(),
-                notApplicableAttributes(),
-                notApplicableRating(),
-                notApplicablePriceTier()
-        );
-        UserProductSearchQualificationPlan candidate = plan(
-                "gaming ebook",
-                List.of(),
-                notApplicableCondition(),
-                notApplicableShipsFrom(),
-                notApplicablePrice(),
-                notApplicableAttributes(),
-                notApplicableRating(),
-                notApplicablePriceTier()
-        );
-
-        var resolution = resolver.resolve(candidate, query(
-                "ebook",
-                "XL",
-                previous
-        ));
-
-        assertThat(resolution.valid()).isFalse();
-        assertThat(resolution.violations())
-                .anyMatch(violation -> violation.contains("effectiveQuery"));
-        assertThat(resolution.plan().effectiveQuery()).isEqualTo("ebook");
-    }
-
-    @Test
-    void requestWrapperWordsCannotStandInForTheOriginalProductSubject() {
-        UserProductSearchQualificationPlan candidate = plan(
-                "find laptop",
-                List.of(),
-                notApplicableCondition(),
-                notApplicableShipsFrom(),
-                notApplicablePrice(),
-                notApplicableAttributes(),
-                notApplicableRating(),
-                notApplicablePriceTier()
-        );
-        var query = new GenerateUserProductSearchQualificationQuery(
-                "find me a jacket",
-                "find me a jacket",
-                null,
-                settings(),
-                List.of(),
-                List.of(
-                        userMessage("I previously considered a laptop."),
-                        userMessage("find me a jacket")
-                )
-        );
-
-        var resolution = resolver.resolve(candidate, query);
-
-        assertThat(resolution.valid()).isFalse();
-        assertThat(resolution.violations())
-                .contains("effectiveQuery must retain a product term from the original request");
-        assertThat(resolution.plan().effectiveQuery()).isEqualTo("find me a jacket");
-    }
-
-    @Test
-    void effectiveQueryMustRetainTheCompoundProductSubject() {
-        for (List<String> change : List.of(
-                List.of("shoe rack", "shoe cleaner"),
-                List.of("phone case", "phone charger"),
-                List.of("coffee grinder", "coffee maker")
-        )) {
-            UserProductSearchQualificationPlan candidate = plan(
-                    change.get(1),
-                    List.of(),
-                    notApplicableCondition(),
-                    notApplicableShipsFrom(),
-                    notApplicablePrice(),
-                    notApplicableAttributes(),
-                    notApplicableRating(),
-                    notApplicablePriceTier()
-            );
-            String original = change.get(0);
-            String replacement = change.get(1);
-            var query = new GenerateUserProductSearchQualificationQuery(
-                    original,
-                    original,
-                    null,
-                    settingsWithDestination(),
-                    List.of(),
-                    List.of(
-                            userMessage("I previously considered a " + replacement + "."),
-                            userMessage(original)
-                    )
-            );
-
-            var resolution = resolver.resolve(candidate, query);
-
-            assertThat(resolution.valid()).as("%s -> %s", original, replacement).isFalse();
-            assertThat(resolution.violations())
-                    .as("%s -> %s", original, replacement)
-                    .contains("effectiveQuery must retain a product term from the original request");
-            assertThat(resolution.plan().effectiveQuery()).isEqualTo(original);
-        }
     }
 
     @Test

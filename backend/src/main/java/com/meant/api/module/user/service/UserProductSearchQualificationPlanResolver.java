@@ -33,9 +33,6 @@ import org.springframework.stereotype.Component;
 @Component
 public class UserProductSearchQualificationPlanResolver {
 
-    private static final Set<String> EFFECTIVE_QUERY_CONNECTORS = Set.of(
-            "a", "an", "and", "for", "from", "in", "made", "of", "on", "or", "the", "to", "with"
-    );
     private static final Pattern SHIPS_TO_QUERY_PATTERN = Pattern.compile(
             "(?iu)\\b(?:ship|ships|shipped|shipping|deliver|delivered|delivery)"
                     + "\\s+(?:it\\s+)?to\\b|\\b(?:shipping\\s+)?destination\\b"
@@ -346,36 +343,7 @@ public class UserProductSearchQualificationPlanResolver {
         if (effectiveQuery.length() > UserProductSearchQueryLimits.MAX_SEARCH_QUERY_LENGTH) {
             violations.add("effectiveQuery exceeds the downstream product-search query limit");
         }
-        Set<String> userTokens = new LinkedHashSet<>();
-        addTokens(userTokens, query.originalQuery());
-        if (currentTurnBelongsToActiveProduct(query)) {
-            addTokens(userTokens, query.message());
-        }
-        activeUserConversationMessages(query)
-                .forEach(message -> addTokens(userTokens, message.text()));
-        Set<String> trustedTokens = new LinkedHashSet<>(userTokens);
-        addTokens(trustedTokens, query.settings().clothingFit());
-        safe(query.settings().filters()).forEach(filter -> {
-            addTokens(trustedTokens, filter.label());
-            addTokens(trustedTokens, filter.description());
-        });
-        query.durablePreferences().forEach(preference -> {
-            addTokens(trustedTokens, preference.scope());
-            preference.values().forEach(value -> addTokens(trustedTokens, value));
-        });
-        query.tasteProfile().signals().stream()
-                .filter(signal -> signal.status() == UserTasteSignalStatus.ACTIVE)
-                .forEach(signal -> addTokens(trustedTokens, signal.label()));
-
         List<String> effectiveTokens = tokens(effectiveQuery);
-        List<String> unsupported = effectiveTokens.stream()
-                .filter(token -> !EFFECTIVE_QUERY_CONNECTORS.contains(token))
-                .filter(token -> trustedTokens.stream().noneMatch(trusted -> sameWord(token, trusted)))
-                .distinct()
-                .toList();
-        if (!unsupported.isEmpty()) {
-            violations.add("effectiveQuery contains unsupported terms: " + unsupported);
-        }
         validateExplicitAnyDoesNotRestoreSavedTerms(
                 effectiveQuery,
                 effectiveTokens,
@@ -383,20 +351,6 @@ public class UserProductSearchQualificationPlanResolver {
                 query,
                 violations
         );
-
-        String semanticOriginalQuery = sanitizeExplicitAnyTerms(
-                query.originalQuery(),
-                decisions,
-                query
-        );
-        var originalSubject = categoryPolicy.productSubject(semanticOriginalQuery);
-        var effectiveSubject = categoryPolicy.productSubject(effectiveQuery);
-        boolean retainsOriginalSubject = originalSubject.isPresent()
-                && effectiveSubject.isPresent()
-                && sameWord(originalSubject.get().head(), effectiveSubject.get().head());
-        if (!retainsOriginalSubject) {
-            violations.add("effectiveQuery must retain a product term from the original request");
-        }
         return violations.size() == initialViolationCount;
     }
 
