@@ -8,6 +8,7 @@ import {
   cartLineForAddedBlock,
   discoverChatMessageCopyText,
   discoverProductResearchQuery,
+  discoverThreadPreview,
   latestCartBlockMessageId,
   productOpenWithResearchQuery,
 } from './utils'
@@ -122,6 +123,29 @@ describe('discover chat copy', () => {
 
     expect(copied).toContain('Merchant')
     expect(copied).not.toContain(technicalSeller)
+  })
+})
+
+describe('discover thread previews', () => {
+  test('renders assistant Markdown as compact plain text', () => {
+    expect(
+      discoverThreadPreview({
+        id: 'thread-1',
+        title: 'Jackets',
+        messages: [
+          {
+            id: 'assistant-1',
+            role: 'ai',
+            blocks: [
+              {
+                type: 'text',
+                text: '## Top picks\n\n1. **Dead Cool Jacket**\n2. *Cloud Puffer*',
+              },
+            ],
+          },
+        ],
+      }),
+    ).toBe('Top picks 1. Dead Cool Jacket 2. Cloud Puffer')
   })
 })
 

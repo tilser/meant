@@ -151,7 +151,7 @@ public final class AgentBuyerPayloadSanitizer {
                     alias
             );
         }
-        return sanitized;
+        return AgentBuyerMarkdownSanitizer.collapseNeutralizedLinks(sanitized);
     }
 
     private static String sanitizeEmbeddedJson(String value, Context context) {

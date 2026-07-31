@@ -1,5 +1,5 @@
 import type { DiscoverChatMessage } from '../chat/types'
-import { agentMarkdownText } from './artifactMapping'
+import { agentMarkdownText } from './agentText'
 import type { AgentRunProjection } from './eventReducer'
 
 function hasCatalogResult(message: DiscoverChatMessage): boolean {

@@ -57,6 +57,29 @@ class AgentBuyerVisibleResponseSanitizationTest {
     }
 
     @Test
+    void messageResponseStripsLinksWhoseDestinationsAreTransportCoordinates() {
+        AgentMessageResult result = new AgentMessageResult(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                4,
+                AgentMessageRole.ASSISTANT,
+                AgentContentKind.TEXT,
+                "Order at [the store](https://seller.myshopify.com/products/x), then see "
+                        + "[the size guide](https://official.example/size-guide).",
+                null,
+                null,
+                OCCURRED_AT
+        );
+
+        AgentMessageResponse response = AgentMessageResponse.from(result);
+
+        assertThat(response.textContent())
+                .isEqualTo("Order at the store, then see "
+                        + "[the size guide](https://official.example/size-guide).")
+                .doesNotContain("myshopify.com", "[the store](the merchant)");
+    }
+
+    @Test
     void eventResponseSanitizesReplayPayloadsThatDidNotPassThroughTheEntityMapper()
             throws Exception {
         AgentRunEventResult result = new AgentRunEventResult(
@@ -68,7 +91,7 @@ class AgentBuyerVisibleResponseSanitizationTest {
                 OCCURRED_AT,
                 """
                         {
-                          "summary": "Called https://transport.example/api/ucp/mcp/session/2.",
+                          "summary": "Called [the store](https://transport.example/api/ucp/mcp/session/2).",
                           "result": {
                             "message": "seller.myshopify.com replied.",
                             "officialUrl": "https://official.example/products/shoe"
@@ -80,7 +103,7 @@ class AgentBuyerVisibleResponseSanitizationTest {
         AgentRunEventResponse response = AgentRunEventResponse.from(result);
         JsonNode payload = objectMapper.readTree(response.payloadJson());
 
-        assertThat(payload.path("summary").asText()).isEqualTo("Called the merchant.");
+        assertThat(payload.path("summary").asText()).isEqualTo("Called the store.");
         assertThat(payload.path("result").path("message").asText())
                 .isEqualTo("the merchant replied.");
         assertThat(payload.path("result").path("officialUrl").asText())

@@ -7,7 +7,6 @@ import type {
   CanonicalProductProfile,
 } from '../../../lib/apiClient'
 import {
-  agentMarkdownText,
   blocksForAgentMessage,
   cartItemsFromAgentArtifacts,
   cartStateReplacementsFromAgentArtifacts,
@@ -17,11 +16,11 @@ import {
   latestCartSnapshotArtifacts,
   latestCartSnapshotArtifactsForRunSettlement,
   mergeAgentProductSnapshots,
-  plainAgentText,
   productFromAgentArtifact,
   productInteractionState,
   productsFromAgentArtifacts,
 } from './artifactMapping'
+import { plainAgentText } from './agentText'
 
 const createdAt = '2026-07-18T12:00:00Z'
 
@@ -165,12 +164,6 @@ function artifact(
 }
 
 describe('agent artifact mapping', () => {
-  test('preserves safe Markdown structure for assistant messages', () => {
-    expect(agentMarkdownText('## Picks\n\n1. **Jacket**\n2. *Coat*')).toBe(
-      '## Picks\n\n1. **Jacket**\n2. *Coat*',
-    )
-  })
-
   test('neutralizes transport coordinates inside agent prose without collapsing the sentence', () => {
     expect(
       plainAgentText(

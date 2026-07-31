@@ -7,6 +7,7 @@ import type {
   MiniCompareRow,
 } from './types'
 import { merchantAdjacentDisplayLabel, merchantDisplayOrigin } from '../cart/merchantOrigin'
+import { plainAgentText } from '../agent/agentText'
 
 type ProductOpenHandler = (
   product: Product,
@@ -418,7 +419,10 @@ function compactChatHistoryText(value: string): string {
 }
 
 function discoverBlockPreview(block: DiscoverChatBlock): string {
-  if (block.type === 'text' || block.type === 'system') {
+  if (block.type === 'text') {
+    return plainAgentText(block.text)
+  }
+  if (block.type === 'system') {
     return block.text
   }
   if (block.type === 'newsletter') {
@@ -452,7 +456,7 @@ function discoverBlockPreview(block: DiscoverChatBlock): string {
 
 function discoverMessagePreview(message: DiscoverChatMessage): string {
   if (message.text) {
-    return message.text
+    return message.role === 'ai' ? plainAgentText(message.text) : message.text
   }
   const block = message.blocks?.find((candidate) =>
     compactChatHistoryText(discoverBlockPreview(candidate)),

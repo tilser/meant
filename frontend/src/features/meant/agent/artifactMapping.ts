@@ -27,6 +27,7 @@ import type {
 } from '../types'
 import { cartMerchantKey, minorUnitsToMajor } from '../utils'
 import { sanitizeBuyerVisibleText, sanitizeBuyerVisibleValue } from './buyerVisibleText'
+import { agentMarkdownText, plainAgentText } from './agentText'
 
 type JsonRecord = Record<string, unknown>
 
@@ -153,24 +154,6 @@ function looksCanonical(value: JsonRecord): boolean {
     Array.isArray(value.materials) &&
     Array.isArray(value.certifications)
   )
-}
-
-/** Preserves safe agent-authored Markdown while neutralizing transport-only seller details. */
-export function agentMarkdownText(value: string): string {
-  return sanitizeBuyerVisibleText(value).trim()
-}
-
-/** Reduces agent prose to plain text for labels, summaries, and other non-message projections. */
-export function plainAgentText(value: string): string {
-  return agentMarkdownText(value)
-    .replace(/\[([^\]]+)]\([^)]+\)/g, '$1')
-    .replace(/(^|\n)\s{0,3}#{1,6}\s+/g, '$1')
-    .replace(/\*\*([^*\n]+)\*\*/g, '$1')
-    .replace(/__([^_\n]+)__/g, '$1')
-    .replace(/`([^`\n]+)`/g, '$1')
-    .replace(/(^|\s)\*\s+(?=\S)/g, '$1')
-    .replace(/\*([^*\n]+)\*/g, '$1')
-    .trim()
 }
 
 function normalizedResultPhrase(value: unknown, maximumLength: number): string | null {

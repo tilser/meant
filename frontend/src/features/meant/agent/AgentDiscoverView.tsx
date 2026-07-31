@@ -109,6 +109,7 @@ import { threadFromAgentConversationSummary } from './conversationHistory'
 import { addChatProductToCart, cartInChatMessage, exactProductOfferKey } from './chatCartAddition'
 import { agentRunCandidateIds, preferredAgentRunSnapshot } from './runSelection'
 import { refreshAgentViewAfterSettlement } from './settlementRefresh'
+import { plainAgentText } from './agentText'
 
 const NEWSLETTER_SUBSCRIBED_MESSAGE =
   'You are subscribed to the newsletter. If you want to unsubscribe, you can do so in your account settings.'
@@ -210,10 +211,11 @@ function productsInMessage(message: DiscoverChatMessage): Product[] {
 
 function shelfMessageSnapshot(message: DiscoverChatMessage): ShelfMessageSnapshot {
   const products = productsInMessage(message)
-  const text =
+  const sourceText =
     message.text ??
     message.blocks?.find((block) => block.type === 'text' || block.type === 'system')?.text ??
     ''
+  const text = message.role === 'ai' ? plainAgentText(sourceText) : sourceText
   return {
     side: message.role === 'you' ? 'you' : 'meant',
     title: message.role === 'you' ? 'Your message' : products.length ? 'Meant picks' : 'Meant',

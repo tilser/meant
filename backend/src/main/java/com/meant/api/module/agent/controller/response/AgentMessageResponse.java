@@ -2,9 +2,9 @@ package com.meant.api.module.agent.controller.response;
 
 import com.meant.api.module.agent.constant.AgentContentKind;
 import com.meant.api.module.agent.constant.AgentMessageRole;
+import com.meant.api.module.agent.service.AgentBuyerMarkdownSanitizer;
 import com.meant.api.module.agent.service.AgentBuyerPayloadSanitizer;
 import com.meant.api.module.agent.service.dto.AgentMessageResult;
-import com.meant.api.module.merchant.service.MerchantBuyerTextSanitizer;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.util.UUID;
@@ -29,7 +29,7 @@ public record AgentMessageResponse(
                 result.sequenceNumber(),
                 result.role(),
                 result.contentKind(),
-                MerchantBuyerTextSanitizer.sanitize(result.textContent()),
+                AgentBuyerMarkdownSanitizer.sanitize(result.textContent()),
                 AgentBuyerPayloadSanitizer.sanitize(result.contentJson()),
                 result.correlationId(),
                 result.createdAt()
