@@ -1,5 +1,6 @@
 package com.meant.api.common.config;
 
+import com.meant.api.common.service.OpenAiToolCallingChatModelAdapter;
 import com.meant.api.common.service.SpringAiAgentModelGateway;
 import com.meant.api.common.service.SpringAiAgentToolConversationHistory;
 import com.meant.api.common.service.UnavailableAgentModelGateway;
@@ -48,10 +49,11 @@ public class AgentModelConfiguration {
                         "X-OpenRouter-Title", properties.appTitle()
                 ))
                 .build();
-        return OpenAiChatModel.builder()
+        OpenAiChatModel openAiChatModel = OpenAiChatModel.builder()
                 .options(options)
                 .observationRegistry(observationRegistry)
                 .build();
+        return new OpenAiToolCallingChatModelAdapter(openAiChatModel, options);
     }
 
     @Bean

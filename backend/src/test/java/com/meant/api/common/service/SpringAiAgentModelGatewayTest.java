@@ -8,6 +8,12 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.openai.client.OpenAIClientAsync;
+import com.openai.core.http.AsyncStreamResponse;
+import com.openai.models.chat.completions.ChatCompletionCreateParams;
+import com.openai.models.chat.completions.ChatCompletionChunk;
+import com.openai.services.async.ChatServiceAsync;
+import com.openai.services.async.chat.ChatCompletionServiceAsync;
 import com.meant.api.common.constant.ApiErrorCode;
 import com.meant.api.module.agent.exception.AgentException;
 import com.meant.api.module.agent.properties.AgentProperties;
@@ -19,6 +25,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
@@ -33,6 +40,8 @@ import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.model.tool.ToolCallingChatOptions;
+import org.springframework.ai.openai.OpenAiChatModel;
+import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.http.HttpStatus;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.SignalType;
@@ -166,6 +175,63 @@ class SpringAiAgentModelGatewayTest {
             assertThat(callback.getToolDefinition().inputSchema()).isEqualTo(definition.inputSchemaJson());
             assertThat(callback.call("{}"))
                     .isEqualTo("{\"status\":\"delegated_to_run_coordinator\"}");
+        });
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void providerAgnosticToolOptionsReachTheOpenAiRequestPath() {
+        OpenAIClientAsync openAiClient = mock(OpenAIClientAsync.class);
+        ChatServiceAsync chatService = mock(ChatServiceAsync.class);
+        ChatCompletionServiceAsync completionService = mock(ChatCompletionServiceAsync.class);
+        when(openAiClient.chat()).thenReturn(chatService);
+        when(chatService.completions()).thenReturn(completionService);
+        AsyncStreamResponse<ChatCompletionChunk> providerResponse = mock(AsyncStreamResponse.class);
+        when(completionService.createStreaming(any(ChatCompletionCreateParams.class)))
+                .thenReturn(providerResponse);
+        when(providerResponse.subscribe(any(AsyncStreamResponse.Handler.class))).thenReturn(providerResponse);
+        when(providerResponse.onCompleteFuture()).thenReturn(CompletableFuture.completedFuture(null));
+        OpenAiChatOptions defaultOptions = OpenAiChatOptions.builder()
+                .baseUrl("https://openrouter.example.test/api/v1")
+                .apiKey("api-key")
+                .model("configured/model")
+                .temperature(0.5)
+                .maxTokens(512)
+                .streamUsage(true)
+                .parallelToolCalls(true)
+                .build();
+        OpenAiChatModel openAiChatModel = OpenAiChatModel.builder()
+                .openAiClientAsync(openAiClient)
+                .options(defaultOptions)
+                .build();
+        SpringAiAgentModelGateway gateway = new SpringAiAgentModelGateway(
+                new OpenAiToolCallingChatModelAdapter(openAiChatModel, defaultOptions),
+                properties(Duration.ofSeconds(3))
+        );
+        AgentModelToolDefinition definition = new AgentModelToolDefinition(
+                "search_catalog",
+                "Search the catalog",
+                "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"}}}"
+        );
+
+        var response = gateway.turn(request(List.of(definition)), ignored -> { }, () -> false);
+
+        assertThat(response.text()).isEmpty();
+        assertThat(response.toolCalls()).isEmpty();
+
+        ArgumentCaptor<ChatCompletionCreateParams> requestCaptor =
+                ArgumentCaptor.forClass(ChatCompletionCreateParams.class);
+        verify(completionService).createStreaming(requestCaptor.capture());
+        ChatCompletionCreateParams providerRequest = requestCaptor.getValue();
+        assertThat(providerRequest.model().asString()).isEqualTo("requested/model");
+        assertThat(providerRequest.temperature()).contains(0.25);
+        assertThat(providerRequest.maxTokens()).contains(321L);
+        assertThat(providerRequest.parallelToolCalls()).contains(true);
+        assertThat(providerRequest.streamOptions()).hasValueSatisfying(streamOptions ->
+                assertThat(streamOptions.includeUsage()).contains(true));
+        assertThat(providerRequest.tools()).hasValueSatisfying(tools -> {
+            assertThat(tools).hasSize(1);
+            assertThat(tools.getFirst().asFunction().function().name()).isEqualTo("search_catalog");
         });
     }
 
