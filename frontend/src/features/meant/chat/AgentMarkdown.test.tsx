@@ -53,4 +53,21 @@ Want me to narrow these by *size* or price?`}
     expect(markup).toContain('target="_blank"')
     expect(markup).toContain('rel="noreferrer"')
   })
+
+  test('offers progressive disclosure for long product-result messages', () => {
+    const text = `## Top picks\n\n${'A useful product detail. '.repeat(24)}`
+    const markup = renderToStaticMarkup(<AgentMarkdown text={text} compact />)
+
+    expect(markup).toContain('is-collapsed')
+    expect(markup).toContain('aria-expanded="false"')
+    expect(markup).toContain('Show full message')
+    expect(markup).toContain(text.slice(-40).trim())
+  })
+
+  test('keeps short product-result messages fully visible', () => {
+    const markup = renderToStaticMarkup(<AgentMarkdown text="Here are the best matches." compact />)
+
+    expect(markup).not.toContain('is-collapsed')
+    expect(markup).not.toContain('Show full message')
+  })
 })

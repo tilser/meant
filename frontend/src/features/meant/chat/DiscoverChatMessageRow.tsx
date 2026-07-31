@@ -358,6 +358,7 @@ export function DiscoverChatMessageRow({
   const onShelf = shelfMessageSet.has(message.id)
   const copyMessage = () => copyTextToClipboard(discoverChatMessageCopyText(message))
   const containsCheckoutBlock = message.blocks?.some((block) => block.type === 'checkout') ?? false
+  const containsProductBlock = message.blocks?.some((block) => block.type === 'products') ?? false
   const settling = message.settling === true
   const messageDraggable = !containsCheckoutBlock && !settling
 
@@ -484,6 +485,7 @@ export function DiscoverChatMessageRow({
                   immutable={immutable}
                   useLiveCart={useLiveCart}
                   agentActionsDisabled={agentActionsDisabled}
+                  compactText={containsProductBlock && block.type === 'text'}
                 />
               ))}
             </div>

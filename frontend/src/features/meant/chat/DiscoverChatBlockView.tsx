@@ -122,6 +122,7 @@ export function DiscoverChatBlockView({
   immutable,
   useLiveCart,
   agentActionsDisabled,
+  compactText = false,
 }: Readonly<{
   threadId: string
   block: DiscoverChatBlock
@@ -188,11 +189,12 @@ export function DiscoverChatBlockView({
   immutable: boolean
   useLiveCart: boolean
   agentActionsDisabled: boolean
+  compactText?: boolean
 }>) {
   const openProduct = productOpenWithResearchQuery(onOpen, researchQuery)
 
   if (block.type === 'text') {
-    return <AgentMarkdown text={block.text} />
+    return <AgentMarkdown text={block.text} compact={compactText} />
   }
   if (block.type === 'system') {
     return (
