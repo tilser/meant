@@ -31,7 +31,10 @@ public class GetProductAgentTool implements AgentTool {
 
     private static final AgentToolDescriptor DESCRIPTOR = new AgentToolDescriptor(
             "get_product",
-            "Rehydrate current product facts, merchant-selectable options, variant availability, and offers for a product previously shown in this conversation. Canonical offers are not an exhaustive list of merchant variants.",
+            "Rehydrate current product facts, merchant-selectable options, variant availability, and offers for a "
+                    + "product previously shown in this conversation. Canonical offers are not an exhaustive list "
+                    + "of merchant variants. To obtain a cartable offer for a requested option combination, call "
+                    + "select_product_variant with all required option values.",
             """
             {"type":"object","properties":{"canonicalProductKey":{"type":"string","minLength":1,"maxLength":200},"selectedOfferKey":{"type":"string","minLength":1,"maxLength":200}},"required":["canonicalProductKey"],"additionalProperties":false}
             """,

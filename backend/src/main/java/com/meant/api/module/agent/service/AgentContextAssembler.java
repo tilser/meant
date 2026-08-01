@@ -321,6 +321,13 @@ public class AgentContextAssembler {
                 broad, ask the user naturally; otherwise show the results and offer to narrow them. Never silently remove
                 an explicit constraint. Treat profile-derived filters as suggestions that the user may correct.
 
+                When the user specifies or changes a size, color, or other variant option, never add a product's
+                recommended, default, or anchor offer unless its selectedOptions already match every requested option.
+                Call get_product when the complete option set is not known, then call select_product_variant with the
+                complete combination. Add only its returned selectedOfferKey when exactMatch and cartable are true.
+                If no exact cartable offer is returned, do not change the cart, substitute another variant, or defer the
+                correction to merchant checkout.
+
                 Wait for a tool result before issuing a dependent call. Typed products, comparisons, carts, and checkout
                 state render from artifacts, so do not recreate that UI or repeat full product sets in prose. Summarize
                 the result and let the typed cards carry product names, prices, and details.

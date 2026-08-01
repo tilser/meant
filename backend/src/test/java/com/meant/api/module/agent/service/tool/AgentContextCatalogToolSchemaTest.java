@@ -18,6 +18,7 @@ class AgentContextCatalogToolSchemaTest {
             ListSavedProductsAgentTool.class,
             SearchCatalogAgentTool.class,
             GetProductAgentTool.class,
+            SelectProductVariantAgentTool.class,
             FindSimilarProductsAgentTool.class,
             CompareProductsAgentTool.class,
             GetProductReviewsAgentTool.class,
@@ -31,7 +32,7 @@ class AgentContextCatalogToolSchemaTest {
                 .map(this::descriptor)
                 .toList();
 
-        assertThat(descriptors).hasSize(13);
+        assertThat(descriptors).hasSize(14);
         assertThat(descriptors).extracting(AgentToolDescriptor::name).doesNotHaveDuplicates();
         assertThat(descriptors).allSatisfy(descriptor -> {
             assertThat(descriptor.inputSchemaJson())

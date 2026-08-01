@@ -57,7 +57,7 @@ public class AgentProductReadResultService {
                 .findFirst()
                 .orElse(null);
         List<AgentOfferReferenceResult> offers = product.offers().stream()
-                .map(this::offer)
+                .map(this::offerReference)
                 .toList();
         return new AgentProductReferenceResult(
                 ordinal,
@@ -155,7 +155,7 @@ public class AgentProductReadResultService {
                 .toList();
     }
 
-    private AgentOfferReferenceResult offer(Offer offer) {
+    public AgentOfferReferenceResult offerReference(Offer offer) {
         Money price = offer.price();
         String merchantOrigin =
                 CatalogBuyerPresentation.merchantOrigin(offer.provenance());

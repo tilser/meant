@@ -18,7 +18,9 @@ public class AgentCartPrepareTool implements AgentTool {
             "prepare_carts",
             "Prepare carts from exact server-issued offers, reusing the newest compatible current cart for each "
                     + "merchant/provider route and creating one only when none exists. Prefer add_cart_line when "
-                    + "the target cart is already known. Offers are revalidated before every mutation.",
+                    + "the target cart is already known. For a buyer-requested size, color, or other configuration, "
+                    + "use only the selectedOfferKey returned by select_product_variant after an exact cartable "
+                    + "match. Never substitute a default or anchor offer. Offers are revalidated before every mutation.",
             """
                     {"type":"object","additionalProperties":false,"required":["offers"],"properties":{"offers":{"type":"array","minItems":1,"maxItems":50,"items":{"type":"object","additionalProperties":false,"required":["offerKey"],"properties":{"offerKey":{"type":"string","minLength":1,"maxLength":200},"quantity":{"type":"integer","minimum":1,"maximum":1000}}}}}}
                     """,

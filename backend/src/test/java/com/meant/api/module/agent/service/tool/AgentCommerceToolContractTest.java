@@ -44,6 +44,7 @@ class AgentCommerceToolContractTest {
         AgentMissionToolSupport mission = mock(AgentMissionToolSupport.class);
         AgentCartToolSupport cart = mock(AgentCartToolSupport.class);
         AgentCheckoutToolSupport checkout = mock(AgentCheckoutToolSupport.class);
+        AgentJsonSupport json = mock(AgentJsonSupport.class);
         List<AgentTool> tools = List.of(
                 new AgentMissionCreateTool(mission),
                 new AgentMissionUpdateTool(mission),
@@ -54,6 +55,13 @@ class AgentCommerceToolContractTest {
                 new AgentCartAddLineTool(cart),
                 new AgentCartUpdateLineTool(cart),
                 new AgentCartRemoveLineTool(cart),
+                new SelectProductVariantAgentTool(
+                        json,
+                        mock(com.meant.api.module.agent.service.AgentContextProfileService.class),
+                        mock(AgentProductReadReferenceService.class),
+                        mock(com.meant.api.module.agent.service.AgentProductReadResultService.class),
+                        mock(com.meant.api.module.user.service.UserProductVariantSelectionService.class)
+                ),
                 new AgentCheckoutPrepareTool(checkout),
                 new AgentCheckoutGetTool(checkout),
                 new AgentCheckoutUpdateTool(checkout)

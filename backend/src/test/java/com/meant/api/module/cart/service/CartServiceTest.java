@@ -239,26 +239,36 @@ class CartServiceTest {
     }
 
     private ResolvedSelectedOffer resolvedShopifyOfferWithCanonicalProductAnchor(String key) {
+        return resolvedShopifyOfferWithCanonicalProductAnchor(key, key, List.of());
+    }
+
+    private ResolvedSelectedOffer resolvedShopifyOfferWithCanonicalProductAnchor(
+            String offerKey,
+            String variantId,
+            List<ProductAttribute> selectedOptions
+    ) {
         ProviderIdentity provider = new ProviderIdentity("SHOPIFY");
         ExternalIdentifier merchantIdentity = new ExternalIdentifier(
                 ExternalIdentifierType.MERCHANT, provider.value(), "gid://shopify/Shop/1");
         ExternalIdentifier canonicalProduct = new ExternalIdentifier(
-                ExternalIdentifierType.PRODUCT, provider.value(), "variant-product:v1:" + key);
+                ExternalIdentifierType.PRODUCT, provider.value(), "variant-product:v1:" + variantId);
         ExternalIdentifier wireProduct = new ExternalIdentifier(
                 ExternalIdentifierType.PRODUCT, provider.value(), "gid://shopify/p/upid-42");
-        ExternalIdentifier variant = new ExternalIdentifier(ExternalIdentifierType.VARIANT, provider.value(), key);
+        ExternalIdentifier variant = new ExternalIdentifier(
+                ExternalIdentifierType.VARIANT, provider.value(), variantId);
         DiscoverySourceIdentity source = new DiscoverySourceIdentity(
                 provider, ResultSourceType.PROVIDER_CATALOG, "SHOPIFY_GLOBAL_CATALOG");
         OfferIdentity identity = new OfferIdentity(
                 provider, OfferMerchantScope.external(merchantIdentity), canonicalProduct, variant,
-                List.of(), List.of(), null);
+                selectedOptions, List.of(), null);
         ResultProvenance provenance = new ResultProvenance(
                 provider, source, null, merchantIdentity, "merchant.example", wireProduct, variant,
                 new ResultFreshness(Instant.now(), null),
                 new ResultSourceReference(ResultSourceType.PROVIDER_CATALOG, "SHOPIFY_GLOBAL_CATALOG", null));
         CatalogProductReference reference = new CatalogProductReference(
-                key, source, null, null, merchantIdentity, "merchant.example", wireProduct, variant, List.of());
-        return new ResolvedSelectedOffer("canonical", key, identity, provenance, reference);
+                offerKey, source, null, null, merchantIdentity, "merchant.example", wireProduct, variant,
+                selectedOptions);
+        return new ResolvedSelectedOffer("canonical", offerKey, identity, provenance, reference);
     }
 
     @Test
@@ -372,16 +382,22 @@ class CartServiceTest {
     }
 
     @Test
-    void createUsesRehydratedShopifyWireIdentityAndPropagatesBuyerIp() {
-        String variantId = "gid://shopify/ProductVariant/42";
-        doReturn(List.of(resolvedShopifyOfferWithCanonicalProductAnchor(variantId)))
+    void createUsesTheVariantIdAndOptionsFromTheExactSelectedOfferAndPropagatesBuyerIp() {
+        String selectedOfferKey = "offer-white-black-size-11";
+        String variantId = "gid://shopify/ProductVariant/size-11";
+        List<ProductAttribute> selectedOptions = List.of(
+                new ProductAttribute("variant-option", "Color", "White/Black"),
+                new ProductAttribute("variant-option", "Size", "11")
+        );
+        doReturn(List.of(resolvedShopifyOfferWithCanonicalProductAnchor(
+                selectedOfferKey, variantId, selectedOptions)))
                 .when(offerResolution).resolveAll(any());
 
         cartService.create(new CreateCartCommand(
                 USER_ID,
                 merchant.getId(),
                 null,
-                List.of(new CreateCartCommand.AddItem(variantId, 1)),
+                List.of(new CreateCartCommand.AddItem(selectedOfferKey, 1)),
                 null,
                 List.of(),
                 List.of(),
@@ -395,6 +411,11 @@ class CartServiceTest {
         assertThat(cartDispatchService.lastCreateRequest.addItems()).singleElement().satisfies(item -> {
             assertThat(item.productId()).isNull();
             assertThat(item.productVariantId()).isEqualTo(variantId);
+            assertThat(item.selectedOptions()).extracting("name", "value")
+                    .containsExactly(
+                            org.assertj.core.groups.Tuple.tuple("Color", "White/Black"),
+                            org.assertj.core.groups.Tuple.tuple("Size", "11")
+                    );
         });
         assertThat(cartDispatchService.lastCallContext.buyerIp()).isEqualTo("203.0.113.42");
     }
