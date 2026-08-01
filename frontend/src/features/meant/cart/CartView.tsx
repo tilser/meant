@@ -303,6 +303,9 @@ export function CartView({
       .filter((value): value is string => Boolean(value)),
   )
   const summaryCurrency = currencies.size === 1 ? currencies.values().next().value : null
+  const totalsPending = groupSummaries.some((summary) =>
+    summary.group.items.some((item) => item.syncing),
+  )
   const codeCount = groupSummaries.reduce(
     (sum, summary) => sum + (summary.snapshot?.appliedCodes.length ?? 0),
     0,
@@ -579,9 +582,11 @@ export function CartView({
               )
               const checkoutNeedsDelivery = group.hasDeliveryOptions && !group.hasSelectedDelivery
               const checkoutBusy = checkoutMerchantKey === merchantKey
-              const deliveryDisplay = checkoutNeedsDelivery
-                ? 'Choose delivery option'
-                : deliverySummary
+              const deliveryDisplay = groupSyncing
+                ? 'Delivery pending'
+                : checkoutNeedsDelivery
+                  ? 'Choose delivery option'
+                  : deliverySummary
               const checkoutBlocked =
                 agentBusy ||
                 scanning ||
@@ -790,9 +795,10 @@ export function CartView({
                       {codeError ? <div className="mt-cart-inline-error">{codeError}</div> : null}
                     </div>
                     <div className="mt-mgroup-sub">
-                      Subtotal <span>{cartMoney(subtotal, currency)}</span>
+                      Subtotal{' '}
+                      <span>{groupSyncing ? 'Pending' : cartMoney(subtotal, currency)}</span>
                     </div>
-                    {savings > 0 ? (
+                    {!groupSyncing && savings > 0 ? (
                       <div className="mt-mgroup-sub save">
                         Savings <span>-{cartMoney(savings, currency)}</span>
                       </div>
@@ -802,7 +808,9 @@ export function CartView({
                     <div>
                       <div className="mt-mgroup-pay-total">
                         <span className="mt-mono">Merchant total</span>
-                        <strong>{cartMoney(total, groupCurrency)}</strong>
+                        <strong>
+                          {groupSyncing ? 'Pending' : cartMoney(total, groupCurrency)}
+                        </strong>
                       </div>
                       <div
                         className={`mt-mgroup-pay-sub ${groupLineError || groupCheckoutError ? 'error' : ''}`}
@@ -856,38 +864,48 @@ export function CartView({
             <div className="mt-sum-row">
               <span>Items ({lines.reduce((sum, line) => sum + line.qty, 0)})</span>
               <span>
-                {summaryCurrency ? cartMoney(itemsTotal, summaryCurrency) : 'Per merchant'}
+                {totalsPending
+                  ? 'Pending'
+                  : summaryCurrency
+                    ? cartMoney(itemsTotal, summaryCurrency)
+                    : 'Per merchant'}
               </span>
             </div>
-            <div className={`mt-sum-row ${discountTotal > 0 ? 'save' : 'muted'}`}>
+            <div className={`mt-sum-row ${!totalsPending && discountTotal > 0 ? 'save' : 'muted'}`}>
               <span>Applied savings</span>
               <span>
-                {summaryCurrency
-                  ? discountTotal > 0
-                    ? `-${cartMoney(discountTotal, summaryCurrency)}`
-                    : cartMoney(0, summaryCurrency)
-                  : 'Per merchant'}
+                {totalsPending
+                  ? 'Pending'
+                  : summaryCurrency
+                    ? discountTotal > 0
+                      ? `-${cartMoney(discountTotal, summaryCurrency)}`
+                      : cartMoney(0, summaryCurrency)
+                    : 'Per merchant'}
               </span>
             </div>
             <div className="mt-sum-row">
               <span>Delivery</span>
               <span>
-                {deliveryTotal === 0
-                  ? 'Free'
-                  : summaryCurrency
-                    ? cartMoney(deliveryTotal, summaryCurrency)
-                    : 'Per merchant'}
+                {totalsPending
+                  ? 'Pending'
+                  : deliveryTotal === 0
+                    ? 'Free'
+                    : summaryCurrency
+                      ? cartMoney(deliveryTotal, summaryCurrency)
+                      : 'Per merchant'}
               </span>
             </div>
             <div className="mt-sum-total">
               <span>Total</span>
               <span>
-                {summaryCurrency
-                  ? cartMoney(grandTotal, summaryCurrency)
-                  : 'Calculated per merchant'}
+                {totalsPending
+                  ? 'Pending'
+                  : summaryCurrency
+                    ? cartMoney(grandTotal, summaryCurrency)
+                    : 'Calculated per merchant'}
               </span>
             </div>
-            {discountTotal > 0 ? (
+            {!totalsPending && discountTotal > 0 ? (
               <div className="mt-sum-note mt-mono">
                 {summaryCurrency
                   ? `You are saving ${cartMoney(discountTotal, summaryCurrency)} with merchant-applied codes.`
