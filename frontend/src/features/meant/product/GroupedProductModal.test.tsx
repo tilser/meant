@@ -2,6 +2,7 @@ import { describe, expect, mock, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 
 import { ApiError } from '../../../lib/apiError'
+import type { ProductVariantSelectionProfile } from '../../../lib/apiClient'
 import type { Product } from '../types'
 
 mock.module('../../../lib/apiClient', () => ({
@@ -14,6 +15,7 @@ mock.module('../../../lib/apiClient', () => ({
 }))
 
 const { ProductModal } = await import('./ProductModal')
+const { exactSelectionPrice } = await import('./variantSelection')
 const { merchantProductDetailRequest } = await import('./productDetailLoading')
 const { savedProductFromProfile } = await import('./savedProductMapping')
 
@@ -66,6 +68,21 @@ const product: Product = {
 }
 
 describe('canonical product detail', () => {
+  test('shows the exact refreshed variant price instead of the stale merchant anchor price', () => {
+    const selection = {
+      selectedOfferKey: 'offer-current',
+      selectedOffer: { key: 'offer-current', price: null },
+      details: {
+        selectedVariantPriceAmount: '39.98',
+        selectedVariantPriceCurrency: 'USD',
+      },
+      cartable: true,
+    } as unknown as ProductVariantSelectionProfile
+
+    expect(exactSelectionPrice(selection, 'offer-current')).toBe('$39.98')
+    expect(exactSelectionPrice(selection, 'different-offer')).toBeNull()
+  })
+
   test('does not replace durable saved-product detail with a second merchant request', () => {
     expect(
       merchantProductDetailRequest({

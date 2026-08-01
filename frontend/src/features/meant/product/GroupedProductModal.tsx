@@ -17,6 +17,7 @@ import { loadCanonicalProductDetailWithRecovery } from './canonicalProductSessio
 import { trackCommerceEvent } from './commerceAnalytics'
 import {
   cleanSelectedOptions,
+  exactSelectionPrice,
   findSelectedVariant,
   merchantOfferChoices,
   optionSelectionKey,
@@ -516,6 +517,9 @@ export function GroupedOfferSelector({
           <div className="mt-merchant-choice-list" role="group" aria-label="Store">
             {choices.map((choice) => {
               const selected = choice.key === selectedMerchantKey
+              const currentPrice = selected
+                ? exactSelectionPrice(selectionResponse, selectedOfferKey)
+                : null
               return (
                 <button
                   key={choice.key}
@@ -526,7 +530,7 @@ export function GroupedOfferSelector({
                   onClick={() => selectMerchant(choice)}
                 >
                   <span>{choice.label}</span>
-                  <strong>{choice.price}</strong>
+                  <strong>{currentPrice ?? choice.price}</strong>
                 </button>
               )
             })}

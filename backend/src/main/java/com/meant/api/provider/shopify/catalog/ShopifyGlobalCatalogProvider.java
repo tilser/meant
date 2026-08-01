@@ -222,6 +222,7 @@ public class ShopifyGlobalCatalogProvider {
             ShopifyGlobalCatalogArguments arguments
     ) {
         if (!concurrency.tryAcquire()) {
+            log.warn("Shopify Global Catalog request capacity is exhausted; operation={}", operation);
             return failedExecution(operation, new CatalogSourceFailure(
                     CatalogSourceFailureKind.UNAVAILABLE,
                     "Shopify Global Catalog request capacity is exhausted",
@@ -230,6 +231,7 @@ public class ShopifyGlobalCatalogProvider {
         }
         try {
             if (!circuitBreaker.tryAcquire()) {
+                log.warn("Shopify Global Catalog circuit is open; operation={}", operation);
                 return failedExecution(operation, new CatalogSourceFailure(
                         CatalogSourceFailureKind.UNAVAILABLE,
                         "Shopify Global Catalog circuit is open",
@@ -303,6 +305,13 @@ public class ShopifyGlobalCatalogProvider {
             } else {
                 circuitBreaker.recordIgnoredFailure();
             }
+            log.warn(
+                    "Shopify Global Catalog transport failed; operation={}, failure={}, upstreamStatus={}, retryAfterMs={}",
+                    operation,
+                    exception.failure(),
+                    exception.upstreamStatus().orElse(null),
+                    exception.retryAfter().map(Duration::toMillis).orElse(null)
+            );
             return failedExecution(operation, new CatalogSourceFailure(
                     kind,
                     exception.getMessage(),

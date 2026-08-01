@@ -9,7 +9,7 @@ import type {
 } from '../../../lib/apiClient'
 import { merchantAdjacentDisplayLabel, merchantDisplayOrigin } from '../cart/merchantOrigin'
 import type { Offer, Product } from '../types'
-import { canonicalMerchantScopeKey, minorUnitsToMajor } from '../utils'
+import { canonicalMerchantScopeKey, minorUnitsToMajor, money } from '../utils'
 
 export type OptionValueState = 'available' | 'sold-out' | 'impossible' | 'unknown'
 
@@ -17,6 +17,28 @@ export interface MerchantOfferChoice {
   key: string
   label: string
   anchor: CanonicalOfferProfile
+}
+
+export function exactSelectionPrice(
+  selection: ProductVariantSelectionProfile | null,
+  selectedOfferKey: string | null,
+): string | null {
+  if (
+    !selection ||
+    !selectedOfferKey ||
+    selection.selectedOfferKey !== selectedOfferKey ||
+    selection.selectedOffer?.key !== selectedOfferKey
+  ) {
+    return null
+  }
+  if (selection.selectedOffer.price) {
+    const price = selection.selectedOffer.price
+    return money(minorUnitsToMajor(price.minorUnits, price.currency), price.currency)
+  }
+  const rawAmount = selection.details.selectedVariantPriceAmount?.trim()
+  const amount = rawAmount ? Number(rawAmount) : Number.NaN
+  const currency = selection.details.selectedVariantPriceCurrency?.trim()
+  return Number.isFinite(amount) && currency ? money(amount, currency) : null
 }
 
 function normalized(value: string | null | undefined): string {

@@ -16,6 +16,8 @@ import com.meant.api.module.catalog.service.dto.CatalogProductRehydrationResult;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationContext;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationFailureKind;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationStatus;
+import com.meant.api.module.catalog.service.dto.CatalogSourceFailure;
+import com.meant.api.module.catalog.service.dto.CatalogSourceFailureKind;
 import com.meant.api.module.catalog.service.dto.CatalogSourceResult;
 import com.meant.api.module.catalog.service.dto.CommercialFact;
 import com.meant.api.module.catalog.service.dto.CommercialFreshnessStatus;
@@ -209,8 +211,8 @@ class ShopifyCatalogProductRehydrationProviderTest {
     @Test
     void propagatesAvailableCountryLanguageAndCurrencyToShopifyLookup() {
         ShopifyGlobalCatalogProvider global = providerSource(50);
-        CatalogSourceResult lookupResult = successful(List.of(candidate(
-                "product-1", "variant-1", "seller", 1000, available())));
+        CatalogSourceResult lookupResult = successful(List.of(withCurrency(candidate(
+                "product-1", "variant-1", "seller", 1000, available()), "EUR")));
         when(global.lookupCatalog(any())).thenReturn(lookupResult);
 
         rehydrator(global, 50).rehydrate(
@@ -224,6 +226,123 @@ class ShopifyCatalogProductRehydrationProviderTest {
         assertThat(request.getValue().context().addressCountry()).isEqualTo("CZ");
         assertThat(request.getValue().context().language()).isEqualTo("cs");
         assertThat(request.getValue().context().currency()).isEqualTo("EUR");
+    }
+
+    @Test
+    void replacesWrongCurrencyLookupPriceWithExactLocalizedGetProductPrice() {
+        ShopifyGlobalCatalogProvider global = providerSource(50);
+        ProductCandidate wrongCurrency = withCurrency(detailedCandidate(
+                "product-1", "variant-m", "seller-a", "seller.example", "M", 1299), "EUR");
+        CatalogSourceResult localizedLookup = successful(List.of(wrongCurrency));
+        when(global.lookupCatalog(any())).thenReturn(localizedLookup);
+        ShopifyGlobalCatalogProductResult localizedProduct = new ShopifyGlobalCatalogProductResult(
+                successful(List.of()),
+                rawProduct(),
+                List.of()
+        );
+        when(global.getProductWithDetails(any())).thenReturn(localizedProduct);
+        CatalogProductReference requested = new CatalogProductReference(
+                "localized-product",
+                SOURCE,
+                null,
+                null,
+                merchant("seller-a"),
+                "seller.example",
+                product("product-1"),
+                variant("variant-m"),
+                List.of(new ProductAttribute("variant-option", "Size", "M"))
+        );
+
+        CatalogProductRehydrationResult result = rehydrator(global, 50).rehydrate(
+                List.of(requested),
+                new CatalogRehydrationContext("US", "en", "USD")
+        ).getFirst();
+
+        assertThat(result.status()).isEqualTo(CatalogRehydrationStatus.FRESH);
+        assertThat(result.facts().price()).isEqualTo(new Money(1299, "USD"));
+        ArgumentCaptor<ShopifyGlobalCatalogGetProductRequest> request =
+                ArgumentCaptor.forClass(ShopifyGlobalCatalogGetProductRequest.class);
+        verify(global).getProductWithDetails(request.capture());
+        assertThat(request.getValue().id()).isEqualTo("variant-m");
+        assertThat(request.getValue().context().currency()).isEqualTo("USD");
+    }
+
+    @Test
+    void retriesOneTransientGetProductFailure() {
+        ShopifyGlobalCatalogProvider global = providerSource(50);
+        CatalogSourceResult transientFailure = mock(CatalogSourceResult.class);
+        when(transientFailure.successful()).thenReturn(false);
+        when(transientFailure.failure()).thenReturn(new CatalogSourceFailure(
+                CatalogSourceFailureKind.TIMEOUT,
+                "Timed out",
+                null,
+                null
+        ));
+        ShopifyGlobalCatalogProductResult recovered = new ShopifyGlobalCatalogProductResult(
+                successful(List.of()), rawProduct(), List.of());
+        ShopifyGlobalCatalogProductResult timedOut = new ShopifyGlobalCatalogProductResult(
+                transientFailure, null, List.of());
+        when(global.getProductWithDetails(any())).thenReturn(
+                timedOut,
+                recovered
+        );
+        CatalogProductReference requested = new CatalogProductReference(
+                "retry-product",
+                SOURCE,
+                null,
+                null,
+                merchant("seller-a"),
+                "seller.example",
+                product("product-1"),
+                variant("variant-m"),
+                List.of(new ProductAttribute("variant-option", "Size", "M"))
+        );
+
+        CatalogProductDetailResult result = rehydrator(global, 50).getDetails(
+                requested,
+                new CatalogRehydrationContext("US", "en", "USD")
+        );
+
+        assertThat(result.rehydration().status()).isEqualTo(CatalogRehydrationStatus.FRESH);
+        assertThat(result.rehydration().facts().price()).isEqualTo(new Money(1299, "USD"));
+        verify(global, times(2)).getProductWithDetails(any());
+    }
+
+    @Test
+    void fallsBackToExactGetProductWhenLookupReturnsATypedFailure() {
+        ShopifyGlobalCatalogProvider global = providerSource(50);
+        CatalogSourceResult failedLookup = mock(CatalogSourceResult.class);
+        when(failedLookup.successful()).thenReturn(false);
+        when(failedLookup.failure()).thenReturn(new CatalogSourceFailure(
+                CatalogSourceFailureKind.UNAVAILABLE,
+                "Unavailable",
+                null,
+                null
+        ));
+        ShopifyGlobalCatalogProductResult recovered = new ShopifyGlobalCatalogProductResult(
+                successful(List.of()), rawProduct(), List.of());
+        when(global.lookupCatalog(any())).thenReturn(failedLookup);
+        when(global.getProductWithDetails(any())).thenReturn(recovered);
+        CatalogProductReference requested = new CatalogProductReference(
+                "lookup-fallback",
+                SOURCE,
+                null,
+                null,
+                merchant("seller-a"),
+                "seller.example",
+                product("product-1"),
+                variant("variant-m"),
+                List.of(new ProductAttribute("variant-option", "Size", "M"))
+        );
+
+        CatalogProductRehydrationResult result = rehydrator(global, 50).rehydrate(
+                List.of(requested),
+                new CatalogRehydrationContext("US", "en", "USD")
+        ).getFirst();
+
+        assertThat(result.status()).isEqualTo(CatalogRehydrationStatus.FRESH);
+        assertThat(result.facts().price()).isEqualTo(new Money(1299, "USD"));
+        verify(global).getProductWithDetails(any());
     }
 
     @Test
@@ -1091,6 +1210,35 @@ class ShopifyCatalogProductRehydrationProviderTest {
                 List.of(),
                 List.of(provenance),
                 offer
+        );
+    }
+
+    private ProductCandidate withCurrency(ProductCandidate candidate, String currency) {
+        Offer current = candidate.offer();
+        Offer localized = new Offer(
+                current.identity(),
+                current.merchantName(),
+                current.variantTitle(),
+                current.price() == null ? null : new Money(current.price().minorUnits(), currency),
+                current.listPrice() == null ? null : new Money(current.listPrice().minorUnits(), currency),
+                current.availability(),
+                current.delivery(),
+                current.checkoutUrl(),
+                current.rankingEvidence(),
+                current.provenance()
+        );
+        return new ProductCandidate(
+                candidate.title(),
+                candidate.description(),
+                candidate.media(),
+                candidate.attributes(),
+                candidate.materials(),
+                candidate.certifications(),
+                candidate.attribution(),
+                candidate.identityEvidence(),
+                candidate.provenance(),
+                candidate.retrievalSignals(),
+                localized
         );
     }
 

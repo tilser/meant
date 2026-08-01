@@ -7,6 +7,7 @@ import com.meant.api.module.catalog.service.dto.CatalogProductRehydrationResult;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationContext;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationFailureKind;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationStatus;
+import com.meant.api.module.catalog.service.dto.CatalogSourceFailureKind;
 import com.meant.api.module.catalog.service.dto.CatalogSourceResult;
 import com.meant.api.module.catalog.service.dto.CommercialFactsFreshness;
 import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
@@ -46,11 +47,13 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-/** Rehydrates exact Shopify offers through lookup with a raw get_product fallback for capped results. */
+/** Rehydrates exact Shopify offers through lookup with a raw get_product correctness fallback. */
 @Component
+@Slf4j
 public class ShopifyCatalogProductRehydrationProvider
         implements CatalogProductRehydrationProvider, CatalogProductDetailProvider {
     private static final Comparator<ProductAttribute> OPTION_ORDER = Comparator
@@ -124,7 +127,7 @@ public class ShopifyCatalogProductRehydrationProvider
             );
         }
         try {
-            ShopifyGlobalCatalogProductResult productResult = provider.getProductWithDetails(
+            ShopifyGlobalCatalogProductResult productResult = getProductWithRetry(
                     new ShopifyGlobalCatalogGetProductRequest(
                             selection == null
                                     ? detailIdentifier(reference)
@@ -135,7 +138,7 @@ public class ShopifyCatalogProductRehydrationProvider
                             selection == null ? null : selection.preferences(),
                             shopifyDetailContext(context),
                             detailFilters(reference)
-                    ));
+                    ), reference);
             CatalogSourceResult sourceResult = productResult.catalogResult();
             if (!sourceResult.successful()) {
                 return CatalogProductDetailResult.failed(
@@ -167,6 +170,11 @@ public class ShopifyCatalogProductRehydrationProvider
                     details
             );
         } catch (RuntimeException exception) {
+            log.warn(
+                    "Shopify product detail refresh failed; interactionKey={}, exceptionType={}",
+                    reference.interactionKey(),
+                    exception.getClass().getName()
+            );
             return CatalogProductDetailResult.failed(
                     reference,
                     CatalogRehydrationStatus.DEGRADED,
@@ -199,6 +207,11 @@ public class ShopifyCatalogProductRehydrationProvider
             try {
                 hydrateBatch(batch, context, results);
             } catch (RuntimeException exception) {
+                log.warn(
+                        "Shopify product rehydration batch failed; batchSize={}, exceptionType={}",
+                        batch.size(),
+                        exception.getClass().getName()
+                );
                 batch.forEach(reference -> results.put(reference, failure(
                         reference,
                         CatalogRehydrationStatus.DEGRADED,
@@ -220,25 +233,35 @@ public class ShopifyCatalogProductRehydrationProvider
                 null
         ));
         if (!sourceResult.successful()) {
-            batch.forEach(reference -> results.put(reference, failure(
-                    reference,
-                    CatalogRehydrationStatus.DEGRADED,
-                    CatalogRehydrationFailureKind.UPSTREAM_UNAVAILABLE
-            )));
+            log.warn(
+                    "Shopify catalog lookup failed; batchSize={}, failure={}; falling back to exact get_product",
+                    batch.size(),
+                    sourceResult.failure() == null ? "unknown" : sourceResult.failure().kind()
+            );
+            batch.forEach(reference -> results.put(reference, rehydrateExact(reference, context)));
             return;
         }
         List<ProductCandidate> candidates = sourceResult.candidates() == null ? List.of() : sourceResult.candidates();
         for (CatalogProductReference reference : batch) {
             ShopifyCatalogReferenceMatcher.Match match = matcher.match(reference, candidates);
-            results.put(reference, match != null
-                    ? fresh(reference, match)
-                    : sourceResult.truncated()
-                            ? rehydrateExact(reference, context)
-                            : failure(
-                                    reference,
-                                    CatalogRehydrationStatus.UNAVAILABLE,
-                                    CatalogRehydrationFailureKind.NOT_FOUND
-                            ));
+            if (match != null && priceMatchesContext(match, context)) {
+                results.put(reference, fresh(reference, match));
+            } else if (match != null || sourceResult.truncated()) {
+                if (match != null) {
+                    log.warn(
+                            "Shopify catalog lookup returned unusable localized pricing; interactionKey={}, requestedCurrency={}; falling back to exact get_product",
+                            reference.interactionKey(),
+                            context == null ? null : context.currency()
+                    );
+                }
+                results.put(reference, rehydrateExact(reference, context));
+            } else {
+                results.put(reference, failure(
+                        reference,
+                        CatalogRehydrationStatus.UNAVAILABLE,
+                        CatalogRehydrationFailureKind.NOT_FOUND
+                ));
+            }
         }
     }
 
@@ -247,7 +270,7 @@ public class ShopifyCatalogProductRehydrationProvider
             CatalogRehydrationContext context
     ) {
         try {
-            ShopifyGlobalCatalogProductResult productResult = provider.getProductWithDetails(
+            ShopifyGlobalCatalogProductResult productResult = getProductWithRetry(
                     new ShopifyGlobalCatalogGetProductRequest(
                             detailIdentifier(reference),
                             reference.selectedOptions().stream()
@@ -256,7 +279,7 @@ public class ShopifyCatalogProductRehydrationProvider
                             null,
                             shopifyContext(context),
                             detailFilters(reference)
-                    ));
+                    ), reference);
             if (!productResult.catalogResult().successful()) {
                 return failure(
                         reference,
@@ -269,12 +292,63 @@ public class ShopifyCatalogProductRehydrationProvider
                     ? failure(reference, CatalogRehydrationStatus.UNAVAILABLE, CatalogRehydrationFailureKind.NOT_FOUND)
                     : fresh(reference, match);
         } catch (RuntimeException exception) {
+            log.warn(
+                    "Shopify exact product rehydration failed; interactionKey={}, exceptionType={}",
+                    reference.interactionKey(),
+                    exception.getClass().getName()
+            );
             return failure(
                     reference,
                     CatalogRehydrationStatus.DEGRADED,
                     CatalogRehydrationFailureKind.UPSTREAM_UNAVAILABLE
             );
         }
+    }
+
+    private ShopifyGlobalCatalogProductResult getProductWithRetry(
+            ShopifyGlobalCatalogGetProductRequest request,
+            CatalogProductReference reference
+    ) {
+        ShopifyGlobalCatalogProductResult result = provider.getProductWithDetails(request);
+        if (!retryable(result)) {
+            return result;
+        }
+        log.warn(
+                "Shopify get_product transient failure; interactionKey={}, failure={}; retrying once",
+                reference.interactionKey(),
+                result.catalogResult().failure().kind()
+        );
+        return provider.getProductWithDetails(request);
+    }
+
+    private boolean retryable(ShopifyGlobalCatalogProductResult result) {
+        if (result == null || result.catalogResult() == null || result.catalogResult().successful()
+                || result.catalogResult().failure() == null) {
+            return false;
+        }
+        CatalogSourceFailureKind failure = result.catalogResult().failure().kind();
+        return failure == CatalogSourceFailureKind.TIMEOUT
+                || failure == CatalogSourceFailureKind.TRANSIENT_UPSTREAM;
+    }
+
+    private boolean priceMatchesContext(
+            ShopifyCatalogReferenceMatcher.Match match,
+            CatalogRehydrationContext context
+    ) {
+        String requestedCurrency = context == null ? null : normalizedCurrency(context.currency());
+        if (requestedCurrency == null) {
+            return true;
+        }
+        return match.candidate() != null
+                && match.candidate().offer() != null
+                && match.candidate().offer().price() != null
+                && requestedCurrency.equals(normalizedCurrency(match.candidate().offer().price().currency()));
+    }
+
+    private String normalizedCurrency(String currency) {
+        return currency == null || currency.isBlank()
+                ? null
+                : currency.trim().toUpperCase(Locale.ROOT);
     }
 
     private ShopifyCatalogReferenceMatcher.Match rawMatch(

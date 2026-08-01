@@ -4,6 +4,7 @@ import com.meant.api.module.catalog.service.dto.CatalogProductDetailResult;
 import com.meant.api.module.catalog.service.dto.CatalogProductDetailSelection;
 import com.meant.api.module.catalog.service.dto.CatalogProductDetailSelectionResult;
 import com.meant.api.module.catalog.service.dto.CatalogProductReference;
+import com.meant.api.module.catalog.service.dto.CatalogProductRehydrationResult;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationContext;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationFailureKind;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationStatus;
@@ -18,11 +19,13 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /** Dispatches a single current get-product call without widening batch/cart rehydration. */
 @Service
+@Slf4j
 public class CatalogProductDetailService {
     private static final Comparator<ProductAttribute> OPTION_ORDER = Comparator
             .comparing((ProductAttribute option) -> option.group() == null ? "" : option.group())
@@ -80,6 +83,7 @@ public class CatalogProductDetailService {
                             ? CatalogRehydrationFailureKind.NO_PROVIDER
                             : CatalogRehydrationFailureKind.AMBIGUOUS_PROVIDER
             );
+            logFailure(failed.rehydration(), null);
             metrics.record(failed.rehydration());
             return failed;
         }
@@ -99,6 +103,9 @@ public class CatalogProductDetailService {
                 result = result.withSelection(selectionResult(selection, result.details()));
             }
             observationCache.rememberDetail(result, selection, context);
+            if (result.rehydration().status() != CatalogRehydrationStatus.FRESH) {
+                logFailure(result.rehydration(), null);
+            }
             metrics.record(result.rehydration());
             return result;
         } catch (RuntimeException exception) {
@@ -107,9 +114,27 @@ public class CatalogProductDetailService {
                     CatalogRehydrationStatus.DEGRADED,
                     CatalogRehydrationFailureKind.UPSTREAM_UNAVAILABLE
             );
+            logFailure(failed.rehydration(), exception);
             metrics.record(failed.rehydration());
             return failed;
         }
+    }
+
+    private void logFailure(
+            CatalogProductRehydrationResult result,
+            RuntimeException exception
+    ) {
+        CatalogProductReference reference = result.reference();
+        log.warn(
+                "Catalog product detail refresh failed; interactionKey={}, provider={}, sourceType={}, source={}, status={}, failure={}, exceptionType={}",
+                reference.interactionKey(),
+                reference.discoverySource().provider().value(),
+                reference.discoverySource().type(),
+                reference.discoverySource().value(),
+                result.status(),
+                result.failure(),
+                exception == null ? null : exception.getClass().getName()
+        );
     }
 
     private CatalogProductDetailSelectionResult selectionResult(

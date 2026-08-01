@@ -12,11 +12,13 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /** Provider-neutral, batched rehydration dispatch over the existing provider adapters. */
 @Service
+@Slf4j
 public class CatalogProductRehydrationService {
     private final List<CatalogProductRehydrationProvider> providers;
     private final CatalogProductRehydrationMetrics metrics;
@@ -73,6 +75,7 @@ public class CatalogProductRehydrationService {
                                 : CatalogRehydrationFailureKind.AMBIGUOUS_PROVIDER
                 );
                 results.put(reference, failure);
+                logFailure(failure, null);
                 metrics.record(failure);
             } else {
                 batches.computeIfAbsent(matching.getFirst(), ignored -> new ArrayList<>()).add(reference);
@@ -87,6 +90,9 @@ public class CatalogProductRehydrationService {
                             result = PreferredCurrencyPriceNormalizer.normalize(result, context);
                             results.put(result.reference(), result);
                             observationCache.rememberRehydration(result, context);
+                            if (result.status() != CatalogRehydrationStatus.FRESH) {
+                                logFailure(result, null);
+                            }
                             metrics.record(result);
                         }
                     }
@@ -99,6 +105,7 @@ public class CatalogProductRehydrationService {
                             CatalogRehydrationFailureKind.UPSTREAM_UNAVAILABLE
                     );
                     results.put(reference, failure);
+                    logFailure(failure, exception);
                     metrics.record(failure);
                 }
             }
@@ -109,11 +116,26 @@ public class CatalogProductRehydrationService {
                             CatalogRehydrationStatus.DEGRADED,
                             CatalogRehydrationFailureKind.INVALID_RESPONSE
                     );
+                    logFailure(missing, null);
                     metrics.record(missing);
                     return missing;
                 });
             }
         });
         return references.stream().map(results::get).toList();
+    }
+
+    private void logFailure(CatalogProductRehydrationResult result, RuntimeException exception) {
+        CatalogProductReference reference = result.reference();
+        log.warn(
+                "Catalog product rehydration failed; interactionKey={}, provider={}, sourceType={}, source={}, status={}, failure={}, exceptionType={}",
+                reference.interactionKey(),
+                reference.discoverySource().provider().value(),
+                reference.discoverySource().type(),
+                reference.discoverySource().value(),
+                result.status(),
+                result.failure(),
+                exception == null ? null : exception.getClass().getName()
+        );
     }
 }
