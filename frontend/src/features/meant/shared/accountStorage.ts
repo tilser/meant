@@ -30,6 +30,8 @@ const PRODUCT_BEARING_ACCOUNT_STORAGE_KEYS = [
   'meant.workbench.agents',
 ] as const
 
+const COMPARE_SESSION_STORAGE_KEYS = ['meant.compare', 'meant.compareProducts'] as const
+
 interface RemovableStorage {
   readonly length?: number
   key?(index: number): string | null
@@ -45,7 +47,10 @@ export function accountSessionStorageKey(baseKey: string, userId: string | undef
   if (!PRODUCT_BEARING_ACCOUNT_STORAGE_KEYS.includes(baseKey as never)) {
     throw new Error(`Account storage key is not session-only: ${baseKey}`)
   }
-  return accountStorageKey(`${baseKey}.buyerSafeV2`, userId)
+  const version = COMPARE_SESSION_STORAGE_KEYS.includes(baseKey as never)
+    ? 'buyerSafeV3'
+    : 'buyerSafeV2'
+  return accountStorageKey(`${baseKey}.${version}`, userId)
 }
 
 export function purgeLegacyAccountStorage(storage?: RemovableStorage): void {

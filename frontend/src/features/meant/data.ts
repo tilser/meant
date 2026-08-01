@@ -1330,8 +1330,6 @@ export const DEFAULT_SAVED: readonly Product[] = PRODUCTS.filter((product) =>
 
 export const DEFAULT_SAVED_IDS: readonly Product['id'][] = ['cereal', 'tee', 'brewer']
 
-export const DEFAULT_COMPARE: readonly Product['id'][] = ['sweater', 'runners']
-
 export const DEFAULT_ORDERS: readonly Order[] = [
   {
     id: 'MNT-4192',

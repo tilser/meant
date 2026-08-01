@@ -10,7 +10,6 @@ import {
 } from 'react'
 
 import {
-  DEFAULT_COMPARE,
   DEFAULT_PREFERENCE_IDS,
   DEFAULT_USER,
   PREFERENCES,
@@ -649,7 +648,7 @@ export function MeantApp() {
   const [savePendingIds, setSavePendingIds] = useState<ProductId[]>([])
   const [compareIds, setCompareIds] = useSessionStoredState<ProductId[]>(
     accountSessionStorageKey('meant.compare', userId),
-    [...DEFAULT_COMPARE],
+    [],
   )
   const [compareProducts, setCompareProducts] = useSessionStoredState<Product[]>(
     accountSessionStorageKey('meant.compareProducts', userId),

@@ -17,8 +17,11 @@ describe('account storage isolation', () => {
     expect(accountSessionStorageKey('meant.shelf', 'user-a')).toBe(
       'meant.shelf.buyerSafeV2.account.user-a',
     )
+    expect(accountSessionStorageKey('meant.compare', 'user-a')).toBe(
+      'meant.compare.buyerSafeV3.account.user-a',
+    )
     expect(accountSessionStorageKey('meant.compareProducts', 'user-a')).toBe(
-      'meant.compareProducts.buyerSafeV2.account.user-a',
+      'meant.compareProducts.buyerSafeV3.account.user-a',
     )
     expect(accountSessionStorageKey('meant.cartSnapshots', 'user-a')).toBe(
       'meant.cartSnapshots.buyerSafeV2.account.user-a',
