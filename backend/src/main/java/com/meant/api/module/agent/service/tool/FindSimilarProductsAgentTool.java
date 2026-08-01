@@ -72,10 +72,11 @@ public class FindSimilarProductsAgentTool implements AgentTool {
         }
         AgentSimilarityAnchorResult similarityAnchor = anchor(context, input, query);
         var profile = profileService.profile(context.userId());
-        String authoritativeUserText = context.triggeringUserText() == null
-                        || context.triggeringUserText().isBlank()
+        String authoritativeUserText = context.runId() == null
                 ? query
-                : context.triggeringUserText().trim();
+                : context.triggeringUserText() == null || context.triggeringUserText().isBlank()
+                        ? query
+                        : context.triggeringUserText().trim();
         var qualificationCommand = new QualifyAgentProductSearchCommand(
                 profile,
                 context.conversationId(),

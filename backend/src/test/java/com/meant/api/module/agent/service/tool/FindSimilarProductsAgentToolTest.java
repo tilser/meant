@@ -167,6 +167,8 @@ class FindSimilarProductsAgentToolTest {
         assertThat(command.getValue().contextMessageId()).isNull();
         assertThat(command.getValue().requestId()).isEqualTo(actionId);
         assertThat(command.getValue().requestQualificationId()).isNotNull();
+        assertThat(command.getValue().authoritativeUserText())
+                .isEqualTo("products similar to Predator League");
         assertThat(execution.resultJson())
                 .contains("\"matchedFilterIds\":[\"streetwear\"]")
                 .contains("\"unknownFilterIds\":[\"no-polyester\"]")

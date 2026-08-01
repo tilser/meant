@@ -483,7 +483,7 @@ class UserProductSearchCatalogInputBuilderTest {
     }
 
     @Test
-    void qualifiedSearchRetainsSavedBuyerLocationWithoutAddingAShipsToFilter() {
+    void qualifiedSearchOmitsImplicitLocationThatWouldOverrideThePreferredCurrency() {
         CatalogDiscoveryFilters qualifiedFilters = new CatalogDiscoveryFilters(
                 true,
                 List.of(),
@@ -506,10 +506,53 @@ class UserProductSearchCatalogInputBuilderTest {
                 qualifiedFilters
         );
 
-        assertThat(input.context().addressCountry()).isEqualTo("CZ");
+        assertThat(input.context().addressCountry()).isNull();
         assertThat(input.context().language()).isNull();
         assertThat(input.context().currency()).isEqualTo("USD");
         assertThat(input.discoveryFilters()).isSameAs(qualifiedFilters);
+        assertThat(input.discoveryFilters().shipsTo()).isNull();
+    }
+
+    @Test
+    void qualifiedSearchRetainsSavedBuyerLocationWhenItsCurrencyMatches() {
+        CatalogDiscoveryFilters qualifiedFilters = new CatalogDiscoveryFilters(
+                true,
+                List.of(),
+                null,
+                List.of(),
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                null,
+                List.of()
+        );
+        UserSettingsResult base = settings(new UserLocationResult("Czechia", "CZ", "Prague"));
+        UserSettingsResult preferredCzk = new UserSettingsResult(
+                base.budget(),
+                "CZK",
+                base.clothingFit(),
+                base.location(),
+                base.locations(),
+                base.filters(),
+                base.availableFilters(),
+                base.parsedFilterIds(),
+                base.unmappedPreferences(),
+                base.createdAt(),
+                base.updatedAt()
+        );
+
+        UserProductSearchCatalogInput input = builder.build(
+                "digital running guide",
+                intent("digital running guide"),
+                preferredCzk,
+                null,
+                null,
+                qualifiedFilters
+        );
+
+        assertThat(input.context().addressCountry()).isEqualTo("CZ");
+        assertThat(input.context().currency()).isEqualTo("CZK");
         assertThat(input.discoveryFilters().shipsTo()).isNull();
     }
 

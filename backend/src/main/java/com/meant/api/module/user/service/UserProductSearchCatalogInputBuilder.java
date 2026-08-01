@@ -161,10 +161,11 @@ public class UserProductSearchCatalogInputBuilder {
                 ? parsedPrice
                 : parsedPrice(qualifiedFilters, preferredCurrency);
         String searchQuery = searchQuery(queryIntent.searchQuery(), parsedPrice);
-        CatalogDiscoveryLocation contextLocation = qualifiedFilters != null
-                && qualifiedFilters.shipsTo() != null
-                ? qualifiedFilters.shipsTo()
-                : catalogLocation(settings.location());
+        CatalogDiscoveryLocation contextLocation = contextLocation(
+                settings,
+                qualifiedFilters,
+                preferredCurrency
+        );
         String country = contextLocation == null ? null : contextLocation.country();
         String currency = preferredCurrency;
         CatalogSearchContext context = context(
@@ -194,6 +195,42 @@ public class UserProductSearchCatalogInputBuilder {
                 filters,
                 qualifiedFilters
         );
+    }
+
+    private CatalogDiscoveryLocation contextLocation(
+            UserSettingsResult settings,
+            CatalogDiscoveryFilters qualifiedFilters,
+            String preferredCurrency
+    ) {
+        if (qualifiedFilters == null) {
+            return catalogLocation(settings.location());
+        }
+        if (qualifiedFilters.shipsTo() != null) {
+            return qualifiedFilters.shipsTo();
+        }
+        CatalogDiscoveryLocation savedLocation = catalogLocation(settings.location());
+        return locationUsesCurrency(savedLocation, preferredCurrency) ? savedLocation : null;
+    }
+
+    /**
+     * Catalog providers can localize offers primarily from the buyer country. Do not add an
+     * implicit saved country to an already-qualified request when it would override the account
+     * currency and make otherwise valid results fail hard currency eligibility. An explicit
+     * ships-to filter remains authoritative and is always retained.
+     */
+    private boolean locationUsesCurrency(CatalogDiscoveryLocation location, String preferredCurrency) {
+        if (location == null || location.country() == null || location.country().isBlank()) {
+            return true;
+        }
+        try {
+            Locale locale = new Locale.Builder()
+                    .setRegion(location.country().trim().toUpperCase(Locale.ROOT))
+                    .build();
+            Currency localCurrency = Currency.getInstance(locale);
+            return localCurrency != null && localCurrency.getCurrencyCode().equals(preferredCurrency);
+        } catch (IllegalArgumentException exception) {
+            return false;
+        }
     }
 
     /** Rejects prices explicitly stated in a currency other than the account preference. */

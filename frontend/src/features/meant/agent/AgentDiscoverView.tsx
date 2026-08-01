@@ -117,6 +117,7 @@ import { threadFromAgentConversationSummary } from './conversationHistory'
 import { addChatProductToCart, cartInChatMessage, exactProductOfferKey } from './chatCartAddition'
 import { agentRunCandidateIds, preferredAgentRunSnapshot } from './runSelection'
 import { refreshAgentViewAfterSettlement } from './settlementRefresh'
+import { similaritySearchQuery } from './similarAction'
 import { plainAgentText } from './agentText'
 import { agentTurnChatRejectionMessage } from './turnRejection'
 
@@ -1452,7 +1453,11 @@ export function AgentDiscoverView({
         })
       })
   }
-  const dig = (kind: 'reviews' | 'code' | 'similar', product: Product) => {
+  const dig = (
+    kind: 'reviews' | 'code' | 'similar',
+    product: Product,
+    originatingQuery?: string,
+  ) => {
     const key = product.id
     const offerKey = exactProductOfferKey(product) ?? undefined
     if (kind === 'reviews') {
@@ -1464,10 +1469,11 @@ export function AgentDiscoverView({
     } else if (kind === 'code') {
       appendUnavailableFeatureMessage()
     } else {
+      const query = similaritySearchQuery(originatingQuery, product.name)
       void performAction(
         'find_similar_products',
-        { canonicalProductKey: key, query: `products similar to ${product.name}` },
-        `Found products similar to ${product.name}`,
+        { canonicalProductKey: key, query },
+        `Find products similar to ${product.name}`,
       )
     }
   }
