@@ -15,6 +15,7 @@ import type { Product } from '../types'
 import { minorUnitsToMajor, money } from '../utils'
 import { loadCanonicalProductDetailWithRecovery } from './canonicalProductSessionRecovery'
 import { trackCommerceEvent } from './commerceAnalytics'
+import { isExactProductVariantSelection } from './directPurchasePreparation'
 import {
   cleanSelectedOptions,
   exactSelectionPrice,
@@ -25,7 +26,6 @@ import {
   productWithVariantSelection,
   savedOfferInitiallyCartable,
   savedSelectionChanged,
-  selectedOptionsEqual,
   selectedOptionsWithPreference,
 } from './variantSelection'
 
@@ -52,10 +52,23 @@ interface MerchantChoice {
   available: boolean
 }
 
-function offerPrice(offer: CanonicalOfferProfile): string {
-  return offer.price
-    ? money(minorUnitsToMajor(offer.price.minorUnits, offer.price.currency), offer.price.currency)
-    : 'Price unavailable'
+function offerPrice(offer: CanonicalOfferProfile, fallbackProduct: Product): string {
+  if (offer.price) {
+    return money(
+      minorUnitsToMajor(offer.price.minorUnits, offer.price.currency),
+      offer.price.currency,
+    )
+  }
+  const matchingSnapshot = fallbackProduct.offers.find(
+    (candidate) => candidate.offerKey?.trim() === offer.key,
+  )
+  const fallbackAmount =
+    matchingSnapshot?.price ?? (fallbackProduct.merchants === 1 ? fallbackProduct.priceFrom : null)
+  const fallbackCurrency =
+    matchingSnapshot?.priceCurrency ??
+    (fallbackProduct.merchants === 1 ? fallbackProduct.priceCurrency : null)
+  const fallback = money(fallbackAmount, fallbackCurrency)
+  return fallback === 'Price unavailable' ? fallback : `Last seen ${fallback}`
 }
 
 function savedOfferPrice(product: Product, offerKey: string): string {
@@ -92,13 +105,16 @@ function savedMerchantChoices(product: Product): MerchantChoice[] {
   })
 }
 
-function canonicalMerchantChoices(product: CanonicalProductProfile): MerchantChoice[] {
+function canonicalMerchantChoices(
+  product: CanonicalProductProfile,
+  fallbackProduct: Product,
+): MerchantChoice[] {
   return merchantOfferChoices(product).map((choice) => ({
     key: choice.key,
     label: choice.label,
     anchorOfferKey: choice.anchor.key,
     selectedOptions: cleanSelectedOptions(choice.anchor.selectedOptions),
-    price: offerPrice(choice.anchor),
+    price: offerPrice(choice.anchor, fallbackProduct),
     // The anchor is server-issued identity, not proof that every merchant variant is unavailable.
     available: true,
   }))
@@ -149,13 +165,6 @@ function selectionValue(
   )
 }
 
-function exactSelection(selection: ProductVariantSelectionProfile): boolean {
-  return Boolean(
-    selection.selectedOfferKey?.trim() &&
-    selection.selectedOffer?.key === selection.selectedOfferKey,
-  )
-}
-
 export function GroupedOfferSelector({
   product,
   researchQuery,
@@ -200,7 +209,7 @@ export function GroupedOfferSelector({
   const choices = useMemo(
     () =>
       canonicalDetail
-        ? canonicalMerchantChoices(canonicalDetail.product)
+        ? canonicalMerchantChoices(canonicalDetail.product, product)
         : canonicalKey
           ? []
           : savedMerchantChoices(product),
@@ -242,7 +251,7 @@ export function GroupedOfferSelector({
         const nextDetails = merchantDetails(response)
         setDetails(nextDetails)
         const effective = cleanSelectedOptions(response.details.selectedOptions)
-        const accepted = exactSelection(response) && selectedOptionsEqual(cleanRequested, effective)
+        const accepted = isExactProductVariantSelection(response, cleanRequested)
         if (accepted) {
           setSelectedOptions(effective)
           setSelectedOfferKey(response.selectedOfferKey?.trim() ?? null)
@@ -318,7 +327,7 @@ export function GroupedOfferSelector({
       .then((nextDetail) => {
         if (controller.signal.aborted || detailRequestRef.current !== requestId) return
         setCanonicalDetail(nextDetail)
-        const nextChoices = canonicalMerchantChoices(nextDetail.product)
+        const nextChoices = canonicalMerchantChoices(nextDetail.product, product)
         const selected =
           nextChoices.find((choice) => choice.anchorOfferKey === nextDetail.selectedOfferKey) ??
           nextChoices.find((choice) => choice.anchorOfferKey === nextDetail.recommendedOfferKey) ??

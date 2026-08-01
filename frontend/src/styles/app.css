@@ -6526,6 +6526,13 @@ button:disabled {
   font-weight: 650;
 }
 
+.mt-modal-price-currency-note {
+  display: block;
+  margin-top: 7px;
+  color: var(--faint);
+  font-size: 10px;
+}
+
 .mt-modal-price-meta {
   display: flex;
   flex: 0 0 auto;

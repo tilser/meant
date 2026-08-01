@@ -18,6 +18,7 @@ describe('api error parsing', () => {
           title: 'Problem title',
           message: 'Payload message',
           code: 'not_found',
+          reason: 'unknown_or_expired',
         },
         404,
       ),
@@ -28,6 +29,7 @@ describe('api error parsing', () => {
     expect(error).toBeInstanceOf(Error)
     expect(error.status).toBe(404)
     expect(error.code).toBe('not_found')
+    expect(error.reason).toBe('unknown_or_expired')
     expect(error.message).toBe('Detailed failure')
   })
 

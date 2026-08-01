@@ -497,18 +497,13 @@ export function ProductModal({
   const selectedVariantListPriceCurrency =
     selectedPurchaseVariant?.listPriceCurrency ??
     activeMerchantDetails?.selectedVariantListPriceCurrency
-  const selectedVariantPrice =
-    selectedVariantPriceCurrency?.trim().toUpperCase() === preferredCurrency.trim().toUpperCase()
-      ? detailMoney(selectedVariantPriceAmount, selectedVariantPriceCurrency)
-      : null
-  const selectedVariantSavings = selectedVariantPrice
-    ? variantSavings(
-        selectedVariantPriceAmount,
-        selectedVariantPriceCurrency,
-        selectedVariantListPriceAmount,
-        selectedVariantListPriceCurrency,
-      )
-    : null
+  const selectedVariantPrice = detailMoney(selectedVariantPriceAmount, selectedVariantPriceCurrency)
+  const selectedVariantSavings = variantSavings(
+    selectedVariantPriceAmount,
+    selectedVariantPriceCurrency,
+    selectedVariantListPriceAmount,
+    selectedVariantListPriceCurrency,
+  )
   const selectedVariantListPrice = selectedVariantSavings
     ? detailMoney(selectedVariantListPriceAmount, selectedVariantListPriceCurrency)
     : null
@@ -603,17 +598,30 @@ export function ProductModal({
                   : 'Checkout unavailable'
   const fallbackPriceAmount = productPriceFrom(actionProduct, deliveryLocations)
   const fallbackPrice =
-    fallbackPriceAmount === null ||
-    actionProduct.priceCurrency?.trim().toUpperCase() !== preferredCurrency.trim().toUpperCase()
+    fallbackPriceAmount === null
       ? null
       : detailMoney(String(fallbackPriceAmount), actionProduct.priceCurrency)
   const displayedPrice = selectedVariantPrice ?? fallbackPrice ?? 'Price unavailable'
+  const selectedMerchantCurrency = selectedVariantPriceCurrency?.trim().toUpperCase()
+  const fallbackMerchantCurrency = actionProduct.priceCurrency?.trim().toUpperCase()
+  const displayedMerchantCurrency = selectedVariantPrice
+    ? selectedMerchantCurrency
+    : fallbackPrice
+      ? fallbackMerchantCurrency
+      : null
+  const merchantCurrencyNote =
+    displayedMerchantCurrency &&
+    displayedMerchantCurrency !== preferredCurrency.trim().toUpperCase()
+      ? `${displayedMerchantCurrency} merchant currency`
+      : null
   const priceLabel = selectedVariantSavings
     ? 'Sale price'
     : selectedVariantPrice
       ? 'Current price'
       : fallbackPrice
-        ? 'Price from'
+        ? actionProduct.commercialFactsAuthoritative === false
+          ? 'Last checked price'
+          : 'Price from'
         : 'Price'
   const merchantCount = product.canonicalProduct
     ? product.merchants
@@ -855,6 +863,11 @@ export function ProductModal({
                     {selectedVariantSavings.percent > 0
                       ? ` (${selectedVariantSavings.percent}%)`
                       : ''}
+                  </span>
+                ) : null}
+                {merchantCurrencyNote ? (
+                  <span className="mt-mono mt-modal-price-currency-note">
+                    {merchantCurrencyNote}
                   </span>
                 ) : null}
               </div>

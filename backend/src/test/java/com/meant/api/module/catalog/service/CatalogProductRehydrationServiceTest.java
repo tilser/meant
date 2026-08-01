@@ -33,7 +33,7 @@ class CatalogProductRehydrationServiceTest {
     private static final Instant NOW = Instant.parse("2026-07-11T00:00:00Z");
 
     @Test
-    void removesMismatchedPriceWithoutRelabelingOrDiscardingAvailabilityAndProvenance() {
+    void preservesMismatchedMerchantCurrencyWithoutRelabelingIt() {
         CatalogProductReference reference = reference("saved-eur");
         ResultFreshness freshness = new ResultFreshness(
                 Instant.parse("2026-07-11T00:00:00Z"),
@@ -79,11 +79,11 @@ class CatalogProductRehydrationServiceTest {
         assertThat(result.status()).isEqualTo(CatalogRehydrationStatus.FRESH);
         assertThat(result.reference()).isEqualTo(reference);
         assertThat(result.resolvedReference()).isEqualTo(reference);
-        assertThat(result.facts().price()).isNull();
+        assertThat(result.facts().price()).isEqualTo(new Money(3_200, "EUR"));
         assertThat(result.facts().availability()).isEqualTo(availability);
         assertThat(result.facts().fulfillment().getFirst().minimumBusinessDays()).isEqualTo(2);
-        assertThat(result.facts().fulfillment().getFirst().cost()).isNull();
-        assertThat(result.facts().purchaseFreshness().price()).isNull();
+        assertThat(result.facts().fulfillment().getFirst().cost()).isEqualTo(new Money(500, "EUR"));
+        assertThat(result.facts().purchaseFreshness().price()).isEqualTo(freshness);
         assertThat(result.facts().purchaseFreshness().availability()).isEqualTo(freshness);
         assertThat(result.facts().purchaseFreshness().fulfillment()).isEqualTo(freshness);
     }

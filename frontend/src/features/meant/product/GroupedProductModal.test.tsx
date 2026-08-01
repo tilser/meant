@@ -657,10 +657,9 @@ describe('canonical product detail', () => {
     expect(invalidCurrencyMarkup).not.toContain('mt-modal-price-saving')
 
     const mismatchedCurrencyMarkup = renderSavedDetail(withPriceCurrencies('EUR', 'EUR'))
-    expect(mismatchedCurrencyMarkup).toContain(
-      '<strong class="mt-modal-price">Price unavailable</strong>',
-    )
-    expect(mismatchedCurrencyMarkup).not.toContain('€11.00')
+    expect(mismatchedCurrencyMarkup).toContain('<strong class="mt-modal-price">€11.00</strong>')
+    expect(mismatchedCurrencyMarkup).toContain('EUR merchant currency')
+    expect(mismatchedCurrencyMarkup).not.toContain('Price unavailable')
     expect(mismatchedCurrencyMarkup).not.toContain('$11.00')
 
     const soldOutAnchorMarkup = renderSavedDetail({

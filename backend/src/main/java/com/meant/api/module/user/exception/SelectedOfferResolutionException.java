@@ -2,6 +2,7 @@ package com.meant.api.module.user.exception;
 
 import com.meant.api.common.constant.ApiErrorCode;
 import com.meant.api.common.exception.ApiException;
+import java.util.Locale;
 import lombok.Getter;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -52,5 +53,12 @@ public class SelectedOfferResolutionException extends RuntimeException implement
 
     public static SelectedOfferResolutionException rejected(Failure failure, String message) {
         return new SelectedOfferResolutionException(failure, message, HttpStatus.CONFLICT);
+    }
+
+    public String getSafeReason() {
+        return switch (failure) {
+            case UNKNOWN_OR_EXPIRED, WRONG_USER -> "unknown_or_expired";
+            default -> failure.name().toLowerCase(Locale.ROOT);
+        };
     }
 }

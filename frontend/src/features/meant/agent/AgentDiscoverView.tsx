@@ -47,6 +47,7 @@ import type {
   VisibleProductContextChange,
 } from '../chat/types'
 import { PROFILE } from '../data'
+import { prepareDirectProductPurchase } from '../product/directPurchasePreparation'
 import { productImageUrl } from '../product/productSnapshots'
 import type {
   ShelfDragPayload,
@@ -114,7 +115,7 @@ import { mergeAnchoredLocalMessages, type AnchoredLocalMessage } from './localMe
 import { AgentWorkingIndicator } from './AgentWorkingIndicator'
 import { agentWorkingStage } from './agentWorkingState'
 import { threadFromAgentConversationSummary } from './conversationHistory'
-import { addChatProductToCart, cartInChatMessage, exactProductOfferKey } from './chatCartAddition'
+import { addChatProductToCart, cartInChatMessage, productOfferAnchorKey } from './chatCartAddition'
 import { agentRunCandidateIds, preferredAgentRunSnapshot } from './runSelection'
 import { refreshAgentViewAfterSettlement } from './settlementRefresh'
 import { similaritySearchQuery } from './similarAction'
@@ -1387,7 +1388,7 @@ export function AgentDiscoverView({
     const pinned = interactionState.pinned.has(product.id)
     void performAction(
       pinned ? 'unpin_product' : 'pin_product',
-      { canonicalProductKey: product.id, offerKey: exactProductOfferKey(product) ?? undefined },
+      { canonicalProductKey: product.id, offerKey: productOfferAnchorKey(product) ?? undefined },
       `${pinned ? 'Unpinned' : 'Pinned'} ${product.name}`,
     )
   }
@@ -1400,7 +1401,7 @@ export function AgentDiscoverView({
             'unpin_product',
             {
               canonicalProductKey: product.id,
-              offerKey: exactProductOfferKey(product) ?? undefined,
+              offerKey: productOfferAnchorKey(product) ?? undefined,
             },
             `Unpinned ${product.name}`,
           ),
@@ -1416,30 +1417,51 @@ export function AgentDiscoverView({
   const addToCart = (product: Product) => {
     setError(null)
     let pendingConversationId: string | null = null
-    void addChatProductToCart(product, onAddSelectedOfferToCart, () => {
-      const conversationId = activeConversationIdRef.current
-      if (!conversationId) return
-      pendingConversationId = conversationId
-      setPendingCartAdditionsByConversationId((current) => ({
-        ...current,
-        [conversationId]: (current[conversationId] ?? 0) + 1,
-      }))
-      if (!liveCartMessageIdRef.current) {
-        const messageId = uniqueRequestId('cart')
-        liveCartMessageIdRef.current = messageId
-        appendLocalMessage(cartInChatMessage(messageId), conversationId)
-      }
-    })
+    const pendingKey = JSON.stringify([expectedUserId, 'direct-cart-add', product.id])
+    // The shared add handler owns the serialized commerce queue. Re-entering that same queue here
+    // would leave the outer operation waiting forever for an inner operation queued behind itself.
+    if (actionPendingRef.current.has(pendingKey)) return
+    actionPendingRef.current.add(pendingKey)
+    setActionPending((current) => new Set(current).add(pendingKey))
+    void addChatProductToCart(
+      product,
+      (candidate) =>
+        prepareDirectProductPurchase({
+          product: candidate,
+          expectedUserId,
+        }),
+      onAddSelectedOfferToCart,
+      () => {
+        const conversationId = activeConversationIdRef.current
+        if (!conversationId) return
+        pendingConversationId = conversationId
+        setPendingCartAdditionsByConversationId((current) => ({
+          ...current,
+          [conversationId]: (current[conversationId] ?? 0) + 1,
+        }))
+        if (!liveCartMessageIdRef.current) {
+          const messageId = uniqueRequestId('cart')
+          liveCartMessageIdRef.current = messageId
+          appendLocalMessage(cartInChatMessage(messageId), conversationId)
+        }
+      },
+    )
       .then((result) => {
-        if (result !== 'added') {
-          setError(
-            result === 'missing-offer'
-              ? 'This product does not have an exact purchasable offer yet.'
-              : 'Could not add this item to the merchant cart.',
-          )
+        if (result === 'requires-selection') {
+          onOpen(product)
+        } else if (result === 'unavailable') {
+          setError('This product does not have a current purchasable variant.')
+        } else if (result === 'failed') {
+          setError('Could not add this item to the merchant cart.')
         }
       })
       .finally(() => {
+        actionPendingRef.current.delete(pendingKey)
+        setActionPending((current) => {
+          const next = new Set(current)
+          next.delete(pendingKey)
+          return next
+        })
         const conversationId = pendingConversationId
         if (!conversationId) return
         setPendingCartAdditionsByConversationId((current) => {
@@ -1459,7 +1481,7 @@ export function AgentDiscoverView({
     originatingQuery?: string,
   ) => {
     const key = product.id
-    const offerKey = exactProductOfferKey(product) ?? undefined
+    const offerKey = productOfferAnchorKey(product) ?? undefined
     if (kind === 'reviews') {
       void performAction(
         'get_product_reviews',

@@ -35,7 +35,7 @@ class CatalogProductDetailServiceTest {
     private static final Instant NOW = Instant.parse("2026-07-14T00:00:00Z");
 
     @Test
-    void removesMismatchedDetailPricesWhileKeepingVariantAvailability() {
+    void preservesMerchantCurrencyDetailPricesWhenPreferredCurrencyIsUnavailable() {
         RehydratedProductDetails details = detailsWithCurrency("EUR");
 
         var result = service(null, details).getDetails(
@@ -43,11 +43,12 @@ class CatalogProductDetailServiceTest {
                 new CatalogRehydrationContext("US", "en", "USD")
         );
 
-        assertThat(result.details().priceRange()).isNull();
-        assertThat(result.details().listPriceRange()).isNull();
-        assertThat(result.details().selectedVariant().priceAmount()).isNull();
-        assertThat(result.details().selectedVariant().priceCurrency()).isNull();
-        assertThat(result.details().selectedVariant().listPriceAmount()).isNull();
+        assertThat(result.details().priceRange().currency()).isEqualTo("EUR");
+        assertThat(result.details().listPriceRange().currency()).isEqualTo("EUR");
+        assertThat(result.details().selectedVariant().priceAmount()).isEqualTo("32.00");
+        assertThat(result.details().selectedVariant().priceCurrency()).isEqualTo("EUR");
+        assertThat(result.details().selectedVariant().listPriceAmount()).isEqualTo("40.00");
+        assertThat(result.details().selectedVariant().listPriceCurrency()).isEqualTo("EUR");
         assertThat(result.details().selectedVariant().available()).isTrue();
         assertThat(result.details().variants().getFirst().available()).isTrue();
     }

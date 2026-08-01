@@ -12,7 +12,6 @@ import com.meant.api.module.catalog.service.dto.ProductAttribute;
 import com.meant.api.module.catalog.service.dto.RehydratedProductDetails;
 import com.meant.api.module.catalog.service.port.CatalogProductDetailProvider;
 import com.meant.api.module.catalog.service.support.CatalogProductObservationCache;
-import com.meant.api.module.catalog.service.support.PreferredCurrencyPriceNormalizer;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -98,7 +97,6 @@ public class CatalogProductDetailService {
                         CatalogRehydrationFailureKind.INVALID_RESPONSE
                 );
             }
-            result = PreferredCurrencyPriceNormalizer.normalize(result, context);
             if (selection != null && result.details() != null) {
                 result = result.withSelection(selectionResult(selection, result.details()));
             }

@@ -280,6 +280,9 @@ public class GlobalApiExceptionHandler {
         problem.setProperty("code", code.getValue());
         problem.setProperty("path", request.getRequestURI());
         problem.setProperty("traceId", traceId);
+        if (exception instanceof SelectedOfferResolutionException selectedOfferException) {
+            problem.setProperty("reason", selectedOfferException.getSafeReason());
+        }
         if (!validationErrors.isEmpty()) {
             problem.setProperty("errors", validationErrors);
         }

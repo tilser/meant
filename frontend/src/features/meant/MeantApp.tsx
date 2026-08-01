@@ -72,6 +72,10 @@ import {
 import { ProductCard } from './product/ProductCard'
 import { ProductModal } from './product/ProductModal'
 import {
+  bindPreparedProductPurchaseWithRecovery,
+  prepareDirectProductPurchase,
+} from './product/directPurchasePreparation'
+import {
   confirmedSavedProductSnapshot,
   productSnapshotsForIds,
   refreshedSavedProductSnapshot,
@@ -979,9 +983,23 @@ export function MeantApp() {
     async (...args: Parameters<typeof addSelectedOfferToCart>) => {
       const [product, offerKey] = args
       const key = JSON.stringify(['add-to-cart', product.id, offerKey.trim()])
-      return runUniqueCommerceMutation(key, () => addSelectedOfferToCart(...args))
+      const requestedUserId = userId
+      if (!requestedUserId || activeUserIdRef.current !== requestedUserId) {
+        return false
+      }
+      return runUniqueCommerceMutation(key, () =>
+        bindPreparedProductPurchaseWithRecovery({
+          product,
+          offerKey,
+          expectedUserId: requestedUserId,
+          bindSelectedOffer: (candidate, selectedOfferKey) => {
+            if (activeUserIdRef.current !== requestedUserId) return Promise.resolve(false)
+            return addSelectedOfferToCart(candidate, selectedOfferKey)
+          },
+        }),
+      )
     },
-    [addSelectedOfferToCart, runUniqueCommerceMutation],
+    [addSelectedOfferToCart, runUniqueCommerceMutation, userId],
   )
 
   const addToCartGuarded = useCallback(
@@ -1066,10 +1084,22 @@ export function MeantApp() {
         if (!requestedUserId || activeUserIdRef.current !== requestedUserId) {
           return false
         }
-        if (exactOfferKey) {
-          return addSelectedOfferToCart(product, exactOfferKey)
-        }
         try {
+          if (exactOfferKey) {
+            const prepared = await prepareDirectProductPurchase({
+              product,
+              expectedUserId: requestedUserId,
+            })
+            if (prepared.status !== 'ready' || activeUserIdRef.current !== requestedUserId) {
+              return false
+            }
+            return bindPreparedProductPurchaseWithRecovery({
+              product: prepared.product,
+              offerKey: prepared.offerKey,
+              expectedUserId: requestedUserId,
+              bindSelectedOffer: addSelectedOfferToCart,
+            })
+          }
           const resolved = await resolveCartableOffer({
             product,
             offer,
@@ -2989,7 +3019,6 @@ export function MeantApp() {
             compareIds={compareIds}
             preferences={allPreferences}
             deliveryLocations={deliveryLocations}
-            preferredCurrency={currency}
             onRemove={removeCompareProduct}
             onAdd={addCompareProduct}
             onOpen={openProduct}

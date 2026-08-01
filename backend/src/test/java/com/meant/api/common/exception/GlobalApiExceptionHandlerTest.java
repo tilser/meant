@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.meant.api.module.agent.exception.AgentException;
 import com.meant.api.module.cart.exception.CartException;
+import com.meant.api.module.user.exception.SelectedOfferResolutionException;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -89,6 +90,28 @@ class GlobalApiExceptionHandlerTest {
                 .andExpect(jsonPath("$.detail").value("The requested resource was not found."))
                 .andExpect(jsonPath("$.code").value("not_found"))
                 .andExpect(content().string(not(containsString("00000000-0000-0000-0000-000000000001"))));
+    }
+
+    @Test
+    void selectedOfferFailuresExposeOnlyTheSafeRecoveryReason() throws Exception {
+        mockMvc.perform(get("/test-errors/stale-selected-offer"))
+                .andExpect(status().isConflict())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.detail").value("The selected offer is not currently eligible for cart."))
+                .andExpect(jsonPath("$.code").value("bad_request"))
+                .andExpect(jsonPath("$.reason").value("stale_or_unavailable"))
+                .andExpect(content().string(not(containsString("provider variant changed"))));
+    }
+
+    @Test
+    void selectedOfferOwnershipAndMissingFailuresAreIndistinguishable() throws Exception {
+        mockMvc.perform(get("/test-errors/wrong-user-selected-offer"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.reason").value("unknown_or_expired"));
+
+        mockMvc.perform(get("/test-errors/missing-selected-offer"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.reason").value("unknown_or_expired"));
     }
 
     @Test
@@ -172,6 +195,24 @@ class GlobalApiExceptionHandlerTest {
         @GetMapping("/not-found-message-only")
         void notFoundMessageOnly() {
             throw new CartException("Cart processor not found in remote payload");
+        }
+
+        @GetMapping("/stale-selected-offer")
+        void staleSelectedOffer() {
+            throw SelectedOfferResolutionException.rejected(
+                    SelectedOfferResolutionException.Failure.STALE_OR_UNAVAILABLE,
+                    "provider variant changed"
+            );
+        }
+
+        @GetMapping("/wrong-user-selected-offer")
+        void wrongUserSelectedOffer() {
+            throw SelectedOfferResolutionException.wrongUser();
+        }
+
+        @GetMapping("/missing-selected-offer")
+        void missingSelectedOffer() {
+            throw SelectedOfferResolutionException.unknownOrExpired();
         }
 
         @GetMapping("/agent-message-limit")

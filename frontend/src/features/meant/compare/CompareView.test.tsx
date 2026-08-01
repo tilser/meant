@@ -54,7 +54,7 @@ describe('CompareView merchant display identity', () => {
     expect(markup).not.toContain(technicalSeller)
   })
 
-  test('does not compare or relabel a merchant-native EUR price for a USD account', () => {
+  test('shows but does not numerically compare or relabel mixed merchant currencies', () => {
     const products = [product('usd', 36.69, 'USD'), product('eur', 32, 'EUR')]
     const markup = renderToStaticMarkup(
       <CompareView
@@ -63,7 +63,6 @@ describe('CompareView merchant display identity', () => {
         compareIds={products.map((item) => item.id)}
         preferences={[]}
         deliveryLocations={[]}
-        preferredCurrency="USD"
         onRemove={() => undefined}
         onAdd={() => undefined}
         onOpen={() => undefined}
@@ -71,8 +70,8 @@ describe('CompareView merchant display identity', () => {
     )
 
     expect(markup).toContain('$36.69')
-    expect(markup).toContain('Price unavailable')
+    expect(markup).toContain('€32.00')
     expect(markup).not.toContain('$32.00')
-    expect(markup).not.toContain('€32.00')
+    expect(markup).not.toContain('Price unavailable')
   })
 })

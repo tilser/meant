@@ -7,7 +7,6 @@ import com.meant.api.module.catalog.service.dto.CatalogRehydrationFailureKind;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationStatus;
 import com.meant.api.module.catalog.service.port.CatalogProductRehydrationProvider;
 import com.meant.api.module.catalog.service.support.CatalogProductObservationCache;
-import com.meant.api.module.catalog.service.support.PreferredCurrencyPriceNormalizer;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -87,7 +86,6 @@ public class CatalogProductRehydrationService {
                 if (providerResults != null) {
                     for (CatalogProductRehydrationResult result : providerResults) {
                         if (result != null && batch.contains(result.reference())) {
-                            result = PreferredCurrencyPriceNormalizer.normalize(result, context);
                             results.put(result.reference(), result);
                             observationCache.rememberRehydration(result, context);
                             if (result.status() != CatalogRehydrationStatus.FRESH) {
