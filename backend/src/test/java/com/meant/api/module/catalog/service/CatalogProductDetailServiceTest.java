@@ -85,6 +85,30 @@ class CatalogProductDetailServiceTest {
         assertThat(result.selection().uniqueCompleteExactMatch()).isTrue();
     }
 
+    @Test
+    void emptySelectionIsExactOnlyForAnAuthoritativeSingleVariantProduct() {
+        CatalogProductDetailSelection selection = new CatalogProductDetailSelection(List.of(), List.of());
+
+        var result = service(selection, detailsWithoutOptions(1))
+                .getDetails(reference(), selection, null);
+
+        assertThat(result.selection().complete()).isTrue();
+        assertThat(result.selection().matchingVariantCount()).isEqualTo(1);
+        assertThat(result.selection().uniqueCompleteExactMatch()).isTrue();
+    }
+
+    @Test
+    void emptySelectionRejectsAPartialResponseThatReportsMultipleVariants() {
+        CatalogProductDetailSelection selection = new CatalogProductDetailSelection(List.of(), List.of());
+
+        var result = service(selection, detailsWithoutOptions(9))
+                .getDetails(reference(), selection, null);
+
+        assertThat(result.selection().complete()).isFalse();
+        assertThat(result.selection().matchingVariantCount()).isEqualTo(1);
+        assertThat(result.selection().uniqueCompleteExactMatch()).isFalse();
+    }
+
     private CatalogProductDetailService service(
             CatalogProductDetailSelection selection,
             List<ProductAttribute> effective,
@@ -99,8 +123,14 @@ class CatalogProductDetailServiceTest {
             List<List<ProductAttribute>> variants,
             List<ProductAttribute> featured
     ) {
+        return service(selection, details(effective, variants, featured));
+    }
+
+    private CatalogProductDetailService service(
+            CatalogProductDetailSelection selection,
+            RehydratedProductDetails details
+    ) {
         CatalogProductReference reference = reference();
-        RehydratedProductDetails details = details(effective, variants, featured);
         ResultFreshness freshness = new ResultFreshness(
                 Instant.parse("2026-07-14T00:00:00Z"),
                 Instant.parse("2026-07-14T00:05:00Z"));
@@ -187,11 +217,48 @@ class CatalogProductDetailServiceTest {
                 "Merchant");
     }
 
+    private RehydratedProductDetails detailsWithoutOptions(int totalVariants) {
+        RehydratedProductDetails.Variant variant = variant("variant", List.of());
+        return new RehydratedProductDetails(
+                "product",
+                null,
+                "Product",
+                null,
+                null,
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(variant),
+                totalVariants,
+                null,
+                null,
+                false,
+                variant,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                null,
+                null,
+                null,
+                "Merchant");
+    }
+
     private RehydratedProductDetails.Variant variant(List<ProductAttribute> options) {
         String id = options.stream()
                 .sorted(java.util.Comparator.comparing(ProductAttribute::name))
                 .map(option -> option.name() + "=" + option.value())
                 .collect(java.util.stream.Collectors.joining("|"));
+        return variant(id, options);
+    }
+
+    private RehydratedProductDetails.Variant variant(String id, List<ProductAttribute> options) {
         return new RehydratedProductDetails.Variant(
                 id,
                 null,

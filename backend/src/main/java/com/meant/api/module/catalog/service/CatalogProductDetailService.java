@@ -101,9 +101,11 @@ public class CatalogProductDetailService {
                 .map(String::trim)
                 .distinct()
                 .toList();
-        boolean complete = optionNames.stream().allMatch(name -> effectiveOptions.stream()
-                .anyMatch(option -> option.name().equals(name)));
         int matchingVariantCount = matchingVariantCount(details, effectiveOptions);
+        boolean complete = (!requestedOptions.isEmpty()
+                || authoritativeNoOptionProduct(details, matchingVariantCount))
+                && optionNames.stream().allMatch(name -> effectiveOptions.stream()
+                        .anyMatch(option -> option.name().equals(name)));
         return new CatalogProductDetailSelectionResult(
                 requestedOptions,
                 effectiveOptions,
@@ -111,6 +113,23 @@ public class CatalogProductDetailService {
                 !requestedOptions.equals(effectiveOptions),
                 matchingVariantCount
         );
+    }
+
+    private boolean authoritativeNoOptionProduct(
+            RehydratedProductDetails details,
+            int matchingVariantCount
+    ) {
+        if (!details.options().isEmpty()
+                || !details.selected().isEmpty()
+                || !Integer.valueOf(1).equals(details.totalVariants())
+                || matchingVariantCount != 1) {
+            return false;
+        }
+        return java.util.stream.Stream.concat(
+                        java.util.stream.Stream.ofNullable(details.selectedVariant()),
+                        details.variants().stream())
+                .filter(Objects::nonNull)
+                .allMatch(variant -> variantOptions(variant).isEmpty());
     }
 
     private int matchingVariantCount(
