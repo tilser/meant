@@ -173,6 +173,32 @@ export function latestCartBlockMessageId(messages: readonly DiscoverChatMessage[
   return null
 }
 
+export function productsInDiscoverMessage(message: DiscoverChatMessage): readonly Product[] {
+  const products: Product[] = []
+  for (const block of message.blocks ?? []) {
+    if (block.type === 'products' || block.type === 'saved' || block.type === 'minicompare') {
+      products.push(...block.products)
+    } else if (block.type === 'similar') {
+      if (block.product) products.push(block.product)
+      products.push(...block.products)
+    } else if (
+      block.type === 'reviews' ||
+      block.type === 'code' ||
+      block.type === 'watch' ||
+      block.type === 'friendvote' ||
+      block.type === 'added'
+    ) {
+      products.push(block.product)
+    } else if (block.type === 'decision') {
+      products.push(block.product)
+      if (block.runnerUp) products.push(block.runnerUp)
+    } else if (block.type === 'cart' && block.products) {
+      products.push(...block.products)
+    }
+  }
+  return [...new Map(products.map((product) => [product.id, product])).values()]
+}
+
 export function cartLineForAddedBlock(
   cart: readonly CartItem[],
   block: Extract<DiscoverChatBlock, { type: 'added' }>,

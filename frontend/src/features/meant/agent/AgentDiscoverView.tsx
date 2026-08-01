@@ -36,7 +36,8 @@ import { comingSoonMessage } from '../chat/comingSoon'
 import { DiscoverChatMessageRow } from '../chat/DiscoverChatMessageRow'
 import { DiscoverShareSheet } from '../chat/DiscoverShareSheet'
 import { DiscoverThreadTabs } from '../chat/DiscoverThreadTabs'
-import { latestCartBlockMessageId } from '../chat/utils'
+import { resolveDiscoverFind } from '../chat/discoverFind'
+import { latestCartBlockMessageId, productsInDiscoverMessage } from '../chat/utils'
 import type {
   AgentActivity,
   DiscoverChatMessage,
@@ -184,34 +185,8 @@ function shelfThumb(product: Product): ShelfThumb {
   return { name: product.name, tone: product.tone, imageUrl: productImageUrl(product) }
 }
 
-function productsInMessage(message: DiscoverChatMessage): Product[] {
-  const products: Product[] = []
-  for (const block of message.blocks ?? []) {
-    if (block.type === 'products' || block.type === 'saved' || block.type === 'minicompare') {
-      products.push(...block.products)
-    } else if (block.type === 'similar') {
-      if (block.product) products.push(block.product)
-      products.push(...block.products)
-    } else if (
-      block.type === 'reviews' ||
-      block.type === 'code' ||
-      block.type === 'watch' ||
-      block.type === 'friendvote' ||
-      block.type === 'added'
-    ) {
-      products.push(block.product)
-    } else if (block.type === 'decision') {
-      products.push(block.product)
-      if (block.runnerUp) products.push(block.runnerUp)
-    } else if (block.type === 'cart' && block.products) {
-      products.push(...block.products)
-    }
-  }
-  return [...new Map(products.map((product) => [product.id, product])).values()]
-}
-
 function shelfMessageSnapshot(message: DiscoverChatMessage): ShelfMessageSnapshot {
-  const products = productsInMessage(message)
+  const products = productsInDiscoverMessage(message)
   const sourceText =
     message.text ??
     message.blocks?.find((block) => block.type === 'text' || block.type === 'system')?.text ??
@@ -264,7 +239,7 @@ export interface AgentDiscoverViewProps {
   onOpenShelf: () => void
   onNewsletterChange: (newsletter: boolean) => Promise<void> | void
   onShelfAddMessage: (payload: Extract<ShelfDragPayload, { kind: 'message' }>) => void
-  onShelfAddProduct: (snapshot: ShelfProductSnapshot) => void
+  onShelfAddProduct: (payload: Extract<ShelfDragPayload, { kind: 'product' }>) => void
   onAgentProductsSnapshot?: (snapshots: readonly AgentProductSnapshot[]) => void
   onReadAgentCart: () => readonly CartItem[]
   onCaptureAgentCartRevision: () => AgentCartPartitionFingerprints | undefined
@@ -1544,6 +1519,32 @@ export function AgentDiscoverView({
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }, [updateActiveConversationId, updateActiveRunId, updateConversationState])
 
+  const selectConversation = useCallback(
+    async (conversationId: string) => {
+      const archived = archivedConversations.find((item) => item.conversationId === conversationId)
+      if (archived) {
+        try {
+          const restored = await updateAgentConversation({
+            conversationId,
+            archived: false,
+            expectedUserId,
+          })
+          setArchivedConversations((current) =>
+            current.filter((item) => item.conversationId !== conversationId),
+          )
+          setConversations((current) => [restored, ...current])
+        } catch (caught) {
+          setError(
+            caught instanceof Error ? caught.message : 'Could not restore this conversation.',
+          )
+          return
+        }
+      }
+      updateActiveConversationId(conversationId)
+    },
+    [archivedConversations, expectedUserId, updateActiveConversationId],
+  )
+
   useEffect(() => {
     if (handledHomeRequestRef.current === homeRequestId) return
     handledHomeRequestRef.current = homeRequestId
@@ -1565,43 +1566,33 @@ export function AgentDiscoverView({
 
   useEffect(() => {
     if (!discoverFindRequest || handledFindRequestRef.current === discoverFindRequest.id) return
-    handledFindRequestRef.current = discoverFindRequest.id
-    const found = messages.find((message) =>
-      discoverFindRequest.kind === 'message'
-        ? message.id === discoverFindRequest.messageId
-        : productsInMessage(message).some(
-            (product) => product.id === discoverFindRequest.productId,
-          ),
-    )
-    if (!found) return
-    window.requestAnimationFrame(() => {
-      document.querySelector<HTMLElement>(`[data-mid="${CSS.escape(found.id)}"]`)?.scrollIntoView({
-        behavior: 'smooth',
-        block: 'center',
-      })
-      onFlashMessage(found.id)
-    })
-  }, [discoverFindRequest, messages, onFlashMessage])
-  const selectConversation = async (conversationId: string) => {
-    const archived = archivedConversations.find((item) => item.conversationId === conversationId)
-    if (archived) {
-      try {
-        const restored = await updateAgentConversation({
-          conversationId,
-          archived: false,
-          expectedUserId,
-        })
-        setArchivedConversations((current) =>
-          current.filter((item) => item.conversationId !== conversationId),
-        )
-        setConversations((current) => [restored, ...current])
-      } catch (caught) {
-        setError(caught instanceof Error ? caught.message : 'Could not restore this conversation.')
-        return
-      }
+    const resolution = resolveDiscoverFind(discoverFindRequest, activeConversationId, messages)
+    if (resolution.kind === 'switch-conversation') {
+      if (loading && conversations.length === 0 && archivedConversations.length === 0) return
+      void selectConversation(resolution.conversationId)
+      return
     }
-    updateActiveConversationId(conversationId)
-  }
+    if (resolution.kind === 'pending') return
+    handledFindRequestRef.current = discoverFindRequest.id
+    window.requestAnimationFrame(() => {
+      document
+        .querySelector<HTMLElement>(`[data-mid="${CSS.escape(resolution.messageId)}"]`)
+        ?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center',
+        })
+      onFlashMessage(resolution.messageId)
+    })
+  }, [
+    activeConversationId,
+    archivedConversations.length,
+    conversations.length,
+    discoverFindRequest,
+    loading,
+    messages,
+    onFlashMessage,
+    selectConversation,
+  ])
   const archiveConversation = async (conversationId: string) => {
     if (!conversations.some((item) => item.conversationId === conversationId)) {
       return
@@ -1669,23 +1660,36 @@ export function AgentDiscoverView({
   }
 
   const addMessageToShelf = (message: DiscoverChatMessage) => {
+    const conversationId = activeConversationIdRef.current
+    if (!conversationId) return
     onShelfAddMessage({
       kind: 'message',
+      conversationId,
       messageId: message.id,
       snapshot: shelfMessageSnapshot(message),
     })
     onOpenShelf()
   }
-  const addProductToShelf = (product: Product) => {
-    onShelfAddProduct(shelfProductSnapshot(product))
+  const addProductToShelf = (product: Product, messageId: string) => {
+    const conversationId = activeConversationIdRef.current
+    if (!conversationId) return
+    onShelfAddProduct({
+      kind: 'product',
+      conversationId,
+      messageId,
+      snapshot: shelfProductSnapshot(product),
+    })
     onOpenShelf()
   }
   const dragMessage = (event: ReactDragEvent<HTMLElement>, message: DiscoverChatMessage) => {
+    const conversationId = activeConversationIdRef.current
+    if (!conversationId) return
     event.dataTransfer.effectAllowed = 'copy'
     event.dataTransfer.setData(
       SHELF_DRAG_MIME,
       JSON.stringify({
         kind: 'message',
+        conversationId,
         messageId: message.id,
         snapshot: shelfMessageSnapshot(message),
       } satisfies ShelfDragPayload),
@@ -1693,13 +1697,17 @@ export function AgentDiscoverView({
     document.body.classList.add('mt-dragging')
     onOpenShelf()
   }
-  const dragProduct = (event: ReactDragEvent<HTMLElement>, product: Product) => {
+  const dragProduct = (event: ReactDragEvent<HTMLElement>, product: Product, messageId: string) => {
+    const conversationId = activeConversationIdRef.current
+    if (!conversationId) return
     event.stopPropagation()
     event.dataTransfer.effectAllowed = 'copy'
     event.dataTransfer.setData(
       SHELF_DRAG_MIME,
       JSON.stringify({
         kind: 'product',
+        conversationId,
+        messageId,
         snapshot: shelfProductSnapshot(product),
       } satisfies ShelfDragPayload),
     )
@@ -1898,9 +1906,9 @@ export function AgentDiscoverView({
               onNewsletterSignup={() => void subscribeToNewsletter()}
               onDelete={removeMessage}
               onShelfAddMessage={(item) => addMessageToShelf(item)}
-              onShelfAddProduct={(product) => addProductToShelf(product)}
+              onShelfAddProduct={(product) => addProductToShelf(product, message.id)}
               onDragMessage={dragMessage}
-              onDragProduct={dragProduct}
+              onDragProduct={(event, product) => dragProduct(event, product, message.id)}
               onVisibleProductContextChange={captureVisibleProductContext}
             />
           ))}

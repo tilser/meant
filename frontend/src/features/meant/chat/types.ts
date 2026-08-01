@@ -157,8 +157,14 @@ export interface ProductDetailChatRequest {
 }
 
 export type DiscoverFindRequest =
-  | { id: string; kind: 'message'; messageId: string }
-  | { id: string; kind: 'product'; productId: ProductId }
+  | { id: string; kind: 'message'; conversationId?: string; messageId: string }
+  | {
+      id: string
+      kind: 'product'
+      conversationId?: string
+      messageId?: string
+      productId: ProductId
+    }
 
 export interface AssistantProductAction {
   product: Product

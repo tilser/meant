@@ -31,6 +31,8 @@ export type ShelfItem =
   | {
       uid: string
       kind: 'message'
+      /** Optional only for shelf entries persisted before chat provenance was recorded. */
+      conversationId?: string
       messageId: string
       collapsed: boolean
       snapshot: ShelfMessageSnapshot
@@ -38,11 +40,24 @@ export type ShelfItem =
   | {
       uid: string
       kind: 'product'
+      /** Optional only for shelf entries persisted before chat provenance was recorded. */
+      conversationId?: string
+      messageId?: string
       productId: ProductId
       collapsed: boolean
       snapshot: ShelfProductSnapshot
     }
 
 export type ShelfDragPayload =
-  | { kind: 'message'; messageId: string; snapshot: ShelfMessageSnapshot }
-  | { kind: 'product'; snapshot: ShelfProductSnapshot }
+  | {
+      kind: 'message'
+      conversationId: string
+      messageId: string
+      snapshot: ShelfMessageSnapshot
+    }
+  | {
+      kind: 'product'
+      conversationId: string
+      messageId: string
+      snapshot: ShelfProductSnapshot
+    }

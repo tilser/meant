@@ -15,7 +15,7 @@ import { useStoredState } from '../shared/storage'
 import { productImageUrl } from '../product/productSnapshots'
 import type { Product, ProductId } from '../types'
 import { money } from '../utils'
-import type { ShelfDragPayload, ShelfItem, ShelfProductSnapshot, ShelfThumb } from './types'
+import type { ShelfDragPayload, ShelfItem, ShelfThumb } from './types'
 import { SHELF_DRAG_MIME } from './types'
 
 const SHELF_MIN_WIDTH = 300
@@ -87,8 +87,12 @@ function ShelfCard({
   DustingContainer: DustingContainerComponent
   onRemove: (uid: string) => void
   onToggleCollapse: (uid: string) => void
-  onFind: (messageId: string) => void
-  onFindProduct: (productId: ProductId) => void
+  onFind: (conversationId: string | undefined, messageId: string) => void
+  onFindProduct: (
+    conversationId: string | undefined,
+    productId: ProductId,
+    messageId: string | undefined,
+  ) => void
   onOpenProduct: (product: Product) => void
 }>) {
   const [dusting, setDusting] = useState(false)
@@ -188,7 +192,7 @@ function ShelfCard({
                 <button
                   className="mt-shelf-find"
                   type="button"
-                  onClick={() => onFindProduct(item.productId)}
+                  onClick={() => onFindProduct(item.conversationId, item.productId, item.messageId)}
                 >
                   <SearchIcon size={12} /> Find in chat
                 </button>
@@ -229,7 +233,11 @@ function ShelfCard({
             <ShelfThumbs thumbs={snapshot.thumbs} />
           </>
         )}
-        <button className="mt-shelf-find" type="button" onClick={() => onFind(item.messageId)}>
+        <button
+          className="mt-shelf-find"
+          type="button"
+          onClick={() => onFind(item.conversationId, item.messageId)}
+        >
           <SearchIcon size={12} /> Find in chat
         </button>
       </div>
@@ -258,12 +266,16 @@ export function Shelf({
   DustingContainer: DustingContainerComponent
   onToggle: () => void
   onAddMessage: (payload: Extract<ShelfDragPayload, { kind: 'message' }>) => void
-  onAddProduct: (snapshot: ShelfProductSnapshot) => void
+  onAddProduct: (payload: Extract<ShelfDragPayload, { kind: 'product' }>) => void
   onRemove: (uid: string) => void
   onClear: () => void
   onToggleCollapse: (uid: string) => void
-  onFind: (messageId: string) => void
-  onFindProduct: (productId: ProductId) => void
+  onFind: (conversationId: string | undefined, messageId: string) => void
+  onFindProduct: (
+    conversationId: string | undefined,
+    productId: ProductId,
+    messageId: string | undefined,
+  ) => void
   onOpenProduct: (product: Product) => void
 }>) {
   const [over, setOver] = useState(false)
@@ -329,7 +341,7 @@ export function Shelf({
       onAddMessage(payload)
       return
     }
-    onAddProduct(payload.snapshot)
+    onAddProduct(payload)
   }
 
   return (

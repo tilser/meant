@@ -102,7 +102,7 @@ import { useSessionStoredState, useStoredState } from './shared/storage'
 import { CartIcon, EmptyState, ViewHead } from './shared/ui'
 import { HeartIcon, MoonIcon, SunIcon } from './shared/icons'
 import { Shelf } from './shelf/Shelf'
-import type { ShelfDragPayload, ShelfItem, ShelfProductSnapshot } from './shelf/types'
+import type { ShelfDragPayload, ShelfItem } from './shelf/types'
 import {
   acceptUserTasteSuggestion,
   assistCartCheckout,
@@ -1671,7 +1671,11 @@ export function MeantApp() {
         ) {
           return current.map((item) =>
             item.kind === 'message' && item.messageId === payload.messageId
-              ? { ...item, snapshot: payload.snapshot }
+              ? {
+                  ...item,
+                  conversationId: payload.conversationId,
+                  snapshot: payload.snapshot,
+                }
               : item,
           )
         }
@@ -1680,6 +1684,7 @@ export function MeantApp() {
           {
             uid: nextShelfUid(),
             kind: 'message',
+            conversationId: payload.conversationId,
             messageId: payload.messageId,
             collapsed: false,
             snapshot: payload.snapshot,
@@ -1691,14 +1696,20 @@ export function MeantApp() {
   )
 
   const addProductToShelf = useCallback(
-    (snapshot: ShelfProductSnapshot) => {
+    (payload: Extract<ShelfDragPayload, { kind: 'product' }>) => {
+      const snapshot = payload.snapshot
       setShelf((current) => {
         if (
           current.some((item) => item.kind === 'product' && item.productId === snapshot.productId)
         ) {
           return current.map((item) =>
             item.kind === 'product' && item.productId === snapshot.productId
-              ? { ...item, snapshot }
+              ? {
+                  ...item,
+                  conversationId: payload.conversationId,
+                  messageId: payload.messageId,
+                  snapshot,
+                }
               : item,
           )
         }
@@ -1707,6 +1718,8 @@ export function MeantApp() {
           {
             uid: nextShelfUid(),
             kind: 'product',
+            conversationId: payload.conversationId,
+            messageId: payload.messageId,
             productId: snapshot.productId,
             collapsed: false,
             snapshot,
@@ -2087,11 +2100,13 @@ export function MeantApp() {
   }, [])
 
   const findShelfMessage = useCallback(
-    (messageId: string) => {
+    (conversationId: string | undefined, messageId: string) => {
+      setShelfOpen(false)
       nav('discover')
       setDiscoverFindRequest({
         id: `shelf-find-message-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
         kind: 'message',
+        conversationId,
         messageId,
       })
     },
@@ -2099,11 +2114,14 @@ export function MeantApp() {
   )
 
   const findShelfProduct = useCallback(
-    (productId: ProductId) => {
+    (conversationId: string | undefined, productId: ProductId, messageId: string | undefined) => {
+      setShelfOpen(false)
       nav('discover')
       setDiscoverFindRequest({
         id: `shelf-find-product-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
         kind: 'product',
+        conversationId,
+        messageId,
         productId,
       })
     },
