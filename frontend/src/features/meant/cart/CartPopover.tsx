@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react'
 import { CartIcon, CloseIcon, ProductArtwork, SparkMark } from '../shared/ui'
 import type { CartItem, Product, ProductId } from '../types'
 import { cartGroups, cartItemIdentity, cartLines, computeSmartAlerts, money } from '../utils'
+import { cartCountSummary, formatCartCount } from './cartCounts'
 import { merchantDisplayOrigin } from './merchantOrigin'
 import type { MerchantCartSnapshot } from './types'
 import { cartMoney, cartSnapshotSavings, cartSnapshotSubtotal, cartSnapshotTotal } from './utils'
@@ -103,7 +104,7 @@ export function CartPopover({
       .filter((value): value is string => Boolean(value)),
   )
   const totalCurrency = currencies.size === 1 ? currencies.values().next().value : null
-  const itemCount = lines.reduce((sum, line) => sum + line.qty, 0)
+  const counts = cartCountSummary(lines)
 
   return (
     <div className="mt-cart-pop" ref={ref}>
@@ -112,7 +113,8 @@ export function CartPopover({
           <SparkMark size={15} /> Smart cart
         </div>
         <span className="mt-mono mt-cart-pop-count">
-          {itemCount} items · {groups.length} merchants
+          {formatCartCount(counts.unitCount, 'unit')} ·{' '}
+          {formatCartCount(counts.merchantCount, 'merchant')}
         </span>
       </div>
       <div className="mt-cart-pop-signals">

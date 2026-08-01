@@ -26,6 +26,7 @@ import { useSupabaseAuth } from './auth/useSupabaseAuth'
 import { CartPopover } from './cart/CartPopover'
 import { CartCheckoutDialog } from './cart/CartCheckoutDialog'
 import { CartView } from './cart/CartView'
+import { cartCountSummary, formatCartCount } from './cart/cartCounts'
 import { resolveLiveCartItem } from './cart/cartPartition'
 import type { ActiveCheckoutSession, CheckoutAssistantContext } from './cart/checkoutTypes'
 import { resolveCartableOffer } from './cart/cartOfferResolver'
@@ -349,9 +350,9 @@ function TopBar({
 }>) {
   // Count only items that resolve to a known product, so the badge can never
   // disagree with what the cart actually shows (e.g. a stale persisted cart).
-  const cartCount = cartLines(cart, products).reduce((sum, line) => sum + line.qty, 0)
+  const cartUnitCount = cartCountSummary(cartLines(cart, products)).unitCount
   const savedBump = useChangePulse(savedCount)
-  const cartBump = useChangePulse(cartCount)
+  const cartBump = useChangePulse(cartUnitCount)
 
   return (
     <div className="mt-topbar">
@@ -406,13 +407,17 @@ function TopBar({
           <button
             className={`mt-icon-btn mt-cart-btn ${cartPeek || view === 'cart' ? 'on' : ''}`}
             type="button"
-            aria-label="Cart"
+            aria-label={
+              cartUnitCount > 0 ? `Cart, ${formatCartCount(cartUnitCount, 'unit')}` : 'Cart'
+            }
             aria-expanded={cartPeek}
             onClick={onToggleCart}
           >
             <CartIcon />
-            {cartCount > 0 ? (
-              <span className={`mt-cart-badge mt-mono${cartBump ? ' bump' : ''}`}>{cartCount}</span>
+            {cartUnitCount > 0 ? (
+              <span className={`mt-cart-badge mt-mono${cartBump ? ' bump' : ''}`}>
+                {cartUnitCount}
+              </span>
             ) : null}
           </button>
           {cartPeek ? (

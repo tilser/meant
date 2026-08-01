@@ -32,6 +32,7 @@ import type {
   MerchantCartSnapshot,
   RemoveCartCodeInput,
 } from './types'
+import { cartCountSummary, formatCartCount } from './cartCounts'
 import { merchantAdjacentDisplayLabel, merchantDisplayOrigin } from './merchantOrigin'
 import {
   appliedCodeDisplay,
@@ -275,6 +276,7 @@ export function CartView({
       ? lines.filter((line) => !canMerchantShip(line.merchant, deliveryLocations))
       : []
   const groups = cartGroups(lines)
+  const counts = cartCountSummary(lines)
   const groupSummaries = groups.map((group) => {
     const merchantKey = group.merchantKey
     const snapshot = cartSnapshots[merchantKey]
@@ -495,7 +497,7 @@ export function CartView({
       <ViewHead
         eyebrow="Smart cart"
         title="Your cart"
-        sub={`${lines.length} items from ${groups.length} merchants - one smart cart, with checkout handled at each merchant.`}
+        sub={`${formatCartCount(counts.lineItemCount, 'line item')} from ${formatCartCount(counts.merchantCount, 'merchant')} - one smart cart, with checkout handled at each merchant.`}
       />
       <div className="mt-cart-grid">
         <div className="mt-cart-main">
@@ -549,6 +551,7 @@ export function CartView({
 
           {groupSummaries.map(
             ({ group, merchantKey, snapshot, subtotal, savings, total, currency }) => {
+              const groupCounts = cartCountSummary(group.items)
               const cartId = snapshot?.cartId ?? group.items.find((item) => item.cartId)?.cartId
               const merchantDisplay = merchantDisplayOrigin(
                 group.merchantOrigin ?? snapshot?.merchantOrigin,
@@ -612,7 +615,7 @@ export function CartView({
                       <span className="mt-mgroup-dot" />
                       {merchantDisplay}
                       <span className="mt-mono mt-mgroup-count">
-                        {group.items.length} item{group.items.length > 1 ? 's' : ''}
+                        {formatCartCount(groupCounts.lineItemCount, 'line item')}
                       </span>
                     </div>
                     <div className="mt-mono mt-mgroup-ship">{deliveryDisplay}</div>
