@@ -5,12 +5,14 @@ import { BookmarkIcon, ChevronIcon } from '../shared/icons'
 import { CartIcon } from '../shared/ui'
 import { useMediaQuery } from '../shared/useMediaQuery'
 import type { Preference, Product, ProductId, UserLocation } from '../types'
+import { productCarouselItemAccessibility } from './productCarouselAccessibility'
 import type { VisibleProductContextChange } from './types'
 import { DESKTOP_PRODUCT_PAGE_SIZE, visibleProductContextForBatch } from './visibleProductContext'
 
 function DiscoverChatProduct({
   product,
   index,
+  carouselAccessibility,
   query,
   qualificationId,
   deliveryLocations,
@@ -32,6 +34,7 @@ function DiscoverChatProduct({
 }: Readonly<{
   product: Product
   index: number
+  carouselAccessibility: ReturnType<typeof productCarouselItemAccessibility>
   query?: string
   qualificationId?: string
   deliveryLocations: readonly UserLocation[]
@@ -59,6 +62,7 @@ function DiscoverChatProduct({
   return (
     <div
       className="mt-ct-prod"
+      {...carouselAccessibility}
       draggable
       onDragStart={(event) => onDragProduct(event, product)}
       onDragEnd={() => document.body.classList.remove('mt-dragging')}
@@ -277,7 +281,7 @@ export function DiscoverProductBatch({
     ) : null
   const renderPhonePager = () =>
     phoneMany ? (
-      <div className="mt-ct-swipe-nav" aria-label="Product carousel">
+      <div className="mt-ct-swipe-nav" role="group" aria-label="Product carousel navigation">
         <span className="mt-mono mt-ct-swipe-hint">Swipe</span>
         <button
           className="mt-ct-pager-btn mt-ct-swipe-btn"
@@ -288,7 +292,7 @@ export function DiscoverProductBatch({
         >
           <ChevronIcon direction="left" size={15} />
         </button>
-        <span className="mt-mono mt-ct-swipe-count">
+        <span className="mt-mono mt-ct-swipe-count" aria-live="polite" aria-atomic="true">
           {phoneIndex + 1}/{products.length}
         </span>
         <button
@@ -373,12 +377,21 @@ export function DiscoverProductBatch({
       <div
         ref={carouselRef}
         className={`mt-ct-grid${isPhone ? ' phone-swipe' : ''}`}
-        aria-label={isPhone ? 'Swipe through products' : undefined}
+        role={isPhone ? 'region' : undefined}
+        aria-roledescription={isPhone ? 'carousel' : undefined}
+        aria-label={isPhone ? 'Product results' : undefined}
         onScroll={isPhone ? syncPhoneCarouselIndex : undefined}
       >
         {pageProducts.map((product, index) => (
           <DiscoverChatProduct
             key={product.id}
+            carouselAccessibility={productCarouselItemAccessibility({
+              isPhone,
+              index,
+              activeIndex: phoneIndex,
+              total: products.length,
+              name: product.name,
+            })}
             product={product}
             index={isPhone ? index % 4 : index}
             query={query}

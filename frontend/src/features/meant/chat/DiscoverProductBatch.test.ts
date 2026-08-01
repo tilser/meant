@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test'
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
 
 import type { Product } from '../types'
+import { productCarouselItemAccessibility } from './productCarouselAccessibility'
 import {
   updateVisibleProductContextRegistry,
   visibleProductContextForBatch,
@@ -73,6 +76,44 @@ describe('discover product visible order', () => {
       sourceMessageId: 'message-tool-search',
       orderedCanonicalProductKeys: ['product-3'],
     })
+  })
+
+  test('hides off-screen mobile result cards from assistive technology and keyboard focus', () => {
+    const activeCard = renderToStaticMarkup(
+      createElement(
+        'div',
+        productCarouselItemAccessibility({
+          isPhone: true,
+          index: 1,
+          activeIndex: 1,
+          total: 20,
+          name: 'Visible result',
+        }),
+        createElement('button', null, 'Open visible result'),
+      ),
+    )
+    const offscreenCard = renderToStaticMarkup(
+      createElement(
+        'div',
+        productCarouselItemAccessibility({
+          isPhone: true,
+          index: 19,
+          activeIndex: 1,
+          total: 20,
+          name: 'Off-screen result',
+        }),
+        createElement('button', null, 'Open off-screen result'),
+      ),
+    )
+
+    expect(activeCard).toContain('role="group"')
+    expect(activeCard).toContain('aria-roledescription="slide"')
+    expect(activeCard).toContain('aria-label="2 of 20: Visible result"')
+    expect(activeCard).not.toContain('aria-hidden')
+    expect(activeCard).not.toContain('inert')
+    expect(offscreenCard).toContain('aria-label="20 of 20: Off-screen result"')
+    expect(offscreenCard).toContain('aria-hidden="true"')
+    expect(offscreenCard).toContain('inert=""')
   })
 
   test('does not reuse stale card order while a newer visible batch is unbindable', () => {

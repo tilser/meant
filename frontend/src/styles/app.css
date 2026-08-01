@@ -11003,9 +11003,9 @@ button:disabled {
 
   .mt-profile {
     align-items: center;
+    flex-wrap: wrap;
     gap: 8px;
     padding: 8px 12px;
-    overflow: hidden;
   }
 
   .mt-profile-key {
@@ -11013,21 +11013,21 @@ button:disabled {
   }
 
   .mt-profile-chips {
+    order: 2;
     min-width: 0;
-    flex-wrap: nowrap;
+    flex: 1 0 100%;
+    flex-wrap: wrap;
     gap: 6px;
-    overflow-x: auto;
-    padding-bottom: 1px;
-    scrollbar-width: none;
-  }
-
-  .mt-profile-chips::-webkit-scrollbar {
-    display: none;
   }
 
   .mt-profile-edit {
+    order: 1;
+    min-width: 44px;
+    min-height: 30px;
     flex-shrink: 0;
     align-self: center;
+    margin-left: auto;
+    padding-inline: 8px;
     font-size: 10.5px;
   }
 
@@ -11040,6 +11040,12 @@ button:disabled {
   .mt-pref-pill,
   .mt-loc-chip {
     flex-shrink: 0;
+  }
+
+  .mt-loc-chip {
+    max-width: calc(100% - 60px);
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .mt-feed {
@@ -11085,15 +11091,7 @@ button:disabled {
   .mt-prompts,
   .mt-ask-chips {
     justify-content: flex-start;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    padding-bottom: 2px;
-    scrollbar-width: none;
-  }
-
-  .mt-prompts::-webkit-scrollbar,
-  .mt-ask-chips::-webkit-scrollbar {
-    display: none;
+    flex-wrap: wrap;
   }
 
   .mt-prompt,
@@ -12279,6 +12277,10 @@ body.shelf-open .mt-shelf-tab {
 .mt-shelf-close:hover {
   border-color: var(--faint);
   color: var(--ink);
+}
+
+.mt-shelf-close-mobile {
+  display: none;
 }
 
 .mt-shelf-body {
@@ -13711,7 +13713,32 @@ body.mt-ins-resizing .mt-ins {
   }
 
   .mt-shelf {
-    top: 56px;
+    top: max(84px, env(safe-area-inset-top));
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    width: min(var(--shelf-w, 340px), calc(100vw - 64px));
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-right: 0;
+    border-radius: 16px 0 0 16px;
+  }
+
+  body.shelf-open .mt-shelf-tab {
+    right: min(var(--shelf-w, 340px), calc(100vw - 64px));
+  }
+
+  .mt-shelf-resize,
+  .mt-shelf-close-desktop {
+    display: none;
+  }
+
+  .mt-shelf-close-mobile {
+    display: inline-grid;
+  }
+
+  .mt-shelf-close {
+    width: 36px;
+    height: 36px;
+    border-radius: 9px;
   }
 }
 

@@ -3,7 +3,9 @@ import { type CSSProperties, useEffect, useRef, useState } from 'react'
 import type { MerchantProfile } from '../../../lib/apiClient'
 import type { AskReplyDraft } from '../ask/types'
 import { PROFILE } from '../data'
+import { useMediaQuery } from '../shared/useMediaQuery'
 import { CloseIcon, SparkMark } from '../shared/ui'
+import { discoverSearchPlaceholder } from './discoverHomeCopy'
 import { DiscoverThreadHistoryButton } from './DiscoverThreadHistoryButton'
 import { MerchantScope } from './MerchantScope'
 import type { DiscoverChatThread } from './types'
@@ -45,6 +47,7 @@ export function DiscoverHomeHero({
 }>) {
   const [value, setValue] = useState('')
   const [submitted, setSubmitted] = useState(false)
+  const isPhone = useMediaQuery('(max-width: 720px)')
   const inputRef = useRef<HTMLInputElement | null>(null)
   const submittedTimeoutRef = useRef<number | null>(null)
   const hasSearchText = value.trim().length > 0
@@ -129,9 +132,10 @@ export function DiscoverHomeHero({
         <input
           ref={inputRef}
           className="mt-search-input"
+          aria-label="Search with Meant"
           value={value}
           onChange={(event) => setValue(event.target.value)}
-          placeholder='Search with Meant - "a good cotton T-shirt under $50"'
+          placeholder={discoverSearchPlaceholder(isPhone)}
           disabled={loading}
         />
         <button type="submit" className="mt-search-go" aria-label="Ask" disabled={loading}>

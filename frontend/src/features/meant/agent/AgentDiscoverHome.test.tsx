@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { PROFILE } from '../data'
 import type { MerchantProfile } from '../../../lib/apiClient'
 import { AgentDiscoverView, type AgentDiscoverViewProps } from './AgentDiscoverView'
+import { discoverSearchPlaceholder } from '../chat/discoverHomeCopy'
 
 const merchant: MerchantProfile = {
   id: '00000000-0000-4000-8000-000000000088',
@@ -62,11 +63,19 @@ const props = {
 } satisfies AgentDiscoverViewProps
 
 describe('agent Discovery home', () => {
+  test('uses a compact search placeholder at phone widths without changing desktop copy', () => {
+    expect(discoverSearchPlaceholder(true)).toBe('Search products with Meant')
+    expect(discoverSearchPlaceholder(false)).toBe(
+      'Search with Meant - "a good cotton T-shirt under $50"',
+    )
+  })
+
   test('starts with the established Meant landing experience', () => {
     const markup = renderToStaticMarkup(<AgentDiscoverView {...props} />)
 
     expect(markup).toContain('Everything here is <em>Meant</em> for you.')
     expect(markup).toContain('Search with Meant - &quot;a good cotton T-shirt under $50&quot;')
+    expect(markup).toContain('aria-label="Search with Meant"')
     expect(markup).toContain('Find running shoes')
     expect(markup).toContain('Find a quiet coffee machine')
     expect(markup).toContain('--mt-prompt-index:0')

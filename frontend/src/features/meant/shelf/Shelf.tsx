@@ -1,4 +1,5 @@
 import {
+  type CSSProperties,
   type DragEvent as ReactDragEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
@@ -344,7 +345,7 @@ export function Shelf({
       </button>
       <aside
         className={`mt-shelf ${open ? 'open' : ''} ${over ? 'over' : ''}`}
-        style={{ width: `${safeWidth}px` }}
+        style={{ '--shelf-w': `${safeWidth}px` } as CSSProperties}
         onDragOver={(event) => {
           event.preventDefault()
           event.dataTransfer.dropEffect = 'copy'
@@ -388,7 +389,12 @@ export function Shelf({
               title="Hide shelf"
               aria-label="Hide shelf"
             >
-              <ChevronIcon direction="right" size={14} />
+              <span className="mt-shelf-close-desktop" aria-hidden>
+                <ChevronIcon direction="right" size={14} />
+              </span>
+              <span className="mt-shelf-close-mobile" aria-hidden>
+                <CloseIcon size={14} />
+              </span>
             </button>
           </div>
         </div>
