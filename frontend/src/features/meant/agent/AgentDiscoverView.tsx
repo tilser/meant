@@ -36,7 +36,7 @@ import { comingSoonMessage } from '../chat/comingSoon'
 import { DiscoverChatMessageRow } from '../chat/DiscoverChatMessageRow'
 import { DiscoverShareSheet } from '../chat/DiscoverShareSheet'
 import { DiscoverThreadTabs } from '../chat/DiscoverThreadTabs'
-import { resolveDiscoverFind } from '../chat/discoverFind'
+import { resolveDiscoverFind, shouldAutoScrollChatToBottom } from '../chat/discoverFind'
 import { latestCartBlockMessageId, productsInDiscoverMessage } from '../chat/utils'
 import type {
   AgentActivity,
@@ -1035,8 +1035,9 @@ export function AgentDiscoverView({
   }, [])
 
   useEffect(() => {
+    if (!shouldAutoScrollChatToBottom(discoverFindRequest, handledFindRequestRef.current)) return
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-  }, [messages.length, activeRunId, eventState.runs])
+  }, [messages.length, activeRunId, discoverFindRequest, eventState.runs])
 
   const toolActivities = useMemo<AgentActivity[]>(() => {
     if (!activeRunId) return []
@@ -1573,16 +1574,25 @@ export function AgentDiscoverView({
       return
     }
     if (resolution.kind === 'pending') return
-    handledFindRequestRef.current = discoverFindRequest.id
-    window.requestAnimationFrame(() => {
-      document
-        .querySelector<HTMLElement>(`[data-mid="${CSS.escape(resolution.messageId)}"]`)
-        ?.scrollIntoView({
+    let settleFrame: number | null = null
+    const renderFrame = window.requestAnimationFrame(() => {
+      settleFrame = window.requestAnimationFrame(() => {
+        const target = document.querySelector<HTMLElement>(
+          `[data-mid="${CSS.escape(resolution.messageId)}"]`,
+        )
+        if (!target) return
+        target.scrollIntoView({
           behavior: 'smooth',
           block: 'center',
         })
-      onFlashMessage(resolution.messageId)
+        handledFindRequestRef.current = discoverFindRequest.id
+        onFlashMessage(resolution.messageId)
+      })
     })
+    return () => {
+      window.cancelAnimationFrame(renderFrame)
+      if (settleFrame !== null) window.cancelAnimationFrame(settleFrame)
+    }
   }, [
     activeConversationId,
     archivedConversations.length,

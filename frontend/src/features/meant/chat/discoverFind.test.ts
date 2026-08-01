@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
 import type { Product } from '../types'
-import { resolveDiscoverFind } from './discoverFind'
+import { resolveDiscoverFind, shouldAutoScrollChatToBottom } from './discoverFind'
 import type { DiscoverChatMessage } from './types'
 
 const product: Product = {
@@ -82,5 +82,20 @@ describe('resolveDiscoverFind', () => {
         messages,
       ),
     ).toEqual({ kind: 'found', messageId: 'earlier-message' })
+  })
+})
+
+describe('shouldAutoScrollChatToBottom', () => {
+  test('keeps a pending shelf jump from being overridden by transcript auto-scroll', () => {
+    const request = {
+      id: 'find-pending',
+      kind: 'message' as const,
+      conversationId: 'source-conversation',
+      messageId: 'source-message',
+    }
+
+    expect(shouldAutoScrollChatToBottom(request, null)).toBe(false)
+    expect(shouldAutoScrollChatToBottom(request, request.id)).toBe(true)
+    expect(shouldAutoScrollChatToBottom(null, null)).toBe(true)
   })
 })

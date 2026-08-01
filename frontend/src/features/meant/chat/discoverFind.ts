@@ -6,6 +6,13 @@ export type DiscoverFindResolution =
   | { kind: 'found'; messageId: string }
   | { kind: 'pending' }
 
+export function shouldAutoScrollChatToBottom(
+  request: DiscoverFindRequest | null,
+  handledRequestId: string | null,
+): boolean {
+  return request === null || request.id === handledRequestId
+}
+
 export function resolveDiscoverFind(
   request: DiscoverFindRequest,
   activeConversationId: string | null,
