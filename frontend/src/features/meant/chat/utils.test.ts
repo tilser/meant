@@ -11,6 +11,7 @@ import {
   discoverThreadPreview,
   latestCartBlockMessageId,
   productOpenWithResearchQuery,
+  visibleLatestCartBlockMessageId,
 } from './utils'
 
 function historyProduct(overrides: Partial<Product> = {}): Product {
@@ -228,6 +229,13 @@ describe('chat cart snapshots', () => {
 
     expect(latestCartBlockMessageId(messages)).toBe('cart-current')
     expect(latestCartBlockMessageId(messages.slice(1, 2))).toBeNull()
+    expect(visibleLatestCartBlockMessageId(messages, messages)).toBe('cart-current')
+    expect(
+      visibleLatestCartBlockMessageId(
+        messages,
+        messages.filter((message) => message.id !== 'cart-current'),
+      ),
+    ).toBeNull()
   })
 
   test('deduplicates a stale fallback by exact offer while retaining sibling variants', () => {

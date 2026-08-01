@@ -1,6 +1,7 @@
 import type { AgentMessageProfile } from '../../../lib/apiClient'
 
-export const PRODUCT_PIN_NOTICE_LIFETIME_MS = 5_000
+export const PRODUCT_PIN_NOTICE_LIFETIME_MS = 3_000
+export const EMPTY_CART_MESSAGE_LIFETIME_MS = 5_000
 
 const PRODUCT_PIN_ACTIONS = new Set(['pin_product', 'unpin_product'])
 const PRODUCT_PIN_NOTICE_TEXT = /^(?:Pinned|Unpinned) product\b/i
@@ -13,4 +14,12 @@ export function isProductPinNotice(message: AgentMessageProfile): boolean {
     Boolean(toolName && PRODUCT_PIN_ACTIONS.has(toolName)) ||
     PRODUCT_PIN_NOTICE_TEXT.test(message.textContent ?? '')
   )
+}
+
+export function shouldAutoDismissEmptyCartMessage(
+  liveCartMessageId: string | null,
+  visibleCartLineCount: number,
+  cartAdditionPending: boolean,
+): boolean {
+  return Boolean(liveCartMessageId) && visibleCartLineCount === 0 && !cartAdditionPending
 }

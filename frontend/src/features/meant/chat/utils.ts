@@ -173,6 +173,17 @@ export function latestCartBlockMessageId(messages: readonly DiscoverChatMessage[
   return null
 }
 
+/** Prevents a dismissed current cart from promoting a historical cart snapshot to live state. */
+export function visibleLatestCartBlockMessageId(
+  allMessages: readonly DiscoverChatMessage[],
+  visibleMessages: readonly DiscoverChatMessage[],
+): string | null {
+  const latestMessageId = latestCartBlockMessageId(allMessages)
+  return latestMessageId && visibleMessages.some((message) => message.id === latestMessageId)
+    ? latestMessageId
+    : null
+}
+
 export function productsInDiscoverMessage(message: DiscoverChatMessage): readonly Product[] {
   const products: Product[] = []
   for (const block of message.blocks ?? []) {

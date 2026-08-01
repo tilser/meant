@@ -37,7 +37,7 @@ import { DiscoverChatMessageRow } from '../chat/DiscoverChatMessageRow'
 import { DiscoverShareSheet } from '../chat/DiscoverShareSheet'
 import { DiscoverThreadTabs } from '../chat/DiscoverThreadTabs'
 import { resolveDiscoverFind, shouldAutoScrollChatToBottom } from '../chat/discoverFind'
-import { latestCartBlockMessageId, productsInDiscoverMessage } from '../chat/utils'
+import { productsInDiscoverMessage, visibleLatestCartBlockMessageId } from '../chat/utils'
 import type {
   AgentActivity,
   DiscoverChatMessage,
@@ -73,6 +73,7 @@ import type {
   ProductId,
   UserLocation,
 } from '../types'
+import { cartLines } from '../utils'
 import {
   cartStateReplacementsFromAgentArtifacts,
   currentAgentProductSnapshots,
@@ -101,7 +102,12 @@ import {
   agentTurnSubmissionQueueFor,
   commerceActionQueueFor,
 } from './actionQueue'
-import { PRODUCT_PIN_NOTICE_LIFETIME_MS, isProductPinNotice } from './autoDismissNotices'
+import {
+  EMPTY_CART_MESSAGE_LIFETIME_MS,
+  PRODUCT_PIN_NOTICE_LIFETIME_MS,
+  isProductPinNotice,
+  shouldAutoDismissEmptyCartMessage,
+} from './autoDismissNotices'
 import { checkoutInChatMessage } from './checkoutPreparation'
 import { withProjectedAgentMessages } from './messageProjection'
 import { mergeAnchoredLocalMessages, type AnchoredLocalMessage } from './localMessageOrdering'
@@ -386,6 +392,32 @@ export function AgentDiscoverView({
   useEffect(() => {
     visibleCartRef.current = cart
   }, [cart])
+
+  const queueAutoRemoval = useCallback((messageKey: string, delayMs: number) => {
+    if (autoDismissTimeoutsRef.current.has(messageKey)) return
+    const timeout = window.setTimeout(() => {
+      setAutoRemovingMessageKeys((current) => {
+        if (current.has(messageKey)) return current
+        return new Set(current).add(messageKey)
+      })
+      autoDismissTimeoutsRef.current.delete(messageKey)
+    }, delayMs)
+    autoDismissTimeoutsRef.current.set(messageKey, timeout)
+  }, [])
+
+  const cancelAutoRemoval = useCallback((messageKey: string) => {
+    const timeout = autoDismissTimeoutsRef.current.get(messageKey)
+    if (timeout !== undefined) {
+      window.clearTimeout(timeout)
+      autoDismissTimeoutsRef.current.delete(messageKey)
+    }
+    setAutoRemovingMessageKeys((current) => {
+      if (!current.has(messageKey)) return current
+      const next = new Set(current)
+      next.delete(messageKey)
+      return next
+    })
+  }, [])
 
   const updateConversationState = useCallback(
     (
@@ -872,6 +904,10 @@ export function AgentDiscoverView({
   )
   const watchedSet = useMemo(() => new Set<ProductId>(), [])
   const visibleCart = optimisticCart ?? cart
+  const visibleCartLineCount = useMemo(
+    () => cartLines(visibleCart, allProducts).length,
+    [allProducts, visibleCart],
+  )
 
   const allMessages = useMemo(() => {
     const localMessages = activeConversationId
@@ -924,31 +960,31 @@ export function AgentDiscoverView({
       ? allMessages.filter((message) => !dismissed.has(message.id))
       : allMessages
   }, [activeConversationId, allMessages, dismissedMessageIds])
-  const liveCartMessageId = useMemo(() => latestCartBlockMessageId(messages), [messages])
+  const liveCartMessageId = useMemo(
+    () => visibleLatestCartBlockMessageId(allMessages, messages),
+    [allMessages, messages],
+  )
   liveCartMessageIdRef.current = liveCartMessageId
+  const liveCartAdditionPending =
+    (pendingCartAdditionsByConversationId[activeConversationId ?? ''] ?? 0) > 0
+  const autoDismissEmptyCartMessage = shouldAutoDismissEmptyCartMessage(
+    liveCartMessageId,
+    visibleCartLineCount,
+    liveCartAdditionPending,
+  )
 
   const removeMessage = useCallback(
     (messageId: string) => {
       if (!activeConversationId) return
       const messageKey = `${activeConversationId}:${messageId}`
-      const timeout = autoDismissTimeoutsRef.current.get(messageKey)
-      if (timeout !== undefined) {
-        window.clearTimeout(timeout)
-        autoDismissTimeoutsRef.current.delete(messageKey)
-      }
-      setAutoRemovingMessageKeys((current) => {
-        if (!current.has(messageKey)) return current
-        const next = new Set(current)
-        next.delete(messageKey)
-        return next
-      })
+      cancelAutoRemoval(messageKey)
       setDismissedMessageIds((current) => {
         const existing = current[activeConversationId] ?? []
         if (existing.includes(messageId)) return current
         return { ...current, [activeConversationId]: [...existing, messageId] }
       })
     },
-    [activeConversationId, setDismissedMessageIds],
+    [activeConversationId, cancelAutoRemoval, setDismissedMessageIds],
   )
 
   const appendLocalMessage = useCallback(
@@ -1015,17 +1051,25 @@ export function AgentDiscoverView({
     for (const message of combinedConversation.messages) {
       if (!isProductPinNotice(message) || dismissed.has(message.messageId)) continue
       const timeoutKey = `${conversationId}:${message.messageId}`
-      if (autoDismissTimeoutsRef.current.has(timeoutKey)) continue
-      const timeout = window.setTimeout(() => {
-        setAutoRemovingMessageKeys((current) => {
-          if (current.has(timeoutKey)) return current
-          return new Set(current).add(timeoutKey)
-        })
-        autoDismissTimeoutsRef.current.delete(timeoutKey)
-      }, PRODUCT_PIN_NOTICE_LIFETIME_MS)
-      autoDismissTimeoutsRef.current.set(timeoutKey, timeout)
+      queueAutoRemoval(timeoutKey, PRODUCT_PIN_NOTICE_LIFETIME_MS)
     }
-  }, [combinedConversation, dismissedMessageIds, setDismissedMessageIds])
+  }, [combinedConversation, dismissedMessageIds, queueAutoRemoval])
+
+  useEffect(() => {
+    if (!activeConversationId || !liveCartMessageId) return
+    const messageKey = `${activeConversationId}:${liveCartMessageId}`
+    if (!autoDismissEmptyCartMessage) {
+      cancelAutoRemoval(messageKey)
+      return
+    }
+    queueAutoRemoval(messageKey, EMPTY_CART_MESSAGE_LIFETIME_MS)
+  }, [
+    activeConversationId,
+    autoDismissEmptyCartMessage,
+    cancelAutoRemoval,
+    liveCartMessageId,
+    queueAutoRemoval,
+  ])
 
   useEffect(() => {
     const timeouts = autoDismissTimeoutsRef.current
@@ -1890,10 +1934,7 @@ export function AgentDiscoverView({
               celebrateArrival={false}
               immutable
               useLiveCart={message.id === liveCartMessageId}
-              cartAdditionPending={
-                message.id === liveCartMessageId &&
-                (pendingCartAdditionsByConversationId[activeConversationId ?? ''] ?? 0) > 0
-              }
+              cartAdditionPending={message.id === liveCartMessageId && liveCartAdditionPending}
               agentActionsDisabled={agentActionsDisabled}
               deletable
               removing={autoRemovingMessageKeys.has(

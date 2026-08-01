@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 
 import type { AgentMessageProfile } from '../../../lib/apiClient'
-import { PRODUCT_PIN_NOTICE_LIFETIME_MS, isProductPinNotice } from './autoDismissNotices'
+import {
+  EMPTY_CART_MESSAGE_LIFETIME_MS,
+  PRODUCT_PIN_NOTICE_LIFETIME_MS,
+  isProductPinNotice,
+  shouldAutoDismissEmptyCartMessage,
+} from './autoDismissNotices'
 
 function message(overrides: Partial<AgentMessageProfile> = {}): AgentMessageProfile {
   return {
@@ -19,8 +24,8 @@ function message(overrides: Partial<AgentMessageProfile> = {}): AgentMessageProf
 }
 
 describe('agent auto-dismiss notices', () => {
-  test('recognizes persisted pin and unpin actions for five-second dismissal', () => {
-    expect(PRODUCT_PIN_NOTICE_LIFETIME_MS).toBe(5_000)
+  test('recognizes persisted pin and unpin actions for three-second dismissal', () => {
+    expect(PRODUCT_PIN_NOTICE_LIFETIME_MS).toBe(3_000)
     expect(isProductPinNotice(message())).toBe(true)
     expect(isProductPinNotice(message({ textContent: 'Unpinned product Trail Boot.' }))).toBe(true)
   })
@@ -55,5 +60,16 @@ describe('agent auto-dismiss notices', () => {
     ).toBe(false)
     expect(isProductPinNotice(message({ role: 'USER', correlationId: null }))).toBe(false)
     expect(isProductPinNotice(message({ contentKind: 'TEXT', correlationId: null }))).toBe(false)
+  })
+
+  test('auto-dismisses an empty visible cart after five seconds', () => {
+    expect(EMPTY_CART_MESSAGE_LIFETIME_MS).toBe(5_000)
+    expect(shouldAutoDismissEmptyCartMessage('cart-message', 0, false)).toBe(true)
+  })
+
+  test('keeps the cart message while it has lines or an addition is pending', () => {
+    expect(shouldAutoDismissEmptyCartMessage('cart-message', 1, false)).toBe(false)
+    expect(shouldAutoDismissEmptyCartMessage('cart-message', 0, true)).toBe(false)
+    expect(shouldAutoDismissEmptyCartMessage(null, 0, false)).toBe(false)
   })
 })
