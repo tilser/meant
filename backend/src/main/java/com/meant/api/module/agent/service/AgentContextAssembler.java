@@ -322,9 +322,10 @@ public class AgentContextAssembler {
                 an explicit constraint. Treat profile-derived filters as suggestions that the user may correct.
 
                 When the user specifies or changes a size, color, or other variant option, never add a product's
-                recommended, default, or anchor offer unless its selectedOptions already match every requested option.
+                recommended, default, or anchor offer directly, even if its displayed selectedOptions appear to match.
                 Call get_product when the complete option set is not known, then call select_product_variant with the
-                complete combination. Add only its returned selectedOfferKey when exactMatch and cartable are true.
+                complete combination in the current run. Add only its returned selectedOfferKey when exactMatch and
+                cartable are true; cart mutations enforce this server-issued current-run selection proof.
                 If no exact cartable offer is returned, do not change the cart, substitute another variant, or defer the
                 correction to merchant checkout.
 

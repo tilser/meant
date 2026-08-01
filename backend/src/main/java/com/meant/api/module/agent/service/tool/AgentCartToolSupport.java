@@ -95,7 +95,7 @@ class AgentCartToolSupport {
 
     AgentCartResult prepare(AgentToolExecutionContext context, AgentCartToolArguments.Prepare arguments) {
         ownedContext(context);
-        arguments.offers().forEach(item -> referenceService.requireOffer(context, item.offerKey()));
+        arguments.offers().forEach(item -> referenceService.requireCartOffer(context, item.offerKey()));
         List<CartOfferPartitionResult> partitions = cartService.partitionSelectedOffers(
                 new PartitionSelectedOffersQuery(
                         context.userId(),
@@ -171,7 +171,7 @@ class AgentCartToolSupport {
     CartResult addLine(AgentToolExecutionContext context, AgentCartToolArguments.AddLine arguments) {
         ownedContext(context);
         referenceService.requireCart(context, arguments.cartId());
-        referenceService.requireOffer(context, arguments.offerKey());
+        referenceService.requireCartOffer(context, arguments.offerKey());
         return cartService.update(updateCommand(
                 arguments.cartId(),
                 context.userId(),

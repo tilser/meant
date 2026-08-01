@@ -10,14 +10,18 @@ import com.meant.api.module.agent.service.dto.AgentInventorySelectedItemArtifact
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
 import com.meant.api.module.agent.service.tool.AgentProductReadToolException;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import tools.jackson.databind.JsonNode;
 
 @Service
 @RequiredArgsConstructor
 public class AgentProductReadReferenceService {
+
+    private static final String VARIANT_SELECTION_STABLE_KEY_PREFIX = "variant-selection:";
 
     private static final Set<AgentArtifactType> OFFER_ISSUING_TYPES = Set.of(
             AgentArtifactType.PRODUCT,
@@ -128,6 +132,38 @@ public class AgentProductReadReferenceService {
         return reference;
     }
 
+    /**
+     * Requires either an offer without selectable variant options or an exact cartable variant
+     * selection issued by the server in the current run.
+     */
+    public AgentArtifactReference requireCartOffer(AgentToolExecutionContext context, String offerKey) {
+        String normalized = requiredReference(offerKey, "An exact offer reference is required.");
+        requireContext(context);
+        AgentArtifactReference selection = repository
+                .findFirstByConversationIdAndStableKeyOrderByCreatedAtDesc(
+                        context.conversationId(), variantSelectionStableKey(normalized))
+                .filter(candidate -> candidate.getArtifactType() == AgentArtifactType.OFFER)
+                .filter(candidate -> normalized.equals(candidate.getOfferKey()))
+                .filter(candidate -> context.runId() != null && context.runId().equals(candidate.getRunId()))
+                .filter(candidate -> payloadIdentifiesOffer(candidate.getPayloadJson(), normalized))
+                .orElse(null);
+        if (selection != null) {
+            return selection;
+        }
+
+        AgentArtifactReference reference = requireOffer(context, normalized);
+        if (offerHasSelectedOptions(reference.getPayloadJson(), normalized)) {
+            throw AgentProductReadToolException.invalid(
+                    "This product has selectable options. Resolve the buyer's complete option combination with "
+                            + "select_product_variant in this run, then use its exact cartable selectedOfferKey.");
+        }
+        return reference;
+    }
+
+    public static String variantSelectionStableKey(String offerKey) {
+        return VARIANT_SELECTION_STABLE_KEY_PREFIX + offerKey;
+    }
+
     public AgentArtifactReference requireCart(AgentToolExecutionContext context, UUID cartId) {
         if (cartId == null) {
             throw AgentProductReadToolException.invalid("A cart reference is required.");
@@ -179,5 +215,91 @@ public class AgentProductReadReferenceService {
             throw AgentProductReadToolException.invalid("The reference is too long.");
         }
         return normalized;
+    }
+
+    private boolean payloadIdentifiesOffer(String payloadJson, String offerKey) {
+        return json.readArtifactTree(payloadJson)
+                .map(payload -> containsOfferIdentity(payload, offerKey))
+                .orElse(false);
+    }
+
+    private boolean offerHasSelectedOptions(String payloadJson, String offerKey) {
+        return json.readArtifactTree(payloadJson)
+                .flatMap(payload -> selectedOptions(payload, offerKey))
+                .orElse(true);
+    }
+
+    private Optional<Boolean> selectedOptions(JsonNode node, String offerKey) {
+        if (node == null || node.isNull()) {
+            return Optional.empty();
+        }
+        if (node.isArray()) {
+            for (JsonNode child : node) {
+                Optional<Boolean> selected = selectedOptions(child, offerKey);
+                if (selected.isPresent()) {
+                    return selected;
+                }
+            }
+            return Optional.empty();
+        }
+        if (!node.isObject()) {
+            return Optional.empty();
+        }
+        if (identifiesOffer(node, offerKey)) {
+            JsonNode selectedOptions = node.get("selectedOptions");
+            if (selectedOptions != null && selectedOptions.isArray()) {
+                return Optional.of(!selectedOptions.isEmpty());
+            }
+            JsonNode selectedOptionsJson = node.get("selectedOptionsJson");
+            if (selectedOptionsJson != null && selectedOptionsJson.isTextual()) {
+                return json.readArtifactTree(selectedOptionsJson.asText())
+                        .filter(JsonNode::isArray)
+                        .map(options -> !options.isEmpty());
+            }
+        }
+        var fields = node.properties().iterator();
+        while (fields.hasNext()) {
+            Optional<Boolean> selected = selectedOptions(fields.next().getValue(), offerKey);
+            if (selected.isPresent()) {
+                return selected;
+            }
+        }
+        return Optional.empty();
+    }
+
+    private boolean containsOfferIdentity(JsonNode node, String offerKey) {
+        if (node == null || node.isNull()) {
+            return false;
+        }
+        if (node.isArray()) {
+            for (JsonNode child : node) {
+                if (containsOfferIdentity(child, offerKey)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if (!node.isObject()) {
+            return false;
+        }
+        if (identifiesOffer(node, offerKey)) {
+            return true;
+        }
+        var fields = node.properties().iterator();
+        while (fields.hasNext()) {
+            if (containsOfferIdentity(fields.next().getValue(), offerKey)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean identifiesOffer(JsonNode node, String offerKey) {
+        return offerKey.equals(text(node, "offerKey")) || offerKey.equals(text(node, "key"));
+    }
+
+    private String text(JsonNode node, String field) {
+        JsonNode value = node.get(field);
+        return value != null && value.isTextual() ? value.asText() : null;
     }
 }

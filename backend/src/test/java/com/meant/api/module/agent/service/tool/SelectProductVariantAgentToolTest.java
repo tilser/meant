@@ -101,7 +101,7 @@ class SelectProductVariantAgentToolTest {
         assertThat(result.safeSummary()).contains("exact requested variant");
         assertThat(result.artifacts()).singleElement().satisfies(artifact -> {
             assertThat(artifact.type()).isEqualTo(AgentArtifactType.OFFER);
-            assertThat(artifact.stableKey()).isEqualTo("offer-size-11");
+            assertThat(artifact.stableKey()).isEqualTo("variant-selection:offer-size-11");
             assertThat(artifact.offerKey()).isEqualTo("offer-size-11");
             assertThat(artifact.canonicalProductKey()).isEqualTo("predator-indoor-white-black");
             assertThat(artifact.payloadJson()).contains("White/Black", "11");

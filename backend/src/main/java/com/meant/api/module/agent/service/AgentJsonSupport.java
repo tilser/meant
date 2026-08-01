@@ -94,6 +94,18 @@ public class AgentJsonSupport {
         }
     }
 
+    /** Reads immutable server-owned artifact structure without applying model-argument rules. */
+    public Optional<JsonNode> readArtifactTree(String value) {
+        if (value == null || value.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.ofNullable(objectMapper.readTree(value));
+        } catch (JacksonException exception) {
+            return Optional.empty();
+        }
+    }
+
     public String bounded(String value) {
         if (value == null) {
             return null;

@@ -1,6 +1,7 @@
 package com.meant.api.module.agent.service.tool;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -123,6 +124,34 @@ class AgentCommerceToolContractTest {
         ArgumentCaptor<CreateCartCommand> command = ArgumentCaptor.forClass(CreateCartCommand.class);
         verify(cartService).create(command.capture(), any());
         assertThat(command.getValue().buyerIp()).isEqualTo("203.0.113.42");
+    }
+
+    @Test
+    void prepareCartStopsBeforeMutationWhenTheOfferLacksExactVariantSelectionProof() {
+        AgentProductReadReferenceService references = mock(AgentProductReadReferenceService.class);
+        CartService cartService = mock(CartService.class);
+        AgentToolExecutionContext context = context();
+        when(references.requireCartOffer(context, "offer-size-6-5"))
+                .thenThrow(AgentProductReadToolException.invalid("Select the exact variant first."));
+        AgentCartToolSupport support = new AgentCartToolSupport(
+                ownedConversationRepository(),
+                references,
+                cartService,
+                mock(AgentMissionToolSupport.class),
+                objectMapper,
+                validator,
+                mock(AgentJsonSupport.class)
+        );
+
+        assertThatThrownBy(() -> support.prepare(
+                context,
+                new AgentCartToolArguments.Prepare(List.of(
+                        new AgentCartToolArguments.ExactOffer("offer-size-6-5", 1)))
+        )).isInstanceOf(com.meant.api.module.agent.exception.AgentException.class);
+
+        verify(cartService, never()).partitionSelectedOffers(any());
+        verify(cartService, never()).create(any(), any());
+        verify(cartService, never()).update(any(), any());
     }
 
     @Test

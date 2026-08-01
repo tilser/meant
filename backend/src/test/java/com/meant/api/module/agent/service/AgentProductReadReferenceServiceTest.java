@@ -5,20 +5,22 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import com.meant.api.module.agent.entity.AgentArtifactReference;
 import com.meant.api.module.agent.constant.AgentArtifactType;
 import com.meant.api.module.agent.constant.AgentInventoryArtifactKind;
+import com.meant.api.module.agent.entity.AgentArtifactReference;
 import com.meant.api.module.agent.exception.AgentException;
+import com.meant.api.module.agent.properties.AgentProperties;
 import com.meant.api.module.agent.repository.AgentArtifactReferenceRepository;
-import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
 import com.meant.api.module.agent.service.dto.AgentInventorySearchArtifact;
 import com.meant.api.module.agent.service.dto.AgentInventorySelectedItemArtifact;
+import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
 import com.meant.api.module.user.service.dto.UserInventoryItemResult;
 import com.meant.api.module.user.service.dto.UserInventoryProductRehydrationResult;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import tools.jackson.databind.ObjectMapper;
 
 class AgentProductReadReferenceServiceTest {
 
@@ -181,6 +183,81 @@ class AgentProductReadReferenceServiceTest {
     }
 
     @Test
+    void requiresTheCurrentRunsExactVariantSelectionInsteadOfTheConfigurableAnchor() {
+        AgentToolExecutionContext context = context();
+        AgentArtifactReferenceRepository repository = mock(AgentArtifactReferenceRepository.class);
+        AgentArtifactReference anchor = offerArtifact(
+                context.runId(),
+                "offer-size-6-5",
+                "offer-size-6-5",
+                "{\"key\":\"offer-size-6-5\",\"selectedOptions\":[{\"name\":\"Size\",\"value\":\"6.5\"}]}"
+        );
+        AgentArtifactReference selected = offerArtifact(
+                context.runId(),
+                "variant-selection:offer-size-11",
+                "offer-size-11",
+                "{\"offerKey\":\"offer-size-11\",\"selectedOptions\":[{\"name\":\"Size\",\"value\":\"11\"}]}"
+        );
+        when(repository.findFirstByConversationIdAndStableKeyOrderByCreatedAtDesc(
+                CONVERSATION_ID, "variant-selection:offer-size-6-5")).thenReturn(Optional.empty());
+        when(repository.findFirstByConversationIdAndStableKeyOrderByCreatedAtDesc(
+                CONVERSATION_ID, "offer-size-6-5")).thenReturn(Optional.of(anchor));
+        when(repository.findFirstByConversationIdAndStableKeyOrderByCreatedAtDesc(
+                CONVERSATION_ID, "variant-selection:offer-size-11")).thenReturn(Optional.of(selected));
+        AgentProductReadReferenceService service = serviceWithJson(repository);
+
+        assertThatThrownBy(() -> service.requireCartOffer(context, "offer-size-6-5"))
+                .isInstanceOf(AgentException.class)
+                .hasMessageContaining("select_product_variant");
+        assertThat(service.requireCartOffer(context, "offer-size-11")).isSameAs(selected);
+    }
+
+    @Test
+    void rejectsAVariantSelectionProofFromAnEarlierRun() {
+        AgentToolExecutionContext context = context();
+        AgentArtifactReferenceRepository repository = mock(AgentArtifactReferenceRepository.class);
+        AgentArtifactReference staleSelection = offerArtifact(
+                UUID.randomUUID(),
+                "variant-selection:offer-size-11",
+                "offer-size-11",
+                "{\"offerKey\":\"offer-size-11\",\"selectedOptions\":[{\"name\":\"Size\",\"value\":\"11\"}]}"
+        );
+        AgentArtifactReference ordinary = offerArtifact(
+                context.runId(),
+                "offer-size-11",
+                "offer-size-11",
+                "{\"key\":\"offer-size-11\",\"selectedOptions\":[{\"name\":\"Size\",\"value\":\"11\"}]}"
+        );
+        when(repository.findFirstByConversationIdAndStableKeyOrderByCreatedAtDesc(
+                CONVERSATION_ID, "variant-selection:offer-size-11")).thenReturn(Optional.of(staleSelection));
+        when(repository.findFirstByConversationIdAndStableKeyOrderByCreatedAtDesc(
+                CONVERSATION_ID, "offer-size-11")).thenReturn(Optional.of(ordinary));
+
+        assertThatThrownBy(() -> serviceWithJson(repository).requireCartOffer(context, "offer-size-11"))
+                .isInstanceOf(AgentException.class)
+                .hasMessageContaining("this run");
+    }
+
+    @Test
+    void allowsAnOfferThatHasNoSelectableOptionsWithoutASelectionProof() {
+        AgentToolExecutionContext context = context();
+        AgentArtifactReferenceRepository repository = mock(AgentArtifactReferenceRepository.class);
+        AgentArtifactReference ordinary = offerArtifact(
+                context.runId(),
+                "offer-single-variant",
+                "offer-single-variant",
+                "{\"key\":\"offer-single-variant\",\"selectedOptions\":[]}"
+        );
+        when(repository.findFirstByConversationIdAndStableKeyOrderByCreatedAtDesc(
+                CONVERSATION_ID, "variant-selection:offer-single-variant")).thenReturn(Optional.empty());
+        when(repository.findFirstByConversationIdAndStableKeyOrderByCreatedAtDesc(
+                CONVERSATION_ID, "offer-single-variant")).thenReturn(Optional.of(ordinary));
+
+        assertThat(serviceWithJson(repository).requireCartOffer(context, "offer-single-variant"))
+                .isSameAs(ordinary);
+    }
+
+    @Test
     void rejectsACartLineIssuedForADifferentCart() {
         UUID cartId = UUID.randomUUID();
         UUID otherCartId = UUID.randomUUID();
@@ -210,6 +287,32 @@ class AgentProductReadReferenceServiceTest {
 
     private AgentProductReadReferenceService service(AgentArtifactReferenceRepository repository) {
         return new AgentProductReadReferenceService(repository, mock(AgentJsonSupport.class));
+    }
+
+    private AgentProductReadReferenceService serviceWithJson(AgentArtifactReferenceRepository repository) {
+        return new AgentProductReadReferenceService(
+                repository,
+                new AgentJsonSupport(new ObjectMapper(), mock(AgentProperties.class))
+        );
+    }
+
+    private AgentArtifactReference offerArtifact(
+            UUID runId,
+            String stableKey,
+            String offerKey,
+            String payloadJson
+    ) {
+        return AgentArtifactReference.builder()
+                .conversationId(CONVERSATION_ID)
+                .messageId(UUID.randomUUID())
+                .runId(runId)
+                .artifactType(AgentArtifactType.OFFER)
+                .ordinal(1)
+                .stableKey(stableKey)
+                .canonicalProductKey("product:predator")
+                .offerKey(offerKey)
+                .payloadJson(payloadJson)
+                .build();
     }
 
     private AgentArtifactReference inventoryArtifact(UUID inventoryItemId, UUID messageId, String payloadJson) {

@@ -87,12 +87,12 @@ public class SelectProductVariantAgentTool implements AgentTool {
                 selection.cartable(),
                 AgentProductVariantDetailsResult.from(selection.details())
         );
-        List<AgentArtifact> artifacts = exactOffer == null
+        List<AgentArtifact> artifacts = exactOffer == null || !selection.cartable()
                 ? List.of()
                 : List.of(new AgentArtifact(
                         AgentArtifactType.OFFER,
                         1,
-                        exactOffer.key(),
+                        AgentProductReadReferenceService.variantSelectionStableKey(exactOffer.key()),
                         label(anchor.getLabel(), selectedOffer),
                         canonicalProductKey,
                         exactOffer.key(),
