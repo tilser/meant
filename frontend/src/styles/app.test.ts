@@ -21,6 +21,19 @@ describe('theme and upload styles', () => {
   })
 })
 
+describe('discover chat layout styles', () => {
+  test('pins conversation controls directly below the desktop navigation', () => {
+    expect(styles).toMatch(/\.mt-ct-tabs\s*\{[^}]*top: 64px;[^}]*\}/)
+    expect(styles).toMatch(
+      /@media \(max-width: 760px\)\s*\{[\s\S]*?\.mt-ct-tabs\s*\{[^}]*top: 86px;[^}]*\}/,
+    )
+  })
+
+  test('does not leave feed padding below the sticky composer', () => {
+    expect(styles).toMatch(/\.mt-feed\.mt-ct-feed\s*\{[^}]*padding-bottom: 0;[^}]*\}/)
+  })
+})
+
 describe('compare verdict styles', () => {
   test('keeps the Meant pick compact when product copy is long', () => {
     expect(styles).toMatch(

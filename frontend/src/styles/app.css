@@ -53,7 +53,7 @@
 
 .mt-ct-tabs {
   position: sticky;
-  top: calc(64px + var(--mt-profile-h, 54px));
+  top: 64px;
   z-index: 18;
   display: flex;
   align-items: center;
@@ -3134,6 +3134,10 @@ button:disabled {
   margin: 0 auto;
   padding: 56px 32px 96px;
   animation: mt-view-in var(--motion-slow) var(--ease-out) both;
+}
+
+.mt-feed.mt-ct-feed {
+  padding-bottom: 0;
 }
 
 .mt-hero {
@@ -11085,6 +11089,10 @@ button:disabled {
     right: 10px;
     bottom: 1px;
     left: 10px;
+  }
+
+  .mt-ct-tabs {
+    top: 86px;
   }
 
   .mt-profile {
