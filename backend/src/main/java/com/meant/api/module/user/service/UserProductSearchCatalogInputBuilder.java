@@ -9,7 +9,6 @@ import com.meant.api.module.catalog.service.dto.CatalogDiscoveryLocation;
 import com.meant.api.module.user.constant.UserClothingFit;
 import com.meant.api.module.user.constant.UserCurrency;
 import com.meant.api.module.user.exception.UnsupportedProductSearchCurrencyException;
-import com.meant.api.module.user.service.dto.ShoppingFilterResult;
 import com.meant.api.module.user.service.dto.UserLocationResult;
 import com.meant.api.module.user.service.dto.UserProductSearchCatalogInput;
 import com.meant.api.module.user.service.dto.UserProductSearchQueryIntentResult;
@@ -28,10 +27,11 @@ import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 @Service
+@RequiredArgsConstructor
 public class UserProductSearchCatalogInputBuilder {
 
     private static final String AMOUNT_NUMBER_PATTERN =
@@ -105,20 +105,6 @@ public class UserProductSearchCatalogInputBuilder {
     private static final int MAX_INTENT_LENGTH = 1200;
 
     private final UserProductSearchHashService userProductSearchHashService;
-    private final UserProductSearchCategoryPolicy categoryPolicy;
-
-    public UserProductSearchCatalogInputBuilder(UserProductSearchHashService userProductSearchHashService) {
-        this(userProductSearchHashService, new UserProductSearchCategoryPolicy());
-    }
-
-    @Autowired
-    public UserProductSearchCatalogInputBuilder(
-            UserProductSearchHashService userProductSearchHashService,
-            UserProductSearchCategoryPolicy categoryPolicy
-    ) {
-        this.userProductSearchHashService = userProductSearchHashService;
-        this.categoryPolicy = categoryPolicy;
-    }
 
     public UserProductSearchCatalogInput build(
             String originalQuery,
@@ -425,11 +411,6 @@ public class UserProductSearchCatalogInputBuilder {
             addPart(parts, locationsIntent(settings.locations()));
             addPart(parts, clothingFitIntent(settings.clothingFit()));
         }
-        if (settings != null) {
-            addPart(parts, activeFiltersIntent(
-                    categoryPolicy.providerContextFilters(originalQuery, settings.filters())));
-        }
-
         String intent = parts.stream()
                 .filter(part -> part != null && !part.isBlank())
                 .collect(Collectors.joining("; "));
@@ -488,15 +469,6 @@ public class UserProductSearchCatalogInputBuilder {
                     case OTHER -> "Clothing fit signal: prefer " + fit.label() + " for apparel and footwear";
                 })
                 .orElse(null);
-    }
-
-    private String activeFiltersIntent(List<ShoppingFilterResult> filters) {
-        if (safeList(filters).isEmpty()) {
-            return null;
-        }
-        return "Active shopping preferences: " + safeList(filters).stream()
-                .map(filter -> filter.label() + " - " + filter.description())
-                .collect(Collectors.joining("; "));
     }
 
     private String listPart(String label, List<String> values) {

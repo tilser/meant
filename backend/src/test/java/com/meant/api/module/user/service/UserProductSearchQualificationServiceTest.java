@@ -622,7 +622,6 @@ class UserProductSearchQualificationServiceTest {
                     null,
                     null,
                     null,
-                    new UserProductSearchQualificationPlanResolver(),
                     () -> "test contract"
             );
             this.result = result;

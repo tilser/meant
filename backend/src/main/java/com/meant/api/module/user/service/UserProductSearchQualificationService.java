@@ -117,7 +117,7 @@ public class UserProductSearchQualificationService {
                 ? UserProductSearchQualificationStatus.READY
                 : UserProductSearchQualificationStatus.NEEDS_INPUT;
         log.info(
-                "Product-search qualification model result validated. userId={}, conversationId={}, "
+                "Product-search qualification model result accepted. userId={}, conversationId={}, "
                         + "status={}, currentSchema={}, missingFilters={}, missingTargets={}",
                 command.userId(),
                 command.conversationId(),

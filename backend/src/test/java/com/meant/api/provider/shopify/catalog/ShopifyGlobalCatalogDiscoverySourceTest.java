@@ -32,11 +32,6 @@ import com.meant.api.module.catalog.service.dto.ResultProvenance;
 import com.meant.api.module.catalog.service.dto.ResultSourceType;
 import com.meant.api.module.merchant.service.MerchantShopifyIdentityLookupService;
 import com.meant.api.module.merchant.service.query.FindMerchantShopifyIdentityQuery;
-import com.meant.api.module.user.constant.UserProductSearchQuestionTarget;
-import com.meant.api.module.user.service.UserProductSearchQualificationPlanMapper;
-import com.meant.api.module.user.service.UserProductSearchQualificationPlanResolver;
-import com.meant.api.module.user.service.dto.UserSettingsResult;
-import com.meant.api.module.user.service.query.GenerateUserProductSearchQualificationQuery;
 import com.meant.api.plugin.catalog.common.dto.CatalogSearchContext;
 import com.meant.api.plugin.catalog.common.dto.CatalogSearchFilters;
 import com.meant.api.plugin.catalog.common.dto.CatalogSearchPriceFilter;
@@ -46,7 +41,6 @@ import com.meant.api.provider.shopify.auth.ShopifyAgentAuthProperties;
 import com.meant.api.provider.shopify.catalog.dto.ShopifyGlobalCatalogSearchRequest;
 import java.math.BigDecimal;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -462,68 +456,6 @@ class ShopifyGlobalCatalogDiscoverySourceTest {
         assertThat(result.candidates()).isEmpty();
         assertThat(emitted).isEmpty();
         assertThat(provider.calls).isEqualTo(1);
-    }
-
-    @Test
-    void statefulSizeAndDestinationAnswersReachOneShopifySearchWithoutLosingTheRequest() {
-        var resolver = new UserProductSearchQualificationPlanResolver();
-        var first = resolver.safeFallback(qualificationQuery(
-                "running shoes",
-                "running shoes",
-                null
-        ));
-        var second = resolver.safeFallback(qualificationQuery(
-                "running shoes",
-                "46",
-                first
-        ));
-        var ready = resolver.safeFallback(qualificationQuery(
-                "running shoes",
-                "US",
-                second
-        ));
-
-        assertThat(first.questionTargets()).containsExactlyInAnyOrder(
-                UserProductSearchQuestionTarget.SIZE,
-                UserProductSearchQuestionTarget.SHIPS_TO
-        );
-        assertThat(second.questionTargets()).containsExactly(UserProductSearchQuestionTarget.SHIPS_TO);
-        assertThat(ready.missingTargets()).isEmpty();
-
-        CatalogDiscoveryFilters mapped = new UserProductSearchQualificationPlanMapper().map(ready);
-        ShopifyGlobalCatalogProperties properties = properties();
-        DiscoverySourceIdentity source = new DiscoverySourceIdentity(
-                new ProviderIdentity("SHOPIFY"),
-                ResultSourceType.PROVIDER_CATALOG,
-                properties.sourceIdentity()
-        );
-        CatalogSourceResult providerResult = new CatalogSourceResult(
-                source.provider(), source, CatalogSourceOperation.SEARCH, properties.protocolVersion(),
-                NegotiatedCapabilities.none(), List.of(), null, false, null);
-        FakeProvider provider = new FakeProvider(properties, source, providerResult);
-        ShopifyGlobalCatalogDiscoverySource adapter = new ShopifyGlobalCatalogDiscoverySource(
-                provider, properties, authProperties(true));
-
-        adapter.search(new CatalogDiscoveryRequest(
-                ready.effectiveQuery(),
-                null,
-                10,
-                null,
-                null,
-                null,
-                mapped
-        ), ignored -> { });
-
-        assertThat(provider.calls).isEqualTo(1);
-        assertThat(provider.request.query()).isEqualTo("running shoes");
-        assertThat(provider.request.filters().available()).isTrue();
-        assertThat(provider.request.filters().shipsTo().country()).isEqualTo("US");
-        assertThat(provider.request.filters().attributes())
-                .singleElement()
-                .satisfies(attribute -> {
-                    assertThat(attribute.name()).isEqualTo("Size");
-                    assertThat(attribute.values()).containsExactly("46");
-                });
     }
 
     @Test
@@ -1106,32 +1038,6 @@ class ShopifyGlobalCatalogDiscoverySourceTest {
 
     private CatalogDiscoveryRequest broadRequest() {
         return new CatalogDiscoveryRequest("linen shirt", null, 10, null, null, null);
-    }
-
-    private GenerateUserProductSearchQualificationQuery qualificationQuery(
-            String originalQuery,
-            String message,
-            com.meant.api.module.user.service.dto.UserProductSearchQualificationPlan previous
-    ) {
-        Instant now = Instant.parse("2026-07-29T12:00:00Z");
-        return new GenerateUserProductSearchQualificationQuery(
-                originalQuery,
-                message,
-                previous,
-                new UserSettingsResult(
-                        null,
-                        null,
-                        null,
-                        List.of(),
-                        List.of(),
-                        List.of(),
-                        List.of(),
-                        List.of(),
-                        now,
-                        now
-                ),
-                List.of()
-        );
     }
 
     private CatalogSimilarityReference similarityReference(String provider, String productReference) {

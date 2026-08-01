@@ -316,8 +316,7 @@ class UserProductSearchCatalogInputBuilderTest {
         assertThat(input.context().intent())
                 .contains("User delivery location signals: Prague, Czechia (CZ)")
                 .contains("Hard apparel audience filter: men's sizing")
-                .contains("Organic - Prefer organic materials.")
-                .doesNotContain("USD");
+                .doesNotContain("Organic - Prefer organic materials.", "USD");
         assertThat(input.signals().buyerIp()).isEqualTo("203.0.113.4");
         assertThat(input.signals().userAgent()).isEqualTo("Meant Test");
         assertThat(input.filters()).isNull();
@@ -366,8 +365,7 @@ class UserProductSearchCatalogInputBuilderTest {
         assertThat(input.context().currency()).isEqualTo("USD");
         assertThat(input.context().intent())
                 .contains("Catalog query: trail running shoes")
-                .contains("Organic - Prefer organic materials.")
-                .doesNotContain("USD")
+                .doesNotContain("Organic - Prefer organic materials.", "USD")
                 .doesNotContain(
                         "Prague",
                         "Czechia",
@@ -547,7 +545,7 @@ class UserProductSearchCatalogInputBuilderTest {
     }
 
     @Test
-    void providerIntentDoesNotDiscloseUnrelatedFoodPreferencesForFootwear() {
+    void providerIntentDoesNotInferApplicableProfilePreferencesFromProductText() {
         UserSettingsResult base = settings(new UserLocationResult("United States", "US", "New York"));
         UserSettingsResult settings = new UserSettingsResult(
                 base.budget(),
@@ -559,7 +557,10 @@ class UserProductSearchCatalogInputBuilderTest {
                                 "halal", "Halal", "Require products labeled halal.", "food", "require", 1),
                         new ShoppingFilterResult(
                                 "natural-materials", "Natural materials", "Prefer natural materials.",
-                                "materials", "prefer", 2)
+                                "materials", "prefer", 2),
+                        new ShoppingFilterResult(
+                                "local-shops", "Local shops", "Prefer local independent shops.",
+                                "shopping", "prefer", 3)
                 ),
                 base.availableFilters(),
                 base.parsedFilterIds(),
@@ -575,10 +576,9 @@ class UserProductSearchCatalogInputBuilderTest {
         );
 
         assertThat(input.context().intent())
-                .contains("Natural materials")
-                .doesNotContain("Halal", "halal");
+                .doesNotContain("Local shops", "Natural materials", "Halal", "halal");
         assertThat(settings.filters()).extracting(ShoppingFilterResult::id)
-                .containsExactly("halal", "natural-materials");
+                .containsExactly("halal", "natural-materials", "local-shops");
     }
 
     private UserProductSearchQueryIntentResult intent(String searchQuery) {

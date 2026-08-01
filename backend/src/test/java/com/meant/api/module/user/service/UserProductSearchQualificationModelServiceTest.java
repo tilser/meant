@@ -20,7 +20,6 @@ import com.meant.api.module.user.service.dto.ShoppingFilterResult;
 import com.meant.api.module.user.service.dto.UserLocationResult;
 import com.meant.api.module.user.service.dto.UserProductSearchConversationMessage;
 import com.meant.api.module.user.service.dto.UserProductSearchQualificationPlan;
-import com.meant.api.module.user.service.dto.UserProductSearchPreferenceResult;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
 import com.meant.api.module.user.service.dto.UserTasteProfileResult;
 import com.meant.api.module.user.service.dto.UserTasteSignalResult;
@@ -31,13 +30,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.springframework.boot.test.system.CapturedOutput;
-import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.ObjectMapper;
 
-@ExtendWith(OutputCaptureExtension.class)
 class UserProductSearchQualificationModelServiceTest {
 
     @Test
@@ -226,26 +221,30 @@ class UserProductSearchQualificationModelServiceTest {
     }
 
     @Test
-    void repairsAnyThatHasNoExplicitUserEvidenceInsteadOfAuthorizingReady() {
-        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient(
-                unsupportedRatingAnyResponse(),
-                missingRatingRepairResponse()
-        );
+    void acceptsFirstStructurallyValidModelResultWithoutSemanticChecksOrRepair() {
+        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient(unsupportedRatingAnyResponse());
 
-        String request = "new desk lamp under 100 USD shipped to US from CA, low price tier";
-        var plan = service(client).generate(query(request, request, null)).plan();
+        var plan = service(client).generate(query(
+                "new desk lamp under 100 USD shipped to US from CA, low price tier",
+                "new desk lamp under 100 USD shipped to US from CA, low price tier",
+                null
+        )).plan();
 
-        assertThat(client.calls).isEqualTo(2);
-        assertThat(client.userPrompts.get(1))
-                .contains(
-                        "Server validation rejected the previous assessment",
-                        "RATING ANY has no user-context provenance",
-                        "questionTargets must exactly cover unresolved targets"
-                );
-        assertThat(plan.rating().state()).isEqualTo(UserProductSearchFilterState.MISSING);
-        assertThat(plan.questionTargets()).containsExactly(UserProductSearchQuestionTarget.RATING);
-        assertThat(plan.missingTargets()).containsExactly(UserProductSearchQuestionTarget.RATING);
-        assertThat(plan.assistantMessage()).isEqualTo("What minimum rating do you want?");
+        assertThat(client.calls).isEqualTo(1);
+        assertThat(plan.rating().state()).isEqualTo(UserProductSearchFilterState.ANY);
+        assertThat(plan.rating().provenance().source()).isEqualTo(UserProductSearchDecisionSource.NONE);
+        assertThat(plan.questionTargets()).isEmpty();
+        assertThat(plan.assistantMessage()).isEqualTo("Ready to search.");
+    }
+
+    @Test
+    void rejectsStructurallyInvalidJsonWithoutRetry() {
+        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient("not-json", combinedQuestionResponse());
+
+        assertThatThrownBy(() -> service(client).generate(query("desk lamp", "desk lamp", null)))
+                .isInstanceOf(OpenRouterException.class)
+                .hasMessageContaining("invalid product-search qualification JSON");
+        assertThat(client.calls).isEqualTo(1);
     }
 
     @Test
@@ -303,116 +302,7 @@ class UserProductSearchQualificationModelServiceTest {
     }
 
     @Test
-    void modelFailureForAnUnclassifiedSearchFallsBackToAConservativeClarification(CapturedOutput output) {
-        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient("not-json", "still-not-json");
-
-        var plan = service(client).generate(query("desk lamp", "desk lamp", null)).plan();
-
-        assertThat(client.calls).isEqualTo(2);
-        assertThat(plan.missingTargets()).isEmpty();
-        assertThat(plan.shipsTo().value().country()).isEqualTo("US");
-        assertThat(output)
-                .contains(
-                        "attempt=initial",
-                        "attempt=repair",
-                        "failureType=com.meant.api.common.exception.OpenRouterException",
-                        "failureMessage=OpenRouter returned invalid product-search qualification JSON"
-                );
-    }
-
-    @Test
-    void modelOutageFailsClosedBeforeReturningAnOversizedSearchQuery() {
-        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient("not-json", "still-not-json");
-        String request = "desk lamp " + "with carefully described requirements ".repeat(20);
-
-        assertThat(request.length()).isGreaterThan(500);
-        assertThatThrownBy(() -> service(client).generate(query(request, request, null)))
-                .isInstanceOf(OpenRouterException.class)
-                .hasMessageContaining("500")
-                .hasMessageContaining("restate");
-        assertThat(client.calls).isEqualTo(2);
-    }
-
-    @Test
-    void retriesMalformedPrimaryOutputWithTheConfiguredFallbackModelAndOutputBudget() {
-        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient(
-                new OpenRouterException(
-                        "OpenRouter chat completion was truncated (finishReason=length)"),
-                combinedQuestionResponse()
-        );
-
-        var result = service(client).generate(query("blue jeans", "blue jeans", null));
-
-        assertThat(client.models).containsExactly("chat-model", "qualification-model");
-        assertThat(client.maximumOutputTokens).containsExactly(4096, 4096);
-        assertThat(result.model()).isEqualTo("qualification-model");
-        assertThat(result.plan().currentSchema()).isTrue();
-    }
-
-    @Test
-    void modelFailureForFootballBootsConservativelyRequiresSizeAndDestination() {
-        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient("not-json", "still-not-json");
-        UserSettingsResult noLocation = new UserSettingsResult(
-                null, null, null, List.of(), List.of(), List.of(), List.of(), List.of(),
-                Instant.EPOCH, Instant.EPOCH);
-        GenerateUserProductSearchQualificationQuery query = new GenerateUserProductSearchQualificationQuery(
-                "football boots", "football boots", null, noLocation, List.of());
-
-        var plan = service(client).generate(query).plan();
-
-        assertThat(client.calls).isEqualTo(2);
-        assertThat(plan.missingTargets()).containsExactlyInAnyOrder(
-                UserProductSearchQuestionTarget.SIZE,
-                UserProductSearchQuestionTarget.SHIPS_TO
-        );
-        assertThat(plan.assistantMessage()).contains("product size", "ship to");
-    }
-
-    @Test
-    void modelFailureForExplicitFootwearConstraintsStillFailsSafeOnRequiredSize() {
-        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient("not-json", "still-not-json");
-
-        var plan = service(client).generate(query(
-                "black mens football boots",
-                "black mens football boots",
-                null
-        )).plan();
-
-        assertThat(client.calls).isEqualTo(2);
-        assertThat(plan.missingTargets()).containsExactlyInAnyOrder(
-                UserProductSearchQuestionTarget.COLOR,
-                UserProductSearchQuestionTarget.SIZE,
-                UserProductSearchQuestionTarget.TARGET_GENDER
-        );
-    }
-
-    @Test
-    void modelFailureCanUseProfileDestinationAndScopedDurableBootSize() {
-        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient("not-json", "still-not-json");
-        GenerateUserProductSearchQualificationQuery request =
-                new GenerateUserProductSearchQualificationQuery(
-                        "football boots",
-                        "football boots",
-                        null,
-                        settings(),
-                        List.of(new UserProductSearchPreferenceResult(
-                                "football-boots",
-                                UserProductSearchAttributeName.SIZE,
-                                List.of("10")
-                        ))
-                );
-
-        var plan = service(client).generate(request).plan();
-
-        assertThat(plan.missingTargets()).isEmpty();
-        assertThat(attribute(plan, UserProductSearchAttributeName.SIZE).values()).containsExactly("10");
-        assertThat(attribute(plan, UserProductSearchAttributeName.SIZE).provenance().source())
-                .isEqualTo(UserProductSearchDecisionSource.DURABLE_PREFERENCE);
-        assertThat(plan.shipsTo().value().country()).isEqualTo("US");
-    }
-
-    @Test
-    void repairsAnAttributeDecisionWhenTheRequiredRelevanceFlagIsMissing() {
+    void rejectsAnAttributeDecisionWhenTheRequiredRelevanceFlagIsMissingWithoutRetry() {
         String missingSizeRelevance = combinedQuestionResponse().replace(
                 "\"name\": \"SIZE\", \"relevant\": true, \"explicitAny\": false",
                 "\"name\": \"SIZE\", \"explicitAny\": false"
@@ -422,16 +312,10 @@ class UserProductSearchQualificationModelServiceTest {
                 combinedQuestionResponse()
         );
 
-        var plan = service(client).generate(query("blue jeans", "blue jeans", null)).plan();
-
-        assertThat(client.calls).isEqualTo(2);
-        assertThat(client.userPrompts.get(1)).contains(
-                "Server validation rejected the previous assessment",
-                "attributes.SIZE.relevant is required"
-        );
-        assertThat(attribute(plan, UserProductSearchAttributeName.SIZE).state())
-                .isEqualTo(UserProductSearchFilterState.MISSING);
-        assertThat(plan.questionTargets()).contains(UserProductSearchQuestionTarget.SIZE);
+        assertThatThrownBy(() -> service(client).generate(query("blue jeans", "blue jeans", null)))
+                .isInstanceOf(OpenRouterException.class)
+                .hasMessageContaining("attributes.SIZE.relevant is required");
+        assertThat(client.calls).isEqualTo(1);
     }
 
     private UserProductSearchQualificationPlan.Attribute attribute(
@@ -450,7 +334,6 @@ class UserProductSearchQualificationModelServiceTest {
                 properties(),
                 searchProperties(),
                 new ObjectMapper(),
-                new UserProductSearchQualificationPlanResolver(),
                 () -> "TEST_RUNTIME_VERIFIED_SEARCH_CONTRACT"
         );
     }

@@ -33,7 +33,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
 import tools.jackson.core.JacksonException;
@@ -42,7 +41,6 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 @Validated
 @RequiredArgsConstructor
-@Slf4j
 public class UserProductSearchQualificationModelService {
 
     private static final int MAX_ASSISTANT_MESSAGE_LENGTH = 1_500;
@@ -55,9 +53,10 @@ public class UserProductSearchQualificationModelService {
     private static final int MAX_DURABLE_SCOPE_LENGTH = 80;
     private static final int MAX_DURABLE_VALUES = 10;
     private static final String SYSTEM_PROMPT = """
-            You assess a product search before any catalog request is made. The server, not you, authorizes READY.
-            Use the shopping request, ordered trusted conversation, latest user turn, prior verified plan, profile
-            facts, durable preferences, and active taste signals.
+            You assess a product search before any catalog request is made. Your complete assessment determines
+            whether the search is READY or needs another user answer. Use the shopping request, ordered trusted
+            conversation, latest user turn, prior persisted plan, profile facts, durable preferences, and active
+            taste signals.
             A trusted server-resolved similarity-anchor label may be supplied separately. When present, it governs
             product category and category-specific filter relevance even if buyer wording contains a different
             descriptive product phrase. It is not buyer-authored evidence: never use it as hard-filter provenance,
@@ -81,7 +80,7 @@ public class UserProductSearchQualificationModelService {
             Prior conversation is context, not automatic carry-over: never apply a constraint from an unrelated
             earlier shopping request unless the current request explicitly refers back to it or the buyer clearly
             stated it as a stable personal fact. Prefer PROFILE or a matching DURABLE_PREFERENCE for stored facts.
-            When the previous verified question asked for multiple targets and explicitly offered a bare “I don’t
+            When the previous persisted question asked for multiple targets and explicitly offered a bare “I don’t
             care” answer for all of them, that bare answer resolves every target in that question to ANY. If the user
             names only one target, apply ANY only to that named target.
             PROFILE may resolve only SHIPS_TO from primaryLocation and TARGET_GENDER from clothing fit; its
@@ -162,84 +161,13 @@ public class UserProductSearchQualificationModelService {
     private final OpenRouterProperties openRouterProperties;
     private final UserProductSearchProperties searchProperties;
     private final ObjectMapper objectMapper;
-    private final UserProductSearchQualificationPlanResolver planResolver;
     private final CatalogSearchParameterContractProvider catalogSearchParameterContractProvider;
 
     public UserProductSearchQualificationModelResult generate(
             @NotNull @Valid GenerateUserProductSearchQualificationQuery query
     ) {
-        String primaryModel = openRouterProperties.models().chatModel();
-        String repairModel = fallbackModel(primaryModel);
-        UserProductSearchQualificationPlanResolver.Resolution firstResolution = null;
-        RuntimeException initialFailure = null;
-        String repairFeedback;
-        try {
-            UserProductSearchQualificationPlan candidate = completeCandidate(primaryModel, query, null);
-            firstResolution = planResolver.resolve(candidate, query);
-            if (firstResolution.valid()) {
-                return result(firstResolution.plan(), primaryModel);
-            }
-            log.warn(
-                    "Product-search qualification model result rejected. attempt=initial, model={}, "
-                            + "violationCount={}, violations={}",
-                    primaryModel,
-                    firstResolution.violations().size(),
-                    firstResolution.violations()
-            );
-            repairFeedback = String.join("; ", firstResolution.violations());
-        } catch (RuntimeException exception) {
-            initialFailure = exception;
-            log.warn(
-                    "Product-search qualification model attempt failed. attempt=initial, model={}, "
-                            + "failureType={}, failureMessage={}",
-                    primaryModel,
-                    exception.getClass().getName(),
-                    safeErrorMessage(exception)
-            );
-            repairFeedback = "The assessment was structurally invalid: " + safeErrorMessage(exception);
-        }
-
-        UserProductSearchQualificationPlanResolver.Resolution repairedResolution;
-        try {
-            UserProductSearchQualificationPlan repaired = completeCandidate(repairModel, query, repairFeedback);
-            repairedResolution = planResolver.resolve(repaired, query);
-        } catch (RuntimeException exception) {
-            log.warn(
-                    "Product-search qualification model attempt failed. attempt=repair, model={}, "
-                            + "failureType={}, failureMessage={}",
-                    repairModel,
-                    exception.getClass().getName(),
-                    safeErrorMessage(exception)
-            );
-            addSuppressed(exception, initialFailure);
-            UserProductSearchQualificationPlan fallback = firstResolution != null
-                    && (!firstResolution.plan().missingFilters().isEmpty()
-                    || !firstResolution.plan().missingTargets().isEmpty())
-                    ? planResolver.safeFallback(firstResolution.plan(), query)
-                    : planResolver.safeFallback(query, exception);
-            return result(fallback, repairModel);
-        }
-
-        if (repairedResolution.valid()) {
-            return result(repairedResolution.plan(), repairModel);
-        }
-        log.warn(
-                "Product-search qualification model result rejected. attempt=repair, model={}, "
-                        + "violationCount={}, violations={}",
-                repairModel,
-                repairedResolution.violations().size(),
-                repairedResolution.violations()
-        );
-        if (!repairedResolution.plan().missingFilters().isEmpty()
-                || !repairedResolution.plan().missingTargets().isEmpty()) {
-            return result(planResolver.safeFallback(repairedResolution.plan(), query), repairModel);
-        }
-        return result(planResolver.safeFallback(query, initialFailure), repairModel);
-    }
-
-    private String fallbackModel(String primaryModel) {
-        String configured = openRouterProperties.models().productSearchQueryParser();
-        return configured.equals(primaryModel) ? primaryModel : configured;
+        String model = openRouterProperties.models().chatModel();
+        return result(completeCandidate(model, query), model);
     }
 
     private UserProductSearchQualificationModelResult result(
@@ -250,29 +178,14 @@ public class UserProductSearchQualificationModelService {
                 plan, model, searchProperties.queryParserPromptVersion());
     }
 
-    private String safeErrorMessage(RuntimeException exception) {
-        String message = blankToNull(exception.getMessage());
-        if (message == null) {
-            return exception.getClass().getSimpleName();
-        }
-        return message.length() <= 500 ? message : message.substring(0, 500);
-    }
-
-    private void addSuppressed(RuntimeException failure, RuntimeException earlierFailure) {
-        if (earlierFailure != null && earlierFailure != failure) {
-            failure.addSuppressed(earlierFailure);
-        }
-    }
-
     private UserProductSearchQualificationPlan completeCandidate(
             String model,
-            GenerateUserProductSearchQualificationQuery query,
-            String repairFeedback
+            GenerateUserProductSearchQualificationQuery query
     ) {
         String response = openRouterChatClient.completeJson(
                 model,
                 SYSTEM_PROMPT,
-                userPrompt(query, repairFeedback),
+                userPrompt(query),
                 "product_search_qualification",
                 responseSchema(),
                 searchProperties.qualificationMaximumOutputTokens()
@@ -280,7 +193,7 @@ public class UserProductSearchQualificationModelService {
         return sanitize(parse(response), UserCurrency.normalizeOrDefault(query.settings().currency()));
     }
 
-    private String userPrompt(GenerateUserProductSearchQualificationQuery query, String repairFeedback) {
+    private String userPrompt(GenerateUserProductSearchQualificationQuery query) {
         try {
             String prompt = """
                     Supported Shopify/UCP search-parameter contract:
@@ -299,7 +212,7 @@ public class UserProductSearchQualificationModelService {
                     hard-filter provenance or independent effective-query evidence):
                     %s
 
-                    Previous verified qualification plan (null means first turn or legacy plan):
+                    Previous persisted qualification plan (null means first turn or legacy plan):
                     %s
 
                     Profile facts:
@@ -323,18 +236,7 @@ public class UserProductSearchQualificationModelService {
                     objectMapper.writeValueAsString(query.durablePreferences()),
                     objectMapper.writeValueAsString(tastePrompt(query))
             );
-            if (repairFeedback == null || repairFeedback.isBlank()) {
-                return prompt;
-            }
-            return prompt + """
-
-                    Server validation rejected the previous assessment:
-                    %s
-
-                    Return one corrected complete assessment. Do not suppress a missing decision by changing its
-                    relevance or claiming explicit indifference without evidence. Ensure questionTargets exactly
-                    match all unresolved relevant decisions.
-                    """.formatted(repairFeedback);
+            return prompt;
         } catch (JacksonException exception) {
             throw new IllegalStateException("Could not serialize product-search qualification prompt", exception);
         }
