@@ -3,6 +3,7 @@ package com.meant.api.module.agent.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -31,12 +32,21 @@ import com.meant.api.module.cart.service.command.CreateCartCommand;
 import com.meant.api.module.cart.service.dto.CartOfferPartitionResult;
 import com.meant.api.module.cart.service.dto.CartResult;
 import com.meant.api.module.cart.service.dto.CheckoutResult;
+import com.meant.api.module.catalog.service.dto.Money;
+import com.meant.api.module.catalog.service.dto.Offer;
+import com.meant.api.module.catalog.service.dto.OfferAvailability;
+import com.meant.api.module.catalog.service.dto.OfferAvailabilityStatus;
+import com.meant.api.module.catalog.service.dto.RehydratedProductDetails;
 import com.meant.api.module.merchant.constant.CommerceExecutionRail;
 import com.meant.api.module.merchant.service.dto.MerchantExecutionPolicy;
 import com.meant.api.module.user.entity.User;
 import com.meant.api.module.user.repository.UserRepository;
+import com.meant.api.module.user.service.UserProductVariantSelectionService;
+import com.meant.api.module.user.service.command.SelectUserProductVariantCommand;
+import com.meant.api.module.user.service.dto.UserProductVariantSelectionResult;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -78,6 +88,7 @@ class AgentNorthStarMissionCheckoutIT extends PostgresIntegrationTestSupport {
     @Autowired private ShoppingMissionRepository missionRepository;
 
     @MockitoBean private AgentModelGateway modelGateway;
+    @MockitoBean private UserProductVariantSelectionService variantSelectionService;
     @MockitoBean private CartService cartService;
 
     @BeforeEach
@@ -129,6 +140,7 @@ class AgentNorthStarMissionCheckoutIT extends PostgresIntegrationTestSupport {
                         product(3, SNACKS_PRODUCT, SNACKS_OFFER, "Picnic snacks")
                 )
         );
+        stubVariantSelections();
 
         AtomicInteger modelTurn = new AtomicInteger();
         List<AgentModelRequest> requests = new CopyOnWriteArrayList<>();
@@ -137,7 +149,10 @@ class AgentNorthStarMissionCheckoutIT extends PostgresIntegrationTestSupport {
             requests.add(request);
             return switch (modelTurn.getAndIncrement()) {
                 case 0 -> toolResponse("create-mission", "create_shopping_mission", missionArguments());
-                case 1 -> toolResponse("prepare-carts", "prepare_carts", """
+                case 1 -> selectResponse("select-blanket", BLANKET_OFFER);
+                case 2 -> selectResponse("select-cups", CUPS_OFFER);
+                case 3 -> selectResponse("select-snacks", SNACKS_OFFER);
+                case 4 -> toolResponse("prepare-carts", "prepare_carts", """
                         {"offers":[
                           {"offerKey":"%s","quantity":1},
                           {"offerKey":"%s","quantity":8},
@@ -162,7 +177,7 @@ class AgentNorthStarMissionCheckoutIT extends PostgresIntegrationTestSupport {
         ));
         coordinator.schedule(accepted.runId());
 
-        verify(modelGateway, timeout(8_000).times(3)).turn(any(), any(), any());
+        verify(modelGateway, timeout(8_000).times(6)).turn(any(), any(), any());
         awaitTerminalRun(accepted.runId());
         var checkoutAction = userActionService.perform(new RecordAgentUserActionCommand(
                 USER_ID,
@@ -175,19 +190,25 @@ class AgentNorthStarMissionCheckoutIT extends PostgresIntegrationTestSupport {
 
         var run = runRepository.findById(accepted.runId()).orElseThrow();
         assertThat(run.getStatus()).isEqualTo(AgentRunStatus.COMPLETED);
-        assertThat(run.getIterationCount()).isEqualTo(3);
-        assertThat(run.getToolInvocationCount()).isEqualTo(2);
+        assertThat(run.getIterationCount()).isEqualTo(6);
+        assertThat(run.getToolInvocationCount()).isEqualTo(5);
 
         var invocations = invocationRepository.findByRunIdOrderByCreatedAtAsc(run.getId());
         assertThat(invocations)
                 .extracting(tool -> tool.getToolName())
-                .containsExactly("create_shopping_mission", "prepare_carts");
+                .containsExactly(
+                        "create_shopping_mission",
+                        "select_product_variant",
+                        "select_product_variant",
+                        "select_product_variant",
+                        "prepare_carts"
+                );
         assertThat(invocations)
                 .extracting(tool -> tool.getStatus())
                 .containsOnly(AgentToolInvocationStatus.COMPLETED);
-        assertThat(invocations.get(1).getArgumentsJson())
+        assertThat(invocations.get(4).getArgumentsJson())
                 .contains(BLANKET_OFFER, CUPS_OFFER, SNACKS_OFFER);
-        assertThat(invocations.get(1).getResultJson())
+        assertThat(invocations.get(4).getResultJson())
                 .contains(CART_ONE_ID.toString(), CART_TWO_ID.toString(), "snacks.example")
                 .doesNotContain("simulated merchant cart outage");
         assertThat(invocations).noneMatch(tool -> tool.getToolName().equals("complete_checkout"));
@@ -232,7 +253,7 @@ class AgentNorthStarMissionCheckoutIT extends PostgresIntegrationTestSupport {
                 .flatExtracting(CreateCartCommand::addItems)
                 .extracting(CreateCartCommand.AddItem::offerKey)
                 .containsExactlyInAnyOrder(BLANKET_OFFER, CUPS_OFFER, SNACKS_OFFER);
-        assertThat(requests).hasSize(3);
+        assertThat(requests).hasSize(6);
         assertThat(requests).allSatisfy(request -> assertThat(request.tools())
                 .noneMatch(tool -> tool.name().equals("prepare_checkout")
                         || tool.name().equals("complete_checkout")));
@@ -246,6 +267,57 @@ class AgentNorthStarMissionCheckoutIT extends PostgresIntegrationTestSupport {
                 "tool_calls",
                 "scripted-mission-eval"
         );
+    }
+
+    private AgentModelResponse selectResponse(String id, String offerKey) {
+        return toolResponse(
+                id,
+                "select_product_variant",
+                "{\"offerKey\":\"" + offerKey + "\",\"selectedOptions\":[]}"
+        );
+    }
+
+    private void stubVariantSelections() {
+        Map<String, Offer> offers = Map.of(
+                BLANKET_OFFER, selectedOffer(BLANKET_OFFER, "Picnic blanket"),
+                CUPS_OFFER, selectedOffer(CUPS_OFFER, "Reusable cups"),
+                SNACKS_OFFER, selectedOffer(SNACKS_OFFER, "Picnic snacks")
+        );
+        when(variantSelectionService.select(any(), any(SelectUserProductVariantCommand.class)))
+                .thenAnswer(invocation -> {
+                    SelectUserProductVariantCommand command = invocation.getArgument(1);
+                    Offer offer = offers.get(command.anchorOfferKey());
+                    if (offer == null) {
+                        throw new AssertionError("Unexpected variant selection anchor: " + command.anchorOfferKey());
+                    }
+                    return new UserProductVariantSelectionResult(selectionDetails(), offer, true);
+                });
+    }
+
+    private Offer selectedOffer(String offerKey, String label) {
+        Offer offer = mock(Offer.class);
+        when(offer.key()).thenReturn(offerKey);
+        when(offer.merchantName()).thenReturn("Mission merchant");
+        when(offer.variantTitle()).thenReturn(label);
+        when(offer.price()).thenReturn(new Money(1_000, "USD"));
+        when(offer.availability()).thenReturn(new OfferAvailability(
+                OfferAvailabilityStatus.IN_STOCK, 10, null));
+        when(offer.selectedOptions()).thenReturn(List.of());
+        when(offer.provenance()).thenReturn(List.of());
+        return offer;
+    }
+
+    private RehydratedProductDetails selectionDetails() {
+        RehydratedProductDetails details = mock(RehydratedProductDetails.class);
+        RehydratedProductDetails.Variant variant = mock(RehydratedProductDetails.Variant.class);
+        when(details.options()).thenReturn(List.of());
+        when(details.variants()).thenReturn(List.of(variant));
+        when(details.selected()).thenReturn(List.of());
+        when(details.selectedVariant()).thenReturn(variant);
+        when(details.totalVariants()).thenReturn(1);
+        when(variant.available()).thenReturn(true);
+        when(variant.selectedOptions()).thenReturn(List.of());
+        return details;
     }
 
     private String missionArguments() {

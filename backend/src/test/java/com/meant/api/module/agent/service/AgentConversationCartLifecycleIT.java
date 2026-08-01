@@ -2,6 +2,8 @@ package com.meant.api.module.agent.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -47,13 +49,17 @@ import com.meant.api.module.catalog.service.dto.ResultFreshness;
 import com.meant.api.module.catalog.service.dto.ResultProvenance;
 import com.meant.api.module.catalog.service.dto.ResultSourceReference;
 import com.meant.api.module.catalog.service.dto.ResultSourceType;
+import com.meant.api.module.catalog.service.dto.RehydratedProductDetails;
 import com.meant.api.module.merchant.constant.CommerceExecutionRail;
 import com.meant.api.module.merchant.service.dto.MerchantExecutionPolicy;
 import com.meant.api.module.user.entity.User;
 import com.meant.api.module.user.repository.UserRepository;
 import com.meant.api.module.user.service.UserGroupedProductSearchService;
+import com.meant.api.module.user.service.UserProductVariantSelectionService;
 import com.meant.api.module.user.service.command.SearchUserProductsCommand;
+import com.meant.api.module.user.service.command.SelectUserProductVariantCommand;
 import com.meant.api.module.user.service.dto.UserGroupedProductSearchResult;
+import com.meant.api.module.user.service.dto.UserProductVariantSelectionResult;
 import java.time.Instant;
 import java.util.List;
 import java.util.Queue;
@@ -92,6 +98,7 @@ class AgentConversationCartLifecycleIT extends PostgresIntegrationTestSupport {
 
     @MockitoBean private AgentModelGateway modelGateway;
     @MockitoBean private UserGroupedProductSearchService catalogSearchService;
+    @MockitoBean private UserProductVariantSelectionService variantSelectionService;
     @MockitoBean private CartService cartService;
 
     @Test
@@ -167,6 +174,8 @@ class AgentConversationCartLifecycleIT extends PostgresIntegrationTestSupport {
         );
         String firstOfferKey = jackets.getFirst().offers().getFirst().key();
         String secondOfferKey = jackets.get(1).offers().getFirst().key();
+        Offer secondOffer = jackets.get(1).offers().getFirst();
+        stubVariantSelection(secondOffer);
         when(catalogSearchService.search(
                 any(), any(SearchUserProductsCommand.class), any(), any(), any()))
                 .thenReturn(searchResult(jackets));
@@ -199,12 +208,18 @@ class AgentConversationCartLifecycleIT extends PostgresIntegrationTestSupport {
         scriptModel(modelRequests,
                 tool("search-jackets", "search_catalog", "{\"query\":\"jackets\",\"limit\":2}"),
                 text("I found two jackets for you."),
+                tool("select-second", "select_product_variant",
+                        "{\"offerKey\":\"" + secondOfferKey
+                                + "\",\"selectedOptions\":[{\"name\":\"Color\",\"value\":\"Black\"}]}"),
                 tool("prepare-second", "prepare_carts",
                         "{\"offers\":[{\"offerKey\":\"" + secondOfferKey + "\",\"quantity\":1}]}"),
                 text("I put the second jacket into your cart."),
                 tool("remove-it", "remove_cart_line",
                         "{\"cartId\":\"" + CART_ID + "\",\"cartLineId\":\"" + ORIGINAL_LINE_ID + "\"}"),
                 text("I removed that jacket from your cart."),
+                tool("select-again", "select_product_variant",
+                        "{\"offerKey\":\"" + secondOfferKey
+                                + "\",\"selectedOptions\":[{\"name\":\"Color\",\"value\":\"Black\"}]}"),
                 tool("add-again", "add_cart_line",
                         "{\"cartId\":\"" + CART_ID + "\",\"offerKey\":\"" + secondOfferKey
                                 + "\",\"quantity\":1}"),
@@ -248,6 +263,7 @@ class AgentConversationCartLifecycleIT extends PostgresIntegrationTestSupport {
         assertCompletedMutation(prepareRunId, "prepare_carts", CART_ID, secondOfferKey, ORIGINAL_LINE_ID);
         assertCompletedMutation(removeRunId, "remove_cart_line", CART_ID, secondOfferKey, null);
         assertCompletedMutation(readdRunId, "add_cart_line", CART_ID, secondOfferKey, READDED_LINE_ID);
+        verify(variantSelectionService, times(2)).select(any(), any(SelectUserProductVariantCommand.class));
 
         ArgumentCaptor<CreateCartCommand> create = ArgumentCaptor.forClass(CreateCartCommand.class);
         verify(cartService).create(create.capture(), any(UUID.class));
@@ -318,23 +334,32 @@ class AgentConversationCartLifecycleIT extends PostgresIntegrationTestSupport {
             String expectedOfferKey,
             UUID expectedCurrentLineId
     ) {
-        assertThat(invocations(runId))
-                .singleElement()
-                .satisfies(invocation -> {
-                    assertThat(invocation.getToolName()).isEqualTo(toolName);
-                    assertThat(invocation.getStatus()).isEqualTo(AgentToolInvocationStatus.COMPLETED);
-                    switch (toolName) {
-                        case "prepare_carts" -> assertThat(invocation.getArgumentsJson()).isEqualTo(
-                                "{\"offers\":[{\"offerKey\":\"" + expectedOfferKey + "\",\"quantity\":1}]}");
-                        case "remove_cart_line" -> assertThat(invocation.getArgumentsJson()).isEqualTo(
-                                "{\"cartId\":\"" + expectedCartId + "\",\"cartLineId\":\""
-                                        + ORIGINAL_LINE_ID + "\"}");
-                        case "add_cart_line" -> assertThat(invocation.getArgumentsJson()).isEqualTo(
-                                "{\"cartId\":\"" + expectedCartId + "\",\"offerKey\":\"" + expectedOfferKey
-                                        + "\",\"quantity\":1}");
-                        default -> throw new AssertionError("Unexpected lifecycle mutation: " + toolName);
-                    }
-                });
+        var invocations = invocations(runId);
+        if (toolName.equals("remove_cart_line")) {
+            assertThat(invocations).singleElement();
+        } else {
+            assertThat(invocations)
+                    .extracting(invocation -> invocation.getToolName(), invocation -> invocation.getStatus())
+                    .containsExactly(
+                            org.assertj.core.groups.Tuple.tuple(
+                                    "select_product_variant", AgentToolInvocationStatus.COMPLETED),
+                            org.assertj.core.groups.Tuple.tuple(toolName, AgentToolInvocationStatus.COMPLETED)
+                    );
+        }
+        var mutation = invocations.getLast();
+        assertThat(mutation.getToolName()).isEqualTo(toolName);
+        assertThat(mutation.getStatus()).isEqualTo(AgentToolInvocationStatus.COMPLETED);
+        switch (toolName) {
+            case "prepare_carts" -> assertThat(mutation.getArgumentsJson()).isEqualTo(
+                    "{\"offers\":[{\"offerKey\":\"" + expectedOfferKey + "\",\"quantity\":1}]}");
+            case "remove_cart_line" -> assertThat(mutation.getArgumentsJson()).isEqualTo(
+                    "{\"cartId\":\"" + expectedCartId + "\",\"cartLineId\":\""
+                            + ORIGINAL_LINE_ID + "\"}");
+            case "add_cart_line" -> assertThat(mutation.getArgumentsJson()).isEqualTo(
+                    "{\"cartId\":\"" + expectedCartId + "\",\"offerKey\":\"" + expectedOfferKey
+                            + "\",\"quantity\":1}");
+            default -> throw new AssertionError("Unexpected lifecycle mutation: " + toolName);
+        }
         var artifacts = artifactRepository.findByRunIdOrderByCreatedAtAscOrdinalAsc(runId);
         assertThat(artifacts)
                 .filteredOn(artifact -> artifact.getArtifactType() == AgentArtifactType.CART)
@@ -446,6 +471,30 @@ class AgentConversationCartLifecycleIT extends PostgresIntegrationTestSupport {
                 List.of(),
                 List.of()
         );
+    }
+
+    private void stubVariantSelection(Offer selectedOffer) {
+        UserProductVariantSelectionResult result = new UserProductVariantSelectionResult(
+                selectionDetails(selectedOffer), selectedOffer, true);
+        when(variantSelectionService.select(any(), any(SelectUserProductVariantCommand.class)))
+                .thenReturn(result);
+    }
+
+    private RehydratedProductDetails selectionDetails(Offer offer) {
+        RehydratedProductDetails details = mock(RehydratedProductDetails.class);
+        RehydratedProductDetails.Variant variant = mock(RehydratedProductDetails.Variant.class);
+        List<RehydratedProductDetails.SelectedOption> selected = offer.selectedOptions().stream()
+                .map(option -> new RehydratedProductDetails.SelectedOption(option.name(), option.value()))
+                .toList();
+        when(details.options()).thenReturn(List.of());
+        when(details.variants()).thenReturn(List.of(variant));
+        when(details.selected()).thenReturn(selected);
+        when(details.selectedVariant()).thenReturn(variant);
+        when(details.totalVariants()).thenReturn(1);
+        when(variant.title()).thenReturn(offer.variantTitle());
+        when(variant.available()).thenReturn(true);
+        when(variant.selectedOptions()).thenReturn(selected);
+        return details;
     }
 
     private CartLineResult line(UUID lineId, String remoteLineId, String offerKey) {

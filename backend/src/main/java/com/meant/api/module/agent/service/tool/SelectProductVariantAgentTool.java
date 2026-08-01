@@ -30,13 +30,13 @@ public class SelectProductVariantAgentTool implements AgentTool {
 
     private static final AgentToolDescriptor DESCRIPTOR = new AgentToolDescriptor(
             "select_product_variant",
-            "Resolve a buyer-requested complete option combination to one exact current server-issued offer before "
-                    + "any cart mutation. Use this whenever the buyer specifies or changes a size, color, or other "
-                    + "variant option. Include every option required for the combination, using get_product first "
-                    + "when needed. Pass only the returned selectedOfferKey to prepare_carts or add_cart_line, and "
-                    + "only when exactMatch and cartable are true. Never substitute the input anchor/default offer.",
+            "Resolve a complete option combination to one exact current server-issued offer before every cart "
+                    + "addition. Include every required option, using get_product first when needed; pass an empty "
+                    + "selectedOptions list only for a product with no options. Pass only the returned "
+                    + "selectedOfferKey to prepare_carts or add_cart_line, and only when exactMatch and cartable are "
+                    + "true. Never substitute the input anchor/default offer.",
             """
-                    {"type":"object","additionalProperties":false,"required":["offerKey","selectedOptions"],"properties":{"offerKey":{"type":"string","minLength":1,"maxLength":200},"selectedOptions":{"type":"array","minItems":1,"maxItems":20,"items":{"type":"object","additionalProperties":false,"required":["name","value"],"properties":{"name":{"type":"string","minLength":1,"maxLength":200},"value":{"type":"string","minLength":1,"maxLength":500}}}},"preferredOptionName":{"type":"string","minLength":1,"maxLength":200}}}
+                    {"type":"object","additionalProperties":false,"required":["offerKey","selectedOptions"],"properties":{"offerKey":{"type":"string","minLength":1,"maxLength":200},"selectedOptions":{"type":"array","maxItems":20,"items":{"type":"object","additionalProperties":false,"required":["name","value"],"properties":{"name":{"type":"string","minLength":1,"maxLength":200},"value":{"type":"string","minLength":1,"maxLength":500}}}},"preferredOptionName":{"type":"string","minLength":1,"maxLength":200}}}
                     """,
             "1",
             AgentToolRisk.READ

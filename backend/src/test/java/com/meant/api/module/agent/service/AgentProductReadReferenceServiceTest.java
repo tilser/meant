@@ -239,7 +239,7 @@ class AgentProductReadReferenceServiceTest {
     }
 
     @Test
-    void allowsAnOfferThatHasNoSelectableOptionsWithoutASelectionProof() {
+    void rejectsAnOrdinaryAnchorWhenSelectedOptionMetadataIsEmpty() {
         AgentToolExecutionContext context = context();
         AgentArtifactReferenceRepository repository = mock(AgentArtifactReferenceRepository.class);
         AgentArtifactReference ordinary = offerArtifact(
@@ -253,8 +253,9 @@ class AgentProductReadReferenceServiceTest {
         when(repository.findFirstByConversationIdAndStableKeyOrderByCreatedAtDesc(
                 CONVERSATION_ID, "offer-single-variant")).thenReturn(Optional.of(ordinary));
 
-        assertThat(serviceWithJson(repository).requireCartOffer(context, "offer-single-variant"))
-                .isSameAs(ordinary);
+        assertThatThrownBy(() -> serviceWithJson(repository).requireCartOffer(context, "offer-single-variant"))
+                .isInstanceOf(AgentException.class)
+                .hasMessageContaining("empty selectedOptions list");
     }
 
     @Test

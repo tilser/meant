@@ -2,6 +2,7 @@ package com.meant.api.module.agent.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -42,6 +43,7 @@ import com.meant.api.module.catalog.service.dto.ResultFreshness;
 import com.meant.api.module.catalog.service.dto.ResultProvenance;
 import com.meant.api.module.catalog.service.dto.ResultSourceReference;
 import com.meant.api.module.catalog.service.dto.ResultSourceType;
+import com.meant.api.module.catalog.service.dto.RehydratedProductDetails;
 import com.meant.api.module.user.constant.UserInventoryCategory;
 import com.meant.api.module.user.constant.UserInventorySource;
 import com.meant.api.module.user.entity.User;
@@ -52,6 +54,8 @@ import com.meant.api.module.user.service.UserGroupedProductSearchService;
 import com.meant.api.module.user.service.UserInventoryProductRehydrationService;
 import com.meant.api.module.user.service.UserInventoryService;
 import com.meant.api.module.user.service.UserSimilarProductSearchService;
+import com.meant.api.module.user.service.UserProductVariantSelectionService;
+import com.meant.api.module.user.service.command.SelectUserProductVariantCommand;
 import com.meant.api.module.user.service.command.SearchSimilarUserProductsCommand;
 import com.meant.api.module.user.service.command.SearchUserProductsCommand;
 import com.meant.api.module.user.service.dto.UserCommerceContextResult;
@@ -60,6 +64,7 @@ import com.meant.api.module.user.service.dto.UserInventoryCommerceReference;
 import com.meant.api.module.user.service.dto.UserInventoryItemResult;
 import com.meant.api.module.user.service.dto.UserInventoryProductRehydrationResult;
 import com.meant.api.module.user.service.dto.UserInventorySelectedOption;
+import com.meant.api.module.user.service.dto.UserProductVariantSelectionResult;
 import com.meant.api.module.user.service.query.ListUserInventoryItemsQuery;
 import com.meant.api.module.user.service.query.RehydrateUserInventoryProductQuery;
 import java.time.Instant;
@@ -105,6 +110,7 @@ class AgentNorthStarCatalogInventoryIT extends PostgresIntegrationTestSupport {
     @MockitoBean private UserCanonicalProductReferencePersistenceService productReferencePersistenceService;
     @MockitoBean private UserSimilarProductSearchService similarProductSearchService;
     @MockitoBean private UserCommerceContextService commerceContextService;
+    @MockitoBean private UserProductVariantSelectionService variantSelectionService;
     @MockitoBean private CartService cartService;
 
     @Test
@@ -122,6 +128,7 @@ class AgentNorthStarCatalogInventoryIT extends PostgresIntegrationTestSupport {
                 product("embroidered-cap", "Embroidered cap", "M")
         );
         String thirdVisibleOfferKey = products.get(6).offers().getFirst().key();
+        stubVariantSelection(products.get(6).offers().getFirst());
         when(catalogSearchService.search(
                 any(), any(SearchUserProductsCommand.class), any(), any(), any()))
                 .thenReturn(searchResult("versatile new clothing", products));
@@ -129,6 +136,9 @@ class AgentNorthStarCatalogInventoryIT extends PostgresIntegrationTestSupport {
         scriptModel(
                 tool("a-search", "search_catalog", "{\"query\":\"versatile new clothing\",\"limit\":8}"),
                 text("Here is a useful starting set."),
+                tool("a-select", "select_product_variant",
+                        "{\"offerKey\":\"" + thirdVisibleOfferKey
+                                + "\",\"selectedOptions\":[{\"name\":\"Size\",\"value\":\"M\"}]}"),
                 tool("a-cart", "prepare_carts",
                         "{\"offers\":[{\"offerKey\":\"" + thirdVisibleOfferKey
                                 + "\",\"quantity\":1}]}"),
@@ -167,12 +177,13 @@ class AgentNorthStarCatalogInventoryIT extends PostgresIntegrationTestSupport {
                 .extracting(com.meant.api.module.agent.entity.AgentArtifactReference::getCanonicalProductKey)
                 .containsExactlyElementsOf(products.stream().map(CanonicalProduct::key).toList());
         assertThat(invocations(cartRunId))
-                .singleElement()
-                .satisfies(invocation -> {
-                    assertThat(invocation.getToolName()).isEqualTo("prepare_carts");
-                    assertThat(invocation.getStatus()).isEqualTo(AgentToolInvocationStatus.COMPLETED);
-                    assertThat(invocation.getArgumentsJson()).contains(thirdVisibleOfferKey);
-                });
+                .extracting(invocation -> invocation.getToolName(), invocation -> invocation.getStatus())
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(
+                                "select_product_variant", AgentToolInvocationStatus.COMPLETED),
+                        org.assertj.core.groups.Tuple.tuple("prepare_carts", AgentToolInvocationStatus.COMPLETED)
+                );
+        assertThat(invocations(cartRunId).get(1).getArgumentsJson()).contains(thirdVisibleOfferKey);
 
         ArgumentCaptor<PartitionSelectedOffersQuery> partition =
                 ArgumentCaptor.forClass(PartitionSelectedOffersQuery.class);
@@ -206,6 +217,7 @@ class AgentNorthStarCatalogInventoryIT extends PostgresIntegrationTestSupport {
                 product("green-canvas-cap", "Green canvas cap", "M")
         );
         String thirdOfferKey = products.get(2).offers().getFirst().key();
+        stubVariantSelection(products.get(2).offers().getFirst());
         when(catalogSearchService.search(
                 any(), any(SearchUserProductsCommand.class), any(), any(), any()))
                 .thenReturn(searchResult("caps", products));
@@ -213,6 +225,9 @@ class AgentNorthStarCatalogInventoryIT extends PostgresIntegrationTestSupport {
         scriptModel(
                 tool("clarify-search", "search_catalog", "{\"query\":\"caps\",\"limit\":4}"),
                 text("Here are four cap options:"),
+                tool("clarify-select", "select_product_variant",
+                        "{\"offerKey\":\"" + thirdOfferKey
+                                + "\",\"selectedOptions\":[{\"name\":\"Size\",\"value\":\"M\"}]}"),
                 tool("clarify-cart", "prepare_carts",
                         "{\"offers\":[{\"offerKey\":\"" + thirdOfferKey
                                 + "\",\"quantity\":1}]}"),
@@ -245,12 +260,13 @@ class AgentNorthStarCatalogInventoryIT extends PostgresIntegrationTestSupport {
         );
 
         assertThat(invocations(cartRunId))
-                .singleElement()
-                .satisfies(invocation -> {
-                    assertThat(invocation.getToolName()).isEqualTo("prepare_carts");
-                    assertThat(invocation.getStatus()).isEqualTo(AgentToolInvocationStatus.COMPLETED);
-                    assertThat(invocation.getArgumentsJson()).contains(thirdOfferKey);
-                });
+                .extracting(invocation -> invocation.getToolName(), invocation -> invocation.getStatus())
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(
+                                "select_product_variant", AgentToolInvocationStatus.COMPLETED),
+                        org.assertj.core.groups.Tuple.tuple("prepare_carts", AgentToolInvocationStatus.COMPLETED)
+                );
+        assertThat(invocations(cartRunId).get(1).getArgumentsJson()).contains(thirdOfferKey);
         ArgumentCaptor<PartitionSelectedOffersQuery> partition =
                 ArgumentCaptor.forClass(PartitionSelectedOffersQuery.class);
         verify(cartService).partitionSelectedOffers(partition.capture());
@@ -266,7 +282,7 @@ class AgentNorthStarCatalogInventoryIT extends PostgresIntegrationTestSupport {
                 .isEqualTo(thirdOfferKey);
         assertThat(runRepository.findById(cartRunId).orElseThrow().getStatus())
                 .isEqualTo(AgentRunStatus.COMPLETED);
-        verify(modelGateway, times(4)).turn(any(), any(), any());
+        verify(modelGateway, times(5)).turn(any(), any(), any());
     }
 
     @Test
@@ -311,6 +327,7 @@ class AgentNorthStarCatalogInventoryIT extends PostgresIntegrationTestSupport {
         );
         String firstOfferKey = similarProducts.getFirst().offers().getFirst().key();
         String secondOfferKey = similarProducts.get(1).offers().getFirst().key();
+        stubVariantSelection(similarProducts.getFirst().offers().getFirst());
         when(similarProductSearchService.search(
                 any(), any(SearchSimilarUserProductsCommand.class), any(), any(), any()))
                 .thenReturn(searchResult("similar shoes in the same size", similarProducts));
@@ -321,6 +338,9 @@ class AgentNorthStarCatalogInventoryIT extends PostgresIntegrationTestSupport {
                         "{\"inventoryItemId\":\"" + INVENTORY_ITEM_ID
                                 + "\",\"query\":\"similar shoes in the same size\"}"),
                 text("These options are anchored to your owned pair."),
+                tool("b-select", "select_product_variant",
+                        "{\"offerKey\":\"" + firstOfferKey
+                                + "\",\"selectedOptions\":[{\"name\":\"Size\",\"value\":\"42\"}]}"),
                 tool("b-cart", "prepare_carts",
                         "{\"offers\":[{\"offerKey\":\"" + firstOfferKey + "\",\"quantity\":1}]}"),
                 text("The first option in your size is in your cart.")
@@ -390,12 +410,15 @@ class AgentNorthStarCatalogInventoryIT extends PostgresIntegrationTestSupport {
         assertThat(similar.getValue().query()).isEqualTo("Find shoes similar to the ones I already have.");
 
         assertThat(invocations(cartRunId))
-                .singleElement()
-                .satisfies(invocation -> {
-                    assertThat(invocation.getToolName()).isEqualTo("prepare_carts");
-                    assertThat(invocation.getStatus()).isEqualTo(AgentToolInvocationStatus.COMPLETED);
-                    assertThat(invocation.getArgumentsJson()).contains(firstOfferKey).doesNotContain(secondOfferKey);
-                });
+                .extracting(invocation -> invocation.getToolName(), invocation -> invocation.getStatus())
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(
+                                "select_product_variant", AgentToolInvocationStatus.COMPLETED),
+                        org.assertj.core.groups.Tuple.tuple("prepare_carts", AgentToolInvocationStatus.COMPLETED)
+                );
+        assertThat(invocations(cartRunId).get(1).getArgumentsJson())
+                .contains(firstOfferKey)
+                .doesNotContain(secondOfferKey);
         ArgumentCaptor<PartitionSelectedOffersQuery> partition =
                 ArgumentCaptor.forClass(PartitionSelectedOffersQuery.class);
         verify(cartService).partitionSelectedOffers(partition.capture());
@@ -509,6 +532,30 @@ class AgentNorthStarCatalogInventoryIT extends PostgresIntegrationTestSupport {
         when(cartService.create(any(CreateCartCommand.class), any(UUID.class)))
                 .thenAnswer(invocation -> cartResult(
                         UUID.randomUUID(), expectedOfferKey, invocation.<CreateCartCommand>getArgument(0).userId()));
+    }
+
+    private void stubVariantSelection(Offer selectedOffer) {
+        UserProductVariantSelectionResult result = new UserProductVariantSelectionResult(
+                selectionDetails(selectedOffer), selectedOffer, true);
+        when(variantSelectionService.select(any(), any(SelectUserProductVariantCommand.class)))
+                .thenReturn(result);
+    }
+
+    private RehydratedProductDetails selectionDetails(Offer offer) {
+        RehydratedProductDetails details = mock(RehydratedProductDetails.class);
+        RehydratedProductDetails.Variant variant = mock(RehydratedProductDetails.Variant.class);
+        List<RehydratedProductDetails.SelectedOption> selected = offer.selectedOptions().stream()
+                .map(option -> new RehydratedProductDetails.SelectedOption(option.name(), option.value()))
+                .toList();
+        when(details.options()).thenReturn(List.of());
+        when(details.variants()).thenReturn(List.of(variant));
+        when(details.selected()).thenReturn(selected);
+        when(details.selectedVariant()).thenReturn(variant);
+        when(details.totalVariants()).thenReturn(1);
+        when(variant.title()).thenReturn(offer.variantTitle());
+        when(variant.available()).thenReturn(true);
+        when(variant.selectedOptions()).thenReturn(selected);
+        return details;
     }
 
     private CartResult cartResult(UUID cartId, String offerKey, UUID userId) {

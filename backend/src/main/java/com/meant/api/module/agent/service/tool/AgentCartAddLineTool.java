@@ -19,10 +19,9 @@ public class AgentCartAddLineTool implements AgentTool {
             "add_cart_line",
             "Add an exact server-issued offer to a current owned cart. Resolve references such as the second one, "
                     + "it, or add it again from the supplied conversation state. The offer is revalidated and must "
-                    + "match the cart's merchant/provider route. For buyer-requested variant options, use only the "
-                    + "exact cartable selectedOfferKey returned by select_product_variant; never use its input "
-                    + "anchor/default offer as a substitute. Configurable offers require that current-run selection "
-                    + "proof and are rejected without it.",
+                    + "match the cart's merchant/provider route. Use only the exact cartable selectedOfferKey returned "
+                    + "by select_product_variant in this run; never use its input anchor/default offer as a substitute. "
+                    + "Every offer requires that current-run selection proof and is rejected without it.",
             """
                     {"type":"object","additionalProperties":false,"required":["cartId","offerKey"],"properties":{"cartId":{"type":"string","format":"uuid"},"offerKey":{"type":"string","minLength":1,"maxLength":200},"quantity":{"type":"integer","minimum":1,"maximum":1000}}}
                     """,

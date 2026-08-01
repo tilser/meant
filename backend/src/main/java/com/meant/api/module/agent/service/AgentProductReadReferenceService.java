@@ -10,7 +10,6 @@ import com.meant.api.module.agent.service.dto.AgentInventorySelectedItemArtifact
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
 import com.meant.api.module.agent.service.tool.AgentProductReadToolException;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -132,10 +131,7 @@ public class AgentProductReadReferenceService {
         return reference;
     }
 
-    /**
-     * Requires either an offer without selectable variant options or an exact cartable variant
-     * selection issued by the server in the current run.
-     */
+    /** Requires an exact cartable variant selection issued by the server in the current run. */
     public AgentArtifactReference requireCartOffer(AgentToolExecutionContext context, String offerKey) {
         String normalized = requiredReference(offerKey, "An exact offer reference is required.");
         requireContext(context);
@@ -150,14 +146,10 @@ public class AgentProductReadReferenceService {
         if (selection != null) {
             return selection;
         }
-
-        AgentArtifactReference reference = requireOffer(context, normalized);
-        if (offerHasSelectedOptions(reference.getPayloadJson(), normalized)) {
-            throw AgentProductReadToolException.invalid(
-                    "This product has selectable options. Resolve the buyer's complete option combination with "
-                            + "select_product_variant in this run, then use its exact cartable selectedOfferKey.");
-        }
-        return reference;
+        requireOffer(context, normalized);
+        throw AgentProductReadToolException.invalid(
+                "Resolve this offer with select_product_variant in this run, then use its exact cartable "
+                        + "selectedOfferKey. Pass an empty selectedOptions list when the product has no options.");
     }
 
     public static String variantSelectionStableKey(String offerKey) {
@@ -221,50 +213,6 @@ public class AgentProductReadReferenceService {
         return json.readArtifactTree(payloadJson)
                 .map(payload -> containsOfferIdentity(payload, offerKey))
                 .orElse(false);
-    }
-
-    private boolean offerHasSelectedOptions(String payloadJson, String offerKey) {
-        return json.readArtifactTree(payloadJson)
-                .flatMap(payload -> selectedOptions(payload, offerKey))
-                .orElse(true);
-    }
-
-    private Optional<Boolean> selectedOptions(JsonNode node, String offerKey) {
-        if (node == null || node.isNull()) {
-            return Optional.empty();
-        }
-        if (node.isArray()) {
-            for (JsonNode child : node) {
-                Optional<Boolean> selected = selectedOptions(child, offerKey);
-                if (selected.isPresent()) {
-                    return selected;
-                }
-            }
-            return Optional.empty();
-        }
-        if (!node.isObject()) {
-            return Optional.empty();
-        }
-        if (identifiesOffer(node, offerKey)) {
-            JsonNode selectedOptions = node.get("selectedOptions");
-            if (selectedOptions != null && selectedOptions.isArray()) {
-                return Optional.of(!selectedOptions.isEmpty());
-            }
-            JsonNode selectedOptionsJson = node.get("selectedOptionsJson");
-            if (selectedOptionsJson != null && selectedOptionsJson.isTextual()) {
-                return json.readArtifactTree(selectedOptionsJson.asText())
-                        .filter(JsonNode::isArray)
-                        .map(options -> !options.isEmpty());
-            }
-        }
-        var fields = node.properties().iterator();
-        while (fields.hasNext()) {
-            Optional<Boolean> selected = selectedOptions(fields.next().getValue(), offerKey);
-            if (selected.isPresent()) {
-                return selected;
-            }
-        }
-        return Optional.empty();
     }
 
     private boolean containsOfferIdentity(JsonNode node, String offerKey) {
