@@ -97,12 +97,8 @@ app:
           path: /api/v1/users/me/products/{canonicalProductKey}/similar
         - method: POST
           path: /api/v1/users/me/product-searches:stream
-        - method: GET
-          path: /api/v1/users/me/products/{canonicalProductKey}
         - method: POST
           path: /api/v1/users/me/products:rehydrate
-        - method: POST
-          path: /api/v1/users/me/product-variant-selections
         - method: GET
           path: /api/users/me/product-search-suggestions
         - method: GET
@@ -188,6 +184,10 @@ commerce:
   catalog:
     federation:
       overall-deadline: ${COMMERCE_CATALOG_FEDERATION_OVERALL_DEADLINE:51s}
+    observation-cache:
+      maximum-ttl: ${COMMERCE_CATALOG_OBSERVATION_CACHE_MAXIMUM_TTL:2m}
+      rehydration-maximum-size: ${COMMERCE_CATALOG_REHYDRATION_CACHE_MAXIMUM_SIZE:10000}
+      detail-maximum-size: ${COMMERCE_CATALOG_DETAIL_CACHE_MAXIMUM_SIZE:2000}
     data-use:
       generic-ucp:
         search-cache-ttl: ${GENERIC_UCP_SEARCH_CACHE_TTL:24h}

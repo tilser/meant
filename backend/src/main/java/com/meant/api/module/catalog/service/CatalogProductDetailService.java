@@ -10,6 +10,7 @@ import com.meant.api.module.catalog.service.dto.CatalogRehydrationStatus;
 import com.meant.api.module.catalog.service.dto.ProductAttribute;
 import com.meant.api.module.catalog.service.dto.RehydratedProductDetails;
 import com.meant.api.module.catalog.service.port.CatalogProductDetailProvider;
+import com.meant.api.module.catalog.service.support.CatalogProductObservationCache;
 import com.meant.api.module.catalog.service.support.PreferredCurrencyPriceNormalizer;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -17,12 +18,11 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /** Dispatches a single current get-product call without widening batch/cart rehydration. */
 @Service
-@RequiredArgsConstructor
 public class CatalogProductDetailService {
     private static final Comparator<ProductAttribute> OPTION_ORDER = Comparator
             .comparing((ProductAttribute option) -> option.group() == null ? "" : option.group())
@@ -31,6 +31,25 @@ public class CatalogProductDetailService {
 
     private final List<CatalogProductDetailProvider> providers;
     private final CatalogProductRehydrationMetrics metrics;
+    private final CatalogProductObservationCache observationCache;
+
+    @Autowired
+    public CatalogProductDetailService(
+            List<CatalogProductDetailProvider> providers,
+            CatalogProductRehydrationMetrics metrics,
+            CatalogProductObservationCache observationCache
+    ) {
+        this.providers = List.copyOf(providers);
+        this.metrics = metrics;
+        this.observationCache = observationCache;
+    }
+
+    public CatalogProductDetailService(
+            List<CatalogProductDetailProvider> providers,
+            CatalogProductRehydrationMetrics metrics
+    ) {
+        this(providers, metrics, CatalogProductObservationCache.withDefaults());
+    }
 
     public CatalogProductDetailResult getDetails(
             CatalogProductReference reference,
@@ -44,6 +63,12 @@ public class CatalogProductDetailService {
             CatalogProductDetailSelection selection,
             CatalogRehydrationContext context
     ) {
+        CatalogProductDetailResult cached = observationCache.findDetail(reference, selection, context)
+                .orElse(null);
+        if (cached != null) {
+            metrics.record(cached.rehydration());
+            return cached;
+        }
         List<CatalogProductDetailProvider> matching = providers.stream()
                 .filter(provider -> provider.supportsDetails(reference.discoverySource()))
                 .toList();
@@ -73,6 +98,7 @@ public class CatalogProductDetailService {
             if (selection != null && result.details() != null) {
                 result = result.withSelection(selectionResult(selection, result.details()));
             }
+            observationCache.rememberDetail(result, selection, context);
             metrics.record(result.rehydration());
             return result;
         } catch (RuntimeException exception) {

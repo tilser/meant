@@ -1,9 +1,8 @@
 package com.meant.api.module.catalog.service;
 
-import com.meant.api.module.catalog.service.port.CatalogProductRehydrationProvider;
-
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.meant.api.module.catalog.properties.CatalogProductObservationCacheProperties;
 import com.meant.api.module.merchant.constant.MerchantCatalogSourceIdentity;
 import com.meant.api.module.catalog.service.dto.CatalogProductReference;
 import com.meant.api.module.catalog.service.dto.CatalogProductRehydrationResult;
@@ -18,13 +17,20 @@ import com.meant.api.module.catalog.service.dto.OfferAvailability;
 import com.meant.api.module.catalog.service.dto.OfferDelivery;
 import com.meant.api.module.catalog.service.dto.RehydratedCommercialFacts;
 import com.meant.api.module.catalog.service.dto.ResultFreshness;
+import com.meant.api.module.catalog.service.port.CatalogProductRehydrationProvider;
+import com.meant.api.module.catalog.service.support.CatalogProductObservationCache;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 class CatalogProductRehydrationServiceTest {
+
+    private static final Instant NOW = Instant.parse("2026-07-11T00:00:00Z");
 
     @Test
     void removesMismatchedPriceWithoutRelabelingOrDiscardingAvailabilityAndProvenance() {
@@ -122,10 +128,64 @@ class CatalogProductRehydrationServiceTest {
         assertThat(degraded.facts()).isNull();
     }
 
+    @Test
+    void reusesCurrentObservationsAcrossInteractionKeysAndRebindsTheResult() {
+        AtomicInteger calls = new AtomicInteger();
+        CatalogProductRehydrationService service = service(
+                List.of(provider(calls, false)),
+                observationCache()
+        );
+        CatalogRehydrationContext context = new CatalogRehydrationContext("CZ", "en", "USD");
+        CatalogProductReference firstReference = reference("search-1:offer-1");
+        CatalogProductReference secondReference = reference("search-2:offer-9");
+
+        CatalogProductRehydrationResult first = service.rehydrate(firstReference, context);
+        CatalogProductRehydrationResult second = service.rehydrate(secondReference, context);
+
+        assertThat(calls).hasValue(1);
+        assertThat(first.reference()).isEqualTo(firstReference);
+        assertThat(second.reference()).isEqualTo(secondReference);
+        assertThat(second.resolvedReference().interactionKey())
+                .isEqualTo(secondReference.interactionKey());
+    }
+
+    @Test
+    void doesNotCacheProviderFailures() {
+        AtomicInteger calls = new AtomicInteger();
+        CatalogProductRehydrationService service = service(
+                List.of(provider(calls, true)),
+                observationCache()
+        );
+        CatalogProductReference reference = reference("saved-1");
+
+        service.rehydrate(reference, new CatalogRehydrationContext("CZ", "en"));
+        service.rehydrate(reference, new CatalogRehydrationContext("CZ", "en"));
+
+        assertThat(calls).hasValue(2);
+    }
+
     private CatalogProductRehydrationService service(List<CatalogProductRehydrationProvider> providers) {
         return new CatalogProductRehydrationService(
                 providers,
                 new CatalogProductRehydrationMetrics(new SimpleMeterRegistry())
+        );
+    }
+
+    private CatalogProductRehydrationService service(
+            List<CatalogProductRehydrationProvider> providers,
+            CatalogProductObservationCache observationCache
+    ) {
+        return new CatalogProductRehydrationService(
+                providers,
+                new CatalogProductRehydrationMetrics(new SimpleMeterRegistry()),
+                observationCache
+        );
+    }
+
+    private CatalogProductObservationCache observationCache() {
+        return new CatalogProductObservationCache(
+                new CatalogProductObservationCacheProperties(Duration.ofMinutes(2), 100, 100),
+                Clock.fixed(NOW, ZoneOffset.UTC)
         );
     }
 
@@ -146,8 +206,8 @@ class CatalogProductRehydrationServiceTest {
                     throw new IllegalStateException("controlled fake failure");
                 }
                 ResultFreshness freshness = new ResultFreshness(
-                        Instant.parse("2026-07-11T00:00:00Z"),
-                        Instant.parse("2026-07-11T00:02:00Z")
+                        NOW,
+                        NOW.plus(Duration.ofMinutes(2))
                 );
                 return references.stream()
                         .map(reference -> CatalogProductRehydrationResult.fresh(reference, reference,

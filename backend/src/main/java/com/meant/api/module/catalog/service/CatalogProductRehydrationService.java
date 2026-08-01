@@ -6,11 +6,13 @@ import com.meant.api.module.catalog.service.dto.CatalogRehydrationContext;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationFailureKind;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationStatus;
 import com.meant.api.module.catalog.service.port.CatalogProductRehydrationProvider;
+import com.meant.api.module.catalog.service.support.CatalogProductObservationCache;
 import com.meant.api.module.catalog.service.support.PreferredCurrencyPriceNormalizer;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /** Provider-neutral, batched rehydration dispatch over the existing provider adapters. */
@@ -18,13 +20,24 @@ import org.springframework.stereotype.Service;
 public class CatalogProductRehydrationService {
     private final List<CatalogProductRehydrationProvider> providers;
     private final CatalogProductRehydrationMetrics metrics;
+    private final CatalogProductObservationCache observationCache;
+
+    @Autowired
+    public CatalogProductRehydrationService(
+            List<CatalogProductRehydrationProvider> providers,
+            CatalogProductRehydrationMetrics metrics,
+            CatalogProductObservationCache observationCache
+    ) {
+        this.providers = List.copyOf(providers);
+        this.metrics = metrics;
+        this.observationCache = observationCache;
+    }
 
     public CatalogProductRehydrationService(
             List<CatalogProductRehydrationProvider> providers,
             CatalogProductRehydrationMetrics metrics
     ) {
-        this.providers = List.copyOf(providers);
-        this.metrics = metrics;
+        this(providers, metrics, CatalogProductObservationCache.withDefaults());
     }
 
     public CatalogProductRehydrationResult rehydrate(
@@ -41,6 +54,13 @@ public class CatalogProductRehydrationService {
         Map<CatalogProductRehydrationProvider, List<CatalogProductReference>> batches = new LinkedHashMap<>();
         Map<CatalogProductReference, CatalogProductRehydrationResult> results = new LinkedHashMap<>();
         for (CatalogProductReference reference : references) {
+            CatalogProductRehydrationResult cached = observationCache.findRehydration(reference, context)
+                    .orElse(null);
+            if (cached != null) {
+                results.put(reference, cached);
+                metrics.record(cached);
+                continue;
+            }
             List<CatalogProductRehydrationProvider> matching = providers.stream()
                     .filter(provider -> provider.supports(reference.discoverySource()))
                     .toList();
@@ -66,6 +86,7 @@ public class CatalogProductRehydrationService {
                         if (result != null && batch.contains(result.reference())) {
                             result = PreferredCurrencyPriceNormalizer.normalize(result, context);
                             results.put(result.reference(), result);
+                            observationCache.rememberRehydration(result, context);
                             metrics.record(result);
                         }
                     }

@@ -2,6 +2,7 @@ package com.meant.api.module.catalog.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.meant.api.module.catalog.properties.CatalogProductObservationCacheProperties;
 import com.meant.api.module.catalog.service.dto.CommercialFactsFreshness;
 import com.meant.api.module.catalog.service.dto.CatalogProductDetailResult;
 import com.meant.api.module.catalog.service.dto.CatalogProductDetailSelection;
@@ -19,12 +20,19 @@ import com.meant.api.module.catalog.service.dto.RehydratedProductDetails;
 import com.meant.api.module.catalog.service.dto.ResultFreshness;
 import com.meant.api.module.catalog.service.dto.ResultSourceType;
 import com.meant.api.module.catalog.service.port.CatalogProductDetailProvider;
+import com.meant.api.module.catalog.service.support.CatalogProductObservationCache;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 class CatalogProductDetailServiceTest {
+
+    private static final Instant NOW = Instant.parse("2026-07-14T00:00:00Z");
 
     @Test
     void removesMismatchedDetailPricesWhileKeepingVariantAvailability() {
@@ -127,6 +135,55 @@ class CatalogProductDetailServiceTest {
         assertThat(result.selection().uniqueCompleteExactMatch()).isFalse();
     }
 
+    @Test
+    void reusesEquivalentCurrentDetailsAndKeepsInteractionKeysRequestScoped() {
+        AtomicInteger calls = new AtomicInteger();
+        RehydratedProductDetails details = detailsWithCurrency("USD");
+        CatalogProductDetailProvider provider = new CatalogProductDetailProvider() {
+            @Override
+            public boolean supportsDetails(DiscoverySourceIdentity source) {
+                return reference().discoverySource().equals(source);
+            }
+
+            @Override
+            public CatalogProductDetailResult getDetails(
+                    CatalogProductReference requested,
+                    CatalogRehydrationContext context
+            ) {
+                calls.incrementAndGet();
+                return currentDetail(requested, details);
+            }
+        };
+        CatalogProductObservationCache cache = new CatalogProductObservationCache(
+                new CatalogProductObservationCacheProperties(Duration.ofMinutes(2), 100, 100),
+                Clock.fixed(NOW, ZoneOffset.UTC)
+        );
+        CatalogProductDetailService service = new CatalogProductDetailService(
+                List.of(provider),
+                new CatalogProductRehydrationMetrics(new SimpleMeterRegistry()),
+                cache
+        );
+        CatalogProductReference firstReference = reference();
+        CatalogProductReference secondReference = withInteractionKey(firstReference, "another-offer");
+        CatalogRehydrationContext context = new CatalogRehydrationContext("US", "en", "USD");
+
+        service.getDetails(firstReference, context);
+        CatalogProductDetailResult cached = service.getDetails(secondReference, context);
+        service.getDetails(secondReference, new CatalogRehydrationContext("CA", "en", "USD"));
+        CatalogRehydrationContext selectionContext = new CatalogRehydrationContext("GB", "en", "USD");
+        service.getDetails(
+                secondReference,
+                new CatalogProductDetailSelection(List.of(option("Color", "Blue")), List.of("Color")),
+                selectionContext
+        );
+
+        assertThat(calls).hasValue(3);
+        assertThat(cached.rehydration().reference()).isEqualTo(secondReference);
+        assertThat(cached.rehydration().resolvedReference().interactionKey())
+                .isEqualTo(secondReference.interactionKey());
+        assertThat(cache.findRehydration(secondReference, selectionContext)).isEmpty();
+    }
+
     private CatalogProductDetailService service(
             CatalogProductDetailSelection selection,
             List<ProductAttribute> effective,
@@ -150,8 +207,8 @@ class CatalogProductDetailServiceTest {
     ) {
         CatalogProductReference reference = reference();
         ResultFreshness freshness = new ResultFreshness(
-                Instant.parse("2026-07-14T00:00:00Z"),
-                Instant.parse("2026-07-14T00:05:00Z"));
+                NOW,
+                NOW.plus(Duration.ofMinutes(5)));
         CatalogProductRehydrationResult rehydration = CatalogProductRehydrationResult.fresh(
                 reference,
                 reference,
@@ -365,6 +422,54 @@ class CatalogProductDetailServiceTest {
                 new ExternalIdentifier(ExternalIdentifierType.PRODUCT, "TEST", "product"),
                 new ExternalIdentifier(ExternalIdentifierType.VARIANT, "TEST", "variant"),
                 List.of());
+    }
+
+    private CatalogProductReference withInteractionKey(
+            CatalogProductReference reference,
+            String interactionKey
+    ) {
+        return new CatalogProductReference(
+                interactionKey,
+                reference.discoverySource(),
+                reference.localMerchantId(),
+                reference.localRouting(),
+                reference.externalMerchantReference(),
+                reference.externalMerchantDomain(),
+                reference.externalProductReference(),
+                reference.externalVariantReference(),
+                reference.selectedOptions(),
+                reference.components(),
+                reference.sellingPlanIdentity()
+        );
+    }
+
+    private CatalogProductDetailResult currentDetail(
+            CatalogProductReference reference,
+            RehydratedProductDetails details
+    ) {
+        ResultFreshness freshness = new ResultFreshness(
+                NOW,
+                NOW.plus(Duration.ofMinutes(5))
+        );
+        return CatalogProductDetailResult.from(
+                CatalogProductRehydrationResult.fresh(
+                        reference,
+                        reference,
+                        new RehydratedCommercialFacts(
+                                "Product",
+                                "Merchant",
+                                null,
+                                OfferAvailability.unknown(),
+                                reference.externalVariantReference(),
+                                reference.selectedOptions(),
+                                List.of(),
+                                List.of(),
+                                freshness,
+                                CommercialFactsFreshness.fromSingleObservation(freshness)
+                        )
+                ),
+                details
+        );
     }
 
     private ProductAttribute option(String name, String value) {
