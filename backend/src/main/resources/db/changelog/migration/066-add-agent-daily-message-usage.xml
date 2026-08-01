@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="066-add-agent-daily-message-usage" author="codex">
+        <createTable tableName="agent_daily_message_usage">
+            <column name="user_id" type="uuid"><constraints nullable="false"/></column>
+            <column name="usage_date" type="date"><constraints nullable="false"/></column>
+            <column name="message_count" type="integer"><constraints nullable="false"/></column>
+            <column name="updated_at" type="timestamp with time zone"><constraints nullable="false"/></column>
+        </createTable>
+        <addPrimaryKey tableName="agent_daily_message_usage"
+                       columnNames="user_id, usage_date"
+                       constraintName="pk_agent_daily_message_usage"/>
+        <addForeignKeyConstraint baseTableName="agent_daily_message_usage"
+                                 baseColumnNames="user_id"
+                                 referencedTableName="users"
+                                 referencedColumnNames="id"
+                                 onDelete="CASCADE"
+                                 constraintName="fk_agent_daily_message_usage_user"/>
+        <sql>ALTER TABLE agent_daily_message_usage ADD CONSTRAINT ck_agent_daily_message_usage_count
+            CHECK (message_count &gt; 0)</sql>
+    </changeSet>
+</databaseChangeLog>

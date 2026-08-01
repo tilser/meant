@@ -112,6 +112,7 @@ import { addChatProductToCart, cartInChatMessage, exactProductOfferKey } from '.
 import { agentRunCandidateIds, preferredAgentRunSnapshot } from './runSelection'
 import { refreshAgentViewAfterSettlement } from './settlementRefresh'
 import { plainAgentText } from './agentText'
+import { agentTurnChatRejectionMessage } from './turnRejection'
 
 const NEWSLETTER_SUBSCRIBED_MESSAGE =
   'You are subscribed to the newsletter. If you want to unsubscribe, you can do so in your account settings.'
@@ -1135,8 +1136,8 @@ export function AgentDiscoverView({
       void turnSubmissionQueue
         .enqueue(async () => {
           setPendingSubmissions((current) => current + 1)
+          let targetConversationId = requestedConversationId ?? activeConversationIdRef.current
           try {
-            let targetConversationId = requestedConversationId ?? activeConversationIdRef.current
             let targetConversation =
               requestedConversation ??
               (conversationRef.current?.conversationId === targetConversationId
@@ -1206,7 +1207,19 @@ export function AgentDiscoverView({
               }
             }
           } catch (caught) {
-            setError(caught instanceof Error ? caught.message : 'Could not submit this message.')
+            const chatRejection = agentTurnChatRejectionMessage(caught)
+            if (chatRejection && targetConversationId) {
+              appendLocalMessage(
+                {
+                  id: uniqueRequestId('turn-rejection'),
+                  role: 'ai',
+                  blocks: [{ type: 'system', text: chatRejection }],
+                },
+                targetConversationId,
+              )
+            } else {
+              setError(caught instanceof Error ? caught.message : 'Could not submit this message.')
+            }
           } finally {
             setPendingSubmissions((current) => Math.max(0, current - 1))
           }
@@ -1217,6 +1230,7 @@ export function AgentDiscoverView({
       return true
     },
     [
+      appendLocalMessage,
       expectedUserId,
       invalidateConversationSnapshotRequests,
       loading,

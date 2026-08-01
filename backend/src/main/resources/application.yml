@@ -171,6 +171,8 @@ commerce:
     event-stream-queue-size: ${COMMERCE_AGENT_EVENT_STREAM_QUEUE_SIZE:128}
     event-retention: ${COMMERCE_AGENT_EVENT_RETENTION:7d}
     stale-run-age: ${COMMERCE_AGENT_STALE_RUN_AGE:3m}
+    message-limit:
+      maximum-per-user-per-day: ${COMMERCE_AGENT_MAXIMUM_MESSAGES_PER_USER_PER_DAY:100}
     stream-admission:
       maximum-per-user: ${COMMERCE_AGENT_MAXIMUM_STREAMS_PER_USER:4}
       maximum-per-run: ${COMMERCE_AGENT_MAXIMUM_STREAMS_PER_RUN:2}

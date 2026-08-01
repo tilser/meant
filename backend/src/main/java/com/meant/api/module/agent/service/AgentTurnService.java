@@ -33,6 +33,7 @@ public class AgentTurnService {
     private final AgentMessageRepository messageRepository;
     private final AgentRunRepository runRepository;
     private final AgentVisibleProductContextService visibleProductContextService;
+    private final AgentDailyMessageLimitService dailyMessageLimitService;
     private final AgentProperties properties;
     private final Clock clock;
 
@@ -74,6 +75,8 @@ public class AgentTurnService {
                 );
             }
         }
+
+        dailyMessageLimitService.reserve(command.userId());
 
         Instant now = clock.instant();
         String text = command.message().trim();

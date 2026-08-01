@@ -16,6 +16,7 @@ public enum ApiErrorCode {
     AGENT_ACTION_IN_PROGRESS("agent_action_in_progress"),
     AGENT_ACTION_UNCERTAIN("agent_action_uncertain"),
     AGENT_CURSOR_EXPIRED("agent_cursor_expired"),
+    AGENT_DAILY_MESSAGE_LIMIT("agent_daily_message_limit"),
     AGENT_STREAM_LIMIT("agent_stream_limit"),
     UPSTREAM_SERVICE_ERROR("upstream_service_error"),
     INTERNAL_ERROR("internal_error");

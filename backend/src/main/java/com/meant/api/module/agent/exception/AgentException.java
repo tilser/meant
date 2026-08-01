@@ -67,6 +67,15 @@ public class AgentException extends RuntimeException implements ApiException {
         );
     }
 
+    public static AgentException dailyMessageLimit(int maximumMessages) {
+        return new AgentException(
+                HttpStatus.TOO_MANY_REQUESTS,
+                ApiErrorCode.AGENT_DAILY_MESSAGE_LIMIT,
+                "You've reached today's limit of %d messages. Come back tomorrow to continue shopping."
+                        .formatted(maximumMessages)
+        );
+    }
+
     public static AgentException streamLimit() {
         return new AgentException(
                 HttpStatus.TOO_MANY_REQUESTS,

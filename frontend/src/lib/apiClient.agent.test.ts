@@ -193,6 +193,28 @@ describe('agent conversation API', () => {
     })
   })
 
+  test('surfaces the daily message limit as a typed chat-safe rejection', async () => {
+    globalThis.fetch = mock(async () =>
+      Response.json(
+        {
+          code: 'agent_daily_message_limit',
+          detail:
+            "You've reached today's limit of 100 messages. Come back tomorrow to continue shopping.",
+        },
+        { status: 429 },
+      ),
+    ) as unknown as typeof fetch
+
+    await expect(
+      submitAgentTurn({ conversationId: 'conversation-1', message: 'One more question' }),
+    ).rejects.toMatchObject({
+      status: 429,
+      code: 'agent_daily_message_limit',
+      message:
+        "You've reached today's limit of 100 messages. Come back tomorrow to continue shopping.",
+    })
+  })
+
   test('treats an already deleted conversation as removed from history', async () => {
     globalThis.fetch = mock(
       async () => new Response(null, { status: 404 }),

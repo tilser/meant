@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.meant.api.module.agent.exception.AgentException;
 import com.meant.api.module.cart.exception.CartException;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.validation.Valid;
@@ -91,6 +92,18 @@ class GlobalApiExceptionHandlerTest {
     }
 
     @Test
+    void dailyAgentMessageLimitReturnsAUserSafe429Problem() throws Exception {
+        mockMvc.perform(get("/test-errors/agent-message-limit"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.status").value(429))
+                .andExpect(jsonPath("$.detail").value(
+                        "You've reached today's limit of 100 messages. Come back tomorrow to continue shopping."
+                ))
+                .andExpect(jsonPath("$.code").value("agent_daily_message_limit"));
+    }
+
+    @Test
     void businessExceptionMessageTextDoesNotDetermineStatus(CapturedOutput output) throws Exception {
         mockMvc.perform(get("/test-errors/not-found-message-only"))
                 .andExpect(status().isBadRequest())
@@ -159,6 +172,11 @@ class GlobalApiExceptionHandlerTest {
         @GetMapping("/not-found-message-only")
         void notFoundMessageOnly() {
             throw new CartException("Cart processor not found in remote payload");
+        }
+
+        @GetMapping("/agent-message-limit")
+        void agentMessageLimit() {
+            throw AgentException.dailyMessageLimit(100);
         }
 
         @GetMapping("/constraint-violation")

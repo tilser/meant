@@ -1,7 +1,9 @@
 package com.meant.api.module.agent.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -12,6 +14,7 @@ import com.meant.api.module.agent.constant.AgentRunStatus;
 import com.meant.api.module.agent.entity.AgentConversation;
 import com.meant.api.module.agent.entity.AgentMessage;
 import com.meant.api.module.agent.entity.AgentRun;
+import com.meant.api.module.agent.exception.AgentException;
 import com.meant.api.module.agent.properties.AgentProperties;
 import com.meant.api.module.agent.repository.AgentConversationRepository;
 import com.meant.api.module.agent.repository.AgentMessageRepository;
@@ -40,6 +43,7 @@ class AgentTurnServiceTest {
         AgentMessageRepository messages = mock(AgentMessageRepository.class);
         AgentRunRepository runs = mock(AgentRunRepository.class);
         AgentVisibleProductContextService visibleContexts = mock(AgentVisibleProductContextService.class);
+        AgentDailyMessageLimitService messageLimit = mock(AgentDailyMessageLimitService.class);
         Instant now = Instant.parse("2026-07-18T12:00:00Z");
         UUID sourceMessageId = UUID.randomUUID();
         VisibleProductContextCommand visibleCommand = new VisibleProductContextCommand(
@@ -75,6 +79,7 @@ class AgentTurnServiceTest {
                 messages,
                 runs,
                 visibleContexts,
+                messageLimit,
                 properties(),
                 Clock.fixed(now, ZoneOffset.UTC)
         );
@@ -92,6 +97,7 @@ class AgentTurnServiceTest {
         ));
 
         verify(runs, never()).findFirstByConversationIdAndStatusInOrderByCreatedAtAscIdAsc(any(), any());
+        verify(messageLimit).reserve(userId);
         assertThat(accepted.userMessage().runId()).isEqualTo(accepted.runId());
         assertThat(accepted.userMessage().sequenceNumber()).isEqualTo(1);
         assertThat(accepted.userMessage().correlationId()).isEqualTo("client-turn-1");
@@ -114,6 +120,7 @@ class AgentTurnServiceTest {
         AgentConversationRepository conversations = mock(AgentConversationRepository.class);
         AgentMessageRepository messages = mock(AgentMessageRepository.class);
         AgentRunRepository runs = mock(AgentRunRepository.class);
+        AgentDailyMessageLimitService messageLimit = mock(AgentDailyMessageLimitService.class);
         AgentConversation conversation = AgentConversation.builder()
                 .id(conversationId)
                 .userId(userId)
@@ -147,6 +154,7 @@ class AgentTurnServiceTest {
                 messages,
                 runs,
                 mock(AgentVisibleProductContextService.class),
+                messageLimit,
                 properties(),
                 Clock.fixed(now, ZoneOffset.UTC)
         );
@@ -161,6 +169,49 @@ class AgentTurnServiceTest {
         assertThat(accepted.runId()).isEqualTo(runId);
         assertThat(accepted.userMessage().messageId()).isEqualTo(messageId);
         verify(messages, never()).saveAndFlush(any());
+        verify(runs, never()).saveAndFlush(any());
+        verify(messageLimit, never()).reserve(any());
+    }
+
+    @Test
+    void fullDailyLimitRejectsTheTurnBeforeWritingAMessageOrRun() {
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        Instant now = Instant.parse("2026-08-01T12:00:00Z");
+        AgentConversationRepository conversations = mock(AgentConversationRepository.class);
+        AgentMessageRepository messages = mock(AgentMessageRepository.class);
+        AgentRunRepository runs = mock(AgentRunRepository.class);
+        AgentVisibleProductContextService visibleContexts = mock(AgentVisibleProductContextService.class);
+        AgentDailyMessageLimitService messageLimit = mock(AgentDailyMessageLimitService.class);
+        AgentConversation conversation = AgentConversation.builder()
+                .id(conversationId)
+                .userId(userId)
+                .title("Shoes")
+                .status(AgentConversationStatus.ACTIVE)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        when(conversations.findOwnedForUpdate(conversationId, userId)).thenReturn(Optional.of(conversation));
+        doThrow(AgentException.dailyMessageLimit(100)).when(messageLimit).reserve(userId);
+        AgentTurnService service = new AgentTurnService(
+                conversations,
+                messages,
+                runs,
+                visibleContexts,
+                messageLimit,
+                properties(),
+                Clock.fixed(now, ZoneOffset.UTC)
+        );
+
+        assertThatThrownBy(() -> service.submit(new SubmitAgentTurnCommand(
+                userId,
+                conversationId,
+                "One more question",
+                "client-turn-limit"
+        ))).isInstanceOf(AgentException.class);
+
+        verify(messages, never()).saveAndFlush(any());
+        verify(messages, never()).save(any());
         verify(runs, never()).saveAndFlush(any());
     }
 

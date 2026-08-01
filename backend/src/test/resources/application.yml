@@ -125,6 +125,8 @@ commerce:
     event-stream-queue-size: 128
     event-retention: 7d
     stale-run-age: 3m
+    message-limit:
+      maximum-per-user-per-day: 100
     stream-admission:
       maximum-per-user: 4
       maximum-per-run: 2
