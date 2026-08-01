@@ -1,7 +1,7 @@
 import type { AgentMessageProfile } from '../../../lib/apiClient'
 
 export const PRODUCT_PIN_NOTICE_LIFETIME_MS = 3_000
-export const EMPTY_CART_MESSAGE_LIFETIME_MS = 5_000
+export const EMPTY_CART_MESSAGE_LIFETIME_MS = 15_000
 
 const PRODUCT_PIN_ACTIONS = new Set(['pin_product', 'unpin_product'])
 const PRODUCT_PIN_NOTICE_TEXT = /^(?:Pinned|Unpinned) product\b/i
