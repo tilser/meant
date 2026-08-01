@@ -36,6 +36,7 @@ public class ShopifyCatalogAgentTimeoutBudgetValidator {
         Duration openRouterReadTimeout =
                 Duration.ofMillis(restClientProperties.readTimeoutMilliseconds());
         int maximumSequentialShopifyDeadlines = catalogProperties.maximumSearchPages()
+                + catalogProperties.maximumVerificationBatches()
                 + (catalogProperties.runtimeDiscoveryEnabled() ? 1 : 0);
         Duration requiredToolDeadline;
         try {

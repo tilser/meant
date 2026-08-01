@@ -1,6 +1,8 @@
 package com.meant.api.provider.shopify.catalog;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -100,8 +102,44 @@ class ShopifyGlobalCatalogDiscoverySourceTest {
         assertThat(provider.request.signals().userAgent()).isEqualTo("Meant Test");
         assertThat(provider.request.filters().price().min()).isEqualTo(1000L);
         assertThat(provider.request.filters().available()).isTrue();
+        assertThat(provider.request.filters().shipsTo())
+                .isEqualTo(new com.meant.api.provider.shopify.catalog.dto.ShopifyCatalogFilters.Location(
+                        "US", "CA", "90210"));
         assertThat(provider.request.filters().categories())
                 .containsExactly("gid://shopify/TaxonomyCategory/aa-8-1");
+    }
+
+    @Test
+    void emitsOnlyCandidatesAcceptedByExactLookupVerification() {
+        ShopifyGlobalCatalogProperties properties = properties();
+        DiscoverySourceIdentity source = source(properties);
+        ProductCandidate candidate = candidate("offer-1");
+        FakeProvider provider = new FakeProvider(
+                properties,
+                source,
+                successfulPage(source, List.of(candidate), null, false, false)
+        );
+        ShopifyCatalogSearchCandidateVerifier verifier = mock(ShopifyCatalogSearchCandidateVerifier.class);
+        when(verifier.verify(anyList(), any(), any()))
+                .thenReturn(new ShopifyCatalogSearchCandidateVerifier.Verification(List.of(), false, null));
+        ShopifyGlobalCatalogDiscoverySource adapter = new ShopifyGlobalCatalogDiscoverySource(
+                provider,
+                properties,
+                authProperties(true),
+                null,
+                verifier,
+                System::nanoTime
+        );
+        List<ProductCandidate> emitted = new ArrayList<>();
+
+        CatalogSourceResult result = adapter.search(
+                new CatalogDiscoveryRequest("shoes", null, 10, null, null, null),
+                emitted::add
+        );
+
+        assertThat(result.successful()).isTrue();
+        assertThat(result.candidates()).isEmpty();
+        assertThat(emitted).isEmpty();
     }
 
     @Test
@@ -917,7 +955,7 @@ class ShopifyGlobalCatalogDiscoverySourceTest {
                 authProperties(false)
         );
 
-        assertThat(adapter.timeout()).isEqualTo(Duration.ofSeconds(51));
+        assertThat(adapter.timeout()).isEqualTo(Duration.ofSeconds(71));
     }
 
     @Test
@@ -929,7 +967,7 @@ class ShopifyGlobalCatalogDiscoverySourceTest {
                 authProperties(false)
         );
 
-        assertThat(adapter.timeout()).isEqualTo(Duration.ofSeconds(41));
+        assertThat(adapter.timeout()).isEqualTo(Duration.ofSeconds(61));
     }
 
     private ShopifyGlobalCatalogProperties properties() {

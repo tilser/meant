@@ -31,10 +31,10 @@ class ShopifyGlobalCatalogPropertiesTest {
                             .isEqualTo("true");
                     assertThat(context.getEnvironment().getProperty(
                             "commerce.catalog.federation.overall-deadline"))
-                            .isEqualTo("51s");
+                            .isEqualTo("71s");
                     assertThat(context.getEnvironment().getProperty(
                             "user.product-search.stream-timeout"))
-                            .isEqualTo("60s");
+                            .isEqualTo("72s");
                 });
     }
 
@@ -61,8 +61,9 @@ class ShopifyGlobalCatalogPropertiesTest {
                     assertThat(properties.requiredScopes()).containsExactly("read_global_api_catalog_search");
                     assertThat(properties.maximumResultLimit()).isEqualTo(50);
                     assertThat(properties.maximumSearchPages()).isEqualTo(4);
+                    assertThat(properties.maximumVerificationBatches()).isEqualTo(2);
                     assertThat(properties.requestDeadline()).isEqualTo(Duration.ofSeconds(10));
-                    assertThat(properties.discoverySourceTimeout()).isEqualTo(Duration.ofSeconds(51));
+                    assertThat(properties.discoverySourceTimeout()).isEqualTo(Duration.ofSeconds(71));
                 });
     }
 
@@ -85,7 +86,7 @@ class ShopifyGlobalCatalogPropertiesTest {
                     ShopifyGlobalCatalogProperties properties =
                             context.getBean(ShopifyGlobalCatalogProperties.class);
                     assertThat(properties.maximumSearchPages()).isEqualTo(200);
-                    assertThat(properties.discoverySourceTimeout()).isEqualTo(Duration.ofSeconds(202));
+                    assertThat(properties.discoverySourceTimeout()).isEqualTo(Duration.ofSeconds(204));
                     assertThatCode(() -> properties.discoverySourceTimeout().toNanos())
                             .doesNotThrowAnyException();
                 });

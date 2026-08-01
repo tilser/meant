@@ -483,7 +483,7 @@ class UserProductSearchCatalogInputBuilderTest {
     }
 
     @Test
-    void qualifiedSearchOmitsImplicitLocationThatWouldOverrideThePreferredCurrency() {
+    void qualifiedSearchRetainsBuyerLocationWhenAccountCurrencyDiffers() {
         CatalogDiscoveryFilters qualifiedFilters = new CatalogDiscoveryFilters(
                 true,
                 List.of(),
@@ -506,7 +506,7 @@ class UserProductSearchCatalogInputBuilderTest {
                 qualifiedFilters
         );
 
-        assertThat(input.context().addressCountry()).isNull();
+        assertThat(input.context().addressCountry()).isEqualTo("CZ");
         assertThat(input.context().language()).isNull();
         assertThat(input.context().currency()).isEqualTo("USD");
         assertThat(input.discoveryFilters()).isSameAs(qualifiedFilters);

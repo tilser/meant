@@ -14,7 +14,7 @@ class ShopifyCatalogFederationTimeoutBudgetValidatorTest {
     @Test
     void acceptsAnOverallDeadlineEqualToTheLiveDiscoverySourceBudget() {
         var validator = validator(
-                Duration.ofSeconds(51),
+                Duration.ofSeconds(71),
                 catalogProperties(true, true)
         );
 
@@ -24,20 +24,20 @@ class ShopifyCatalogFederationTimeoutBudgetValidatorTest {
     @Test
     void rejectsAnOverallDeadlineThatTruncatesLiveDiscoveryAndCatalog() {
         var validator = validator(
-                Duration.ofSeconds(50),
+                Duration.ofSeconds(70),
                 catalogProperties(true, true)
         );
 
         assertThatThrownBy(validator::validate)
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("commerce.catalog.federation.overall-deadline")
-                .hasMessageContaining("PT51S");
+                .hasMessageContaining("PT1M11S");
     }
 
     @Test
     void acceptsAnOverallDeadlineEqualToThePinnedRouteSourceBudget() {
         var validator = validator(
-                Duration.ofSeconds(41),
+                Duration.ofSeconds(61),
                 catalogProperties(true, false)
         );
 
@@ -47,14 +47,14 @@ class ShopifyCatalogFederationTimeoutBudgetValidatorTest {
     @Test
     void rejectsAnOverallDeadlineThatTruncatesThePinnedCatalogCall() {
         var validator = validator(
-                Duration.ofSeconds(40),
+                Duration.ofSeconds(60),
                 catalogProperties(true, false)
         );
 
         assertThatThrownBy(validator::validate)
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("commerce.catalog.federation.overall-deadline")
-                .hasMessageContaining("PT41S");
+                .hasMessageContaining("PT1M1S");
     }
 
     @Test

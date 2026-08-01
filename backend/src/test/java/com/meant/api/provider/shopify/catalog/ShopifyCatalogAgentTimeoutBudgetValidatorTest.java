@@ -15,7 +15,7 @@ class ShopifyCatalogAgentTimeoutBudgetValidatorTest {
     @Test
     void acceptsTheExactCompleteSearchBudget() {
         var validator = validator(
-                agentProperties(true, Duration.ofSeconds(340), Duration.ofSeconds(45), Duration.ofSeconds(160)),
+                agentProperties(true, Duration.ofSeconds(360), Duration.ofSeconds(45), Duration.ofSeconds(180)),
                 catalogProperties(true, true, Duration.ofSeconds(10))
         );
 
@@ -25,28 +25,28 @@ class ShopifyCatalogAgentTimeoutBudgetValidatorTest {
     @Test
     void rejectsAToolDeadlineThatCannotContainAllSequentialNetworkCalls() {
         var validator = validator(
-                agentProperties(true, Duration.ofSeconds(340), Duration.ofSeconds(45), Duration.ofSeconds(159)),
+                agentProperties(true, Duration.ofSeconds(360), Duration.ofSeconds(45), Duration.ofSeconds(179)),
                 catalogProperties(true, true, Duration.ofSeconds(10))
         );
 
         assertThatThrownBy(validator::validate)
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("commerce.agent.tool-deadline")
-                .hasMessageContaining("PT2M40S")
-                .hasMessageContaining("3 sequential OpenRouter");
+                .hasMessageContaining("PT3M")
+                .hasMessageContaining("7 Shopify discovery/catalog deadline");
     }
 
     @Test
     void rejectsARunDeadlineThatCannotContainFourOuterModelAttemptsAndTheToolBudget() {
         var validator = validator(
-                agentProperties(true, Duration.ofSeconds(339), Duration.ofSeconds(45), Duration.ofSeconds(160)),
+                agentProperties(true, Duration.ofSeconds(359), Duration.ofSeconds(45), Duration.ofSeconds(180)),
                 catalogProperties(true, true, Duration.ofSeconds(10))
         );
 
         assertThatThrownBy(validator::validate)
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("commerce.agent.run-deadline")
-                .hasMessageContaining("PT5M40S")
+                .hasMessageContaining("PT6M")
                 .hasMessageContaining("4 outer model attempts");
     }
 
@@ -73,7 +73,7 @@ class ShopifyCatalogAgentTimeoutBudgetValidatorTest {
     @Test
     void acceptsTheExactPinnedRouteSearchBudgetWhenRuntimeDiscoveryIsDisabled() {
         var validator = validator(
-                agentProperties(true, Duration.ofSeconds(330), Duration.ofSeconds(45), Duration.ofSeconds(150)),
+                agentProperties(true, Duration.ofSeconds(350), Duration.ofSeconds(45), Duration.ofSeconds(170)),
                 catalogProperties(true, false, Duration.ofSeconds(10))
         );
 
@@ -83,28 +83,28 @@ class ShopifyCatalogAgentTimeoutBudgetValidatorTest {
     @Test
     void rejectsAPinnedRouteToolDeadlineThatCannotContainQualificationAndCatalog() {
         var validator = validator(
-                agentProperties(true, Duration.ofSeconds(330), Duration.ofSeconds(45), Duration.ofSeconds(149)),
+                agentProperties(true, Duration.ofSeconds(350), Duration.ofSeconds(45), Duration.ofSeconds(169)),
                 catalogProperties(true, false, Duration.ofSeconds(10))
         );
 
         assertThatThrownBy(validator::validate)
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("commerce.agent.tool-deadline")
-                .hasMessageContaining("PT2M30S")
-                .hasMessageContaining("4 Shopify discovery/catalog deadline");
+                .hasMessageContaining("PT2M50S")
+                .hasMessageContaining("6 Shopify discovery/catalog deadline");
     }
 
     @Test
     void rejectsAPinnedRouteRunDeadlineThatCannotContainTheCompleteSearch() {
         var validator = validator(
-                agentProperties(true, Duration.ofSeconds(329), Duration.ofSeconds(45), Duration.ofSeconds(150)),
+                agentProperties(true, Duration.ofSeconds(349), Duration.ofSeconds(45), Duration.ofSeconds(170)),
                 catalogProperties(true, false, Duration.ofSeconds(10))
         );
 
         assertThatThrownBy(validator::validate)
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("commerce.agent.run-deadline")
-                .hasMessageContaining("PT5M30S")
+                .hasMessageContaining("PT5M50S")
                 .hasMessageContaining("4 outer model attempts");
     }
 
@@ -115,7 +115,7 @@ class ShopifyCatalogAgentTimeoutBudgetValidatorTest {
                         true,
                         Duration.ofDays(1_000_000),
                         Duration.ofSeconds(45),
-                        Duration.ofSeconds(160)
+                        Duration.ofSeconds(180)
                 ),
                 catalogProperties(true, true, Duration.ofSeconds(10))
         );
@@ -131,9 +131,9 @@ class ShopifyCatalogAgentTimeoutBudgetValidatorTest {
         var validator = validator(
                 agentProperties(
                         true,
-                        Duration.ofSeconds(340),
+                        Duration.ofSeconds(360),
                         Duration.ofSeconds(45),
-                        Duration.ofSeconds(160)
+                        Duration.ofSeconds(180)
                 ),
                 catalogProperties(true, true, Duration.ofNanos(Long.MAX_VALUE))
         );

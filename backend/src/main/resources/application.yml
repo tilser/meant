@@ -169,7 +169,7 @@ commerce:
     repeated-identical-tool-call-threshold: ${COMMERCE_AGENT_REPEATED_TOOL_CALL_THRESHOLD:2}
     run-deadline: ${COMMERCE_AGENT_RUN_DEADLINE:360s}
     model-timeout: ${COMMERCE_AGENT_MODEL_TIMEOUT:45s}
-    tool-deadline: ${COMMERCE_AGENT_TOOL_DEADLINE:170s}
+    tool-deadline: ${COMMERCE_AGENT_TOOL_DEADLINE:180s}
     event-stream-timeout: ${COMMERCE_AGENT_EVENT_STREAM_TIMEOUT:2m}
     event-poll-interval: ${COMMERCE_AGENT_EVENT_POLL_INTERVAL:5s}
     event-stream-queue-size: ${COMMERCE_AGENT_EVENT_STREAM_QUEUE_SIZE:128}
@@ -189,7 +189,7 @@ commerce:
       max-reconciliation-delay: ${COMMERCE_CART_MAX_RECONCILIATION_DELAY:2s}
   catalog:
     federation:
-      overall-deadline: ${COMMERCE_CATALOG_FEDERATION_OVERALL_DEADLINE:51s}
+      overall-deadline: ${COMMERCE_CATALOG_FEDERATION_OVERALL_DEADLINE:71s}
     observation-cache:
       maximum-ttl: ${COMMERCE_CATALOG_OBSERVATION_CACHE_MAXIMUM_TTL:2m}
       rehydration-maximum-size: ${COMMERCE_CATALOG_REHYDRATION_CACHE_MAXIMUM_SIZE:10000}
@@ -323,7 +323,7 @@ user:
     qualification-pending-ttl: ${USER_PRODUCT_SEARCH_QUALIFICATION_PENDING_TTL:30m}
     product-detail-session-ttl: ${USER_PRODUCT_DETAIL_SESSION_TTL:30m}
     product-detail-session-maximum-size: ${USER_PRODUCT_DETAIL_SESSION_MAXIMUM_SIZE:10000}
-    stream-timeout: ${USER_PRODUCT_SEARCH_STREAM_TIMEOUT:60s}
+    stream-timeout: ${USER_PRODUCT_SEARCH_STREAM_TIMEOUT:72s}
     stream-queue-capacity: ${USER_PRODUCT_SEARCH_STREAM_QUEUE_CAPACITY:128}
     discovery-recent-search-limit: 5
     discovery-recent-product-limit: 12

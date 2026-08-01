@@ -123,7 +123,7 @@ commerce:
     repeated-identical-tool-call-threshold: 2
     run-deadline: 360s
     model-timeout: 45s
-    tool-deadline: 170s
+    tool-deadline: 180s
     event-stream-timeout: 2m
     event-poll-interval: 20ms
     event-stream-queue-size: 128
@@ -143,7 +143,7 @@ commerce:
       max-reconciliation-delay: 2s
   catalog:
     federation:
-      overall-deadline: 51s
+      overall-deadline: 71s
     observation-cache:
       maximum-ttl: 2m
       rehydration-maximum-size: 10000
@@ -279,7 +279,7 @@ user:
     qualification-pending-ttl: 30m
     product-detail-session-ttl: 30m
     product-detail-session-maximum-size: 10000
-    stream-timeout: 60s
+    stream-timeout: 72s
     stream-queue-capacity: 128
     discovery-recent-search-limit: 5
     discovery-recent-product-limit: 12

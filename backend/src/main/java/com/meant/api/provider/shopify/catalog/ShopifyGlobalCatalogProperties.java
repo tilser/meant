@@ -46,6 +46,7 @@ public record ShopifyGlobalCatalogProperties(
     private static final Set<String> REQUIRED_SCOPES = Set.of("read_global_api_catalog_search");
     private static final String VIEW = "offer";
     public static final int MAXIMUM_CONFIGURED_CANDIDATES = 200;
+    public static final int MAXIMUM_VERIFIED_CANDIDATES = 100;
     static final Duration FEDERATION_SCHEDULER_RESERVE = Duration.ofSeconds(1);
 
     public ShopifyGlobalCatalogProperties {
@@ -115,15 +116,17 @@ public record ShopifyGlobalCatalogProperties(
      * Contains the worst-case sequential remote path plus time for federation timeout dispatch.
      *
      * <p>Live discovery owns one request deadline for profile/schema verification before the
-     * provider owns up to {@link #maximumSearchPages()} deadlines for {@code search_catalog}.
-     * A pinned route skips the discovery deadline.</p>
+     * provider owns up to {@link #maximumSearchPages()} deadlines for {@code search_catalog} and
+     * {@link #maximumVerificationBatches()} deadlines for fail-closed {@code lookup_catalog}
+     * verification. A pinned route skips the discovery deadline.</p>
      */
     public Duration discoverySourceTimeout() {
         if (!positive(requestDeadline)) {
             throw new IllegalStateException("Shopify catalog request deadline must be positive");
         }
-        long sequentialRequestDeadlines =
-                (long) maximumSearchPages() + (runtimeDiscoveryEnabled ? 1L : 0L);
+        long sequentialRequestDeadlines = (long) maximumSearchPages()
+                + maximumVerificationBatches()
+                + (runtimeDiscoveryEnabled ? 1L : 0L);
         try {
             Duration timeout = requestDeadline
                     .multipliedBy(sequentialRequestDeadlines)
@@ -153,6 +156,18 @@ public record ShopifyGlobalCatalogProperties(
         } catch (ArithmeticException exception) {
             throw new IllegalStateException("Shopify catalog page count exceeds integer capacity", exception);
         }
+    }
+
+    /** Bounds fail-closed lookup verification to the public ranked product window. */
+    public int maximumVerificationBatches() {
+        if (maximumLookupIds < 1 || maximumLookupIds > 50) {
+            throw new IllegalStateException(
+                    "Shopify catalog lookup limit is outside the supported range");
+        }
+        return Math.toIntExact(Math.ceilDiv(
+                (long) MAXIMUM_VERIFIED_CANDIDATES,
+                (long) maximumLookupIds
+        ));
     }
 
     private static boolean positive(Duration duration) {

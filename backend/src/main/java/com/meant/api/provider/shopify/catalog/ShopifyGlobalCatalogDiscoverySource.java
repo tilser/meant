@@ -49,6 +49,7 @@ public class ShopifyGlobalCatalogDiscoverySource implements CatalogDiscoverySour
     private final ShopifyGlobalCatalogProperties properties;
     private final ShopifyAgentAuthProperties authProperties;
     private final MerchantShopifyIdentityLookupService merchantShopifyIdentityLookupService;
+    private final ShopifyCatalogSearchCandidateVerifier candidateVerifier;
     private final LongSupplier nanoTime;
 
     @Autowired
@@ -56,13 +57,15 @@ public class ShopifyGlobalCatalogDiscoverySource implements CatalogDiscoverySour
             ShopifyGlobalCatalogProvider provider,
             ShopifyGlobalCatalogProperties properties,
             ShopifyAgentAuthProperties authProperties,
-            MerchantShopifyIdentityLookupService merchantShopifyIdentityLookupService
+            MerchantShopifyIdentityLookupService merchantShopifyIdentityLookupService,
+            ShopifyCatalogSearchCandidateVerifier candidateVerifier
     ) {
         this(
                 provider,
                 properties,
                 authProperties,
                 merchantShopifyIdentityLookupService,
+                candidateVerifier,
                 System::nanoTime
         );
     }
@@ -72,13 +75,34 @@ public class ShopifyGlobalCatalogDiscoverySource implements CatalogDiscoverySour
             ShopifyGlobalCatalogProperties properties,
             ShopifyAgentAuthProperties authProperties,
             MerchantShopifyIdentityLookupService merchantShopifyIdentityLookupService,
+            ShopifyCatalogSearchCandidateVerifier candidateVerifier,
             LongSupplier nanoTime
     ) {
         this.provider = provider;
         this.properties = properties;
         this.authProperties = authProperties;
         this.merchantShopifyIdentityLookupService = merchantShopifyIdentityLookupService;
+        this.candidateVerifier = candidateVerifier;
         this.nanoTime = nanoTime;
+    }
+
+    ShopifyGlobalCatalogDiscoverySource(
+            ShopifyGlobalCatalogProvider provider,
+            ShopifyGlobalCatalogProperties properties,
+            ShopifyAgentAuthProperties authProperties,
+            MerchantShopifyIdentityLookupService merchantShopifyIdentityLookupService,
+            LongSupplier nanoTime
+    ) {
+        this(provider, properties, authProperties, merchantShopifyIdentityLookupService, null, nanoTime);
+    }
+
+    ShopifyGlobalCatalogDiscoverySource(
+            ShopifyGlobalCatalogProvider provider,
+            ShopifyGlobalCatalogProperties properties,
+            ShopifyAgentAuthProperties authProperties,
+            MerchantShopifyIdentityLookupService merchantShopifyIdentityLookupService
+    ) {
+        this(provider, properties, authProperties, merchantShopifyIdentityLookupService, null, System::nanoTime);
     }
 
     ShopifyGlobalCatalogDiscoverySource(
@@ -86,7 +110,7 @@ public class ShopifyGlobalCatalogDiscoverySource implements CatalogDiscoverySour
             ShopifyGlobalCatalogProperties properties,
             ShopifyAgentAuthProperties authProperties
     ) {
-        this(provider, properties, authProperties, null);
+        this(provider, properties, authProperties, null, null, System::nanoTime);
     }
 
     @Override
@@ -135,7 +159,8 @@ public class ShopifyGlobalCatalogDiscoverySource implements CatalogDiscoverySour
         ShopifyCatalogFilters filters = filters(
                 request.filters(),
                 request.discoveryFilters(),
-                scopedShopId
+                scopedShopId,
+                context
         );
         LinkedHashMap<String, ProductCandidate> candidates = new LinkedHashMap<>();
         LinkedHashSet<String> seenCursors = new LinkedHashSet<>();
@@ -192,18 +217,18 @@ public class ShopifyGlobalCatalogDiscoverySource implements CatalogDiscoverySour
             boolean hasNextPage = page.page() != null && page.page().hasNextPage();
             boolean truncated = page.truncated() || omittedUniqueCandidate || hasNextPage;
             if (page.truncated() || omittedUniqueCandidate || requestedLimitReached) {
-                return emit(aggregate(page, candidates, truncated), candidateConsumer);
+                return verifyAndEmit(aggregate(page, candidates, truncated), context, filters, candidateConsumer);
             }
             if (!hasNextPage) {
-                return emit(aggregate(page, candidates, false), candidateConsumer);
+                return verifyAndEmit(aggregate(page, candidates, false), context, filters, candidateConsumer);
             }
             if (pagesFetched >= properties.maximumSearchPages()) {
-                return emit(aggregate(page, candidates, true), candidateConsumer);
+                return verifyAndEmit(aggregate(page, candidates, true), context, filters, candidateConsumer);
             }
 
             String nextCursor = page.page().cursor();
             if (nextCursor == null || !seenCursors.add(nextCursor)) {
-                return emit(aggregate(page, candidates, true), candidateConsumer);
+                return verifyAndEmit(aggregate(page, candidates, true), context, filters, candidateConsumer);
             }
             if (deadlineReached(startedNanos, timeoutNanos)) {
                 return timeoutFailure(lastPage);
@@ -211,7 +236,7 @@ public class ShopifyGlobalCatalogDiscoverySource implements CatalogDiscoverySour
             cursor = nextCursor;
         }
 
-        return emit(aggregate(lastPage, candidates, false), candidateConsumer);
+        return verifyAndEmit(aggregate(lastPage, candidates, false), context, filters, candidateConsumer);
     }
 
     private CatalogSourceResult aggregate(
@@ -232,12 +257,49 @@ public class ShopifyGlobalCatalogDiscoverySource implements CatalogDiscoverySour
         );
     }
 
-    private CatalogSourceResult emit(
+    private CatalogSourceResult verifyAndEmit(
             CatalogSourceResult result,
+            ShopifyCatalogContext context,
+            ShopifyCatalogFilters filters,
             Consumer<ProductCandidate> candidateConsumer
     ) {
-        result.candidates().forEach(candidateConsumer);
-        return result;
+        CatalogSourceResult buyerVisible = candidateVerifier == null
+                ? result
+                : verified(result, candidateVerifier.verify(result.candidates(), context, filters));
+        if (buyerVisible.successful()) {
+            buyerVisible.candidates().forEach(candidateConsumer);
+        }
+        return buyerVisible;
+    }
+
+    private CatalogSourceResult verified(
+            CatalogSourceResult searchResult,
+            ShopifyCatalogSearchCandidateVerifier.Verification verification
+    ) {
+        if (!verification.successful()) {
+            return new CatalogSourceResult(
+                    searchResult.provider(),
+                    searchResult.discoverySource(),
+                    CatalogSourceOperation.SEARCH,
+                    searchResult.protocolVersion(),
+                    searchResult.negotiatedCapabilities(),
+                    List.of(),
+                    null,
+                    false,
+                    verification.failure()
+            );
+        }
+        return new CatalogSourceResult(
+                searchResult.provider(),
+                searchResult.discoverySource(),
+                CatalogSourceOperation.SEARCH,
+                searchResult.protocolVersion(),
+                searchResult.negotiatedCapabilities(),
+                verification.candidates(),
+                searchResult.page(),
+                searchResult.truncated() || verification.truncated(),
+                null
+        );
     }
 
     private CatalogSourceResult timeoutFailure(CatalogSourceResult lastPage) {
@@ -353,7 +415,8 @@ public class ShopifyGlobalCatalogDiscoverySource implements CatalogDiscoverySour
     private ShopifyCatalogFilters filters(
             CatalogSearchFilters baseFilters,
             CatalogDiscoveryFilters discoveryFilters,
-            String scopedShopId
+            String scopedShopId,
+            ShopifyCatalogContext context
     ) {
         List<String> baseCategories = baseFilters == null || baseFilters.categories() == null
                 ? List.of()
@@ -376,6 +439,9 @@ public class ShopifyGlobalCatalogDiscoverySource implements CatalogDiscoverySour
         } else if (discoveryFilters != null) {
             shopIds.addAll(discoveryFilters.shopIds());
         }
+        ShopifyCatalogFilters.Location shipsTo = discoveryFilters != null && discoveryFilters.shipsTo() != null
+                ? location(discoveryFilters.shipsTo())
+                : contextLocation(context);
         return new ShopifyCatalogFilters(
                 discoveryFilters == null || discoveryFilters.available() == null
                         ? true
@@ -385,7 +451,7 @@ public class ShopifyGlobalCatalogDiscoverySource implements CatalogDiscoverySour
                         : discoveryFilters.conditions().stream()
                                 .map(condition -> condition.name().toLowerCase(java.util.Locale.ROOT))
                                 .toList(),
-                discoveryFilters == null ? null : location(discoveryFilters.shipsTo()),
+                shipsTo,
                 discoveryFilters == null
                         ? List.of()
                         : discoveryFilters.shipsFrom().stream().map(this::originLocation).toList(),
@@ -409,6 +475,16 @@ public class ShopifyGlobalCatalogDiscoverySource implements CatalogDiscoverySour
                                 .map(tier -> tier.name().toLowerCase(java.util.Locale.ROOT))
                                 .toList()
         );
+    }
+
+    private ShopifyCatalogFilters.Location contextLocation(ShopifyCatalogContext context) {
+        return context == null || context.addressCountry() == null || context.addressCountry().isBlank()
+                ? null
+                : new ShopifyCatalogFilters.Location(
+                        context.addressCountry(),
+                        context.addressRegion(),
+                        context.postalCode()
+                );
     }
 
     private boolean saleReady(ProductCandidate candidate) {
