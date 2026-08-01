@@ -646,6 +646,10 @@ export function mergeCartSnapshot(
           'The merchant could not add this item to the cart. It may be out of stock.',
       }
     }
+    const authoritativeUnitPrice = cartLineUnitPriceAmount(line, item.qty)
+    const authoritativeLineCurrency = line?.currency?.trim() || snapshot.currency?.trim() || null
+    const hasAuthoritativeUnitMoney =
+      authoritativeUnitPrice !== null && authoritativeLineCurrency !== null
     return {
       ...item,
       merchantOrigin: merchantOrigin ?? item.merchantOrigin,
@@ -667,6 +671,8 @@ export function mergeCartSnapshot(
       cartTotalAmount: snapshot.totalAmount ?? item.cartTotalAmount,
       cartSubtotalAmount: snapshot.subtotalAmount ?? item.cartSubtotalAmount,
       cartCurrency: snapshot.currency ?? item.cartCurrency,
+      unitPriceAmount: hasAuthoritativeUnitMoney ? authoritativeUnitPrice : item.unitPriceAmount,
+      orderCurrency: hasAuthoritativeUnitMoney ? authoritativeLineCurrency : item.orderCurrency,
       deliveryGroups:
         snapshotDeliveryGroups && snapshotDeliveryGroups.length > 0
           ? snapshotDeliveryGroups
@@ -676,6 +682,17 @@ export function mergeCartSnapshot(
       syncError: null,
     }
   })
+}
+
+function cartLineUnitPriceAmount(
+  line: NonNullable<CartProfile['lines']>[number] | undefined,
+  fallbackQuantity: number,
+): string | null {
+  if (!line) return null
+  const quantity = line.quantity ?? fallbackQuantity
+  if (!Number.isFinite(quantity) || quantity <= 0) return null
+  const lineAmount = parseCartAmount(line.subtotalAmount) ?? parseCartAmount(line.totalAmount)
+  return lineAmount === null ? null : String(lineAmount / quantity)
 }
 
 const portLabels: Readonly<Record<string, string>> = {
@@ -960,7 +977,7 @@ export function cartItemUnitMoney(item: CartItem, product: Product): MonetaryAmo
   const remoteUnitPrice = parseCartAmount(item.unitPriceAmount)
   const remoteMoney = monetaryAmount(
     remoteUnitPrice,
-    item.cartCurrency ?? item.orderCurrency ?? exactOffer?.priceCurrency,
+    item.orderCurrency ?? item.cartCurrency ?? exactOffer?.priceCurrency,
   )
   if (remoteMoney) return remoteMoney
 

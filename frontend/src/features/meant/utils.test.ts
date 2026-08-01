@@ -523,6 +523,62 @@ describe('cart recovery helpers', () => {
     expect(merged[0].deliveryGroups).toEqual([oldGroup])
   })
 
+  test('reconciles an optimistic display price to the authoritative line amount and currency', () => {
+    const optimisticProduct = productWith({
+      id: 'salthouse-shirt',
+      priceFrom: 36.69,
+      priceCurrency: 'USD',
+      offers: [
+        {
+          offerKey: 'offer-shirt',
+          productVariantId: 'variant-shirt',
+          merchant: 'Salthouse',
+          price: 36.69,
+          priceCurrency: 'USD',
+          delivery: 'Standard',
+        },
+      ],
+    })
+    const optimisticItem: CartItem = {
+      id: optimisticProduct.id,
+      merchant: 'Salthouse',
+      merchantId: 'merchant-1',
+      offerKey: 'offer-shirt',
+      productVariantId: 'variant-shirt',
+      qty: 1,
+      unitPriceAmount: '36.69',
+      orderCurrency: 'USD',
+    }
+    const snapshot = {
+      cartId: 'cart-1',
+      merchantId: 'merchant-1',
+      totalAmount: '32.00',
+      subtotalAmount: '32.00',
+      currency: 'EUR',
+      lines: [
+        {
+          cartLineId: 'line-1',
+          offerKey: 'offer-shirt',
+          productVariantId: 'variant-shirt',
+          quantity: 1,
+          subtotalAmount: '32.00',
+          currency: 'EUR',
+        },
+      ],
+      deliveryGroups: [],
+    } as unknown as CartProfile
+
+    const [reconciled] = mergeCartSnapshot([optimisticItem], 'merchant-1', snapshot)
+    const [line] = cartLines([reconciled!], [optimisticProduct])
+
+    expect(reconciled).toMatchObject({
+      unitPriceAmount: '32',
+      orderCurrency: 'EUR',
+      cartCurrency: 'EUR',
+    })
+    expect(line).toMatchObject({ price: 32, priceCurrency: 'EUR' })
+  })
+
   test('binds a grouped cart line by the exact server-issued offer key', () => {
     const cart: CartItem[] = [
       {
