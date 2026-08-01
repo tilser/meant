@@ -62,8 +62,8 @@ describe('agent auto-dismiss notices', () => {
     expect(isProductPinNotice(message({ contentKind: 'TEXT', correlationId: null }))).toBe(false)
   })
 
-  test('auto-dismisses an empty visible cart after five seconds', () => {
-    expect(EMPTY_CART_MESSAGE_LIFETIME_MS).toBe(5_000)
+  test('auto-dismisses an empty visible cart after fifteen seconds', () => {
+    expect(EMPTY_CART_MESSAGE_LIFETIME_MS).toBe(15_000)
     expect(shouldAutoDismissEmptyCartMessage('cart-message', 0, false)).toBe(true)
   })
 
