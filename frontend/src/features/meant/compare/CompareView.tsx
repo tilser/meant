@@ -92,9 +92,9 @@ export function CompareView({
       />
       {winner ? (
         <div className="mt-cmp-verdict">
-          <div>
-            <div className="mt-mono mt-cmp-verdict-key">Meant pick</div>
-            <div className="mt-cmp-verdict-title">{winner.name}</div>
+          <div className="mt-mono mt-cmp-verdict-key">Meant pick</div>
+          <div className="mt-cmp-verdict-title" title={winner.name}>
+            {winner.name}
           </div>
           <p>{meantTake(winner)}</p>
         </div>

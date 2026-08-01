@@ -20,3 +20,17 @@ describe('theme and upload styles', () => {
     expect(fileInputStyles).not.toContain('display: none')
   })
 })
+
+describe('compare verdict styles', () => {
+  test('keeps the Meant pick compact when product copy is long', () => {
+    expect(styles).toMatch(
+      /\.mt-cmp-verdict\s*\{[^}]*grid-template-columns: auto minmax\(220px, 0\.9fr\) minmax\(280px, 1\.2fr\);[^}]*padding: 12px 14px;[^}]*\}/,
+    )
+    expect(styles).toMatch(
+      /\.mt-cmp-verdict-title\s*\{[^}]*overflow: hidden;[^}]*font-size: 18px;[^}]*text-overflow: ellipsis;[^}]*white-space: nowrap;[^}]*\}/,
+    )
+    expect(styles).toMatch(
+      /\.mt-cmp-verdict p\s*\{[^}]*overflow: hidden;[^}]*-webkit-line-clamp: 2;[^}]*\}/,
+    )
+  })
+})
