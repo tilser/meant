@@ -175,11 +175,20 @@ export function productCuratedTradeoffs(
   if (product.inventoryRelationship === 'DUPLICATE') {
     tradeoffs.push(`Similar to ${product.inventoryItemName ?? 'something you already own'}`)
   }
+  const hardConstraints = new Set(product.hardConstraints ?? [])
+  for (const filterId of product.unknowns ?? []) {
+    const label = prefLabel(preferences, filterId)
+    tradeoffs.push(
+      hardConstraints.has(filterId)
+        ? `Hard constraint not confirmed: ${label}`
+        : `Unknown from available product details: ${label}`,
+    )
+  }
   if (product.offers?.every((offer) => offer.available === false)) {
     tradeoffs.push('Current offers are marked unavailable')
   }
   if (tradeoffs.length === 0) {
-    tradeoffs.push('No preference trade-offs found in the available details')
+    tradeoffs.push('Review the available product and offer details before deciding')
   }
   return Array.from(new Set(tradeoffs))
 }

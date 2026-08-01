@@ -57,9 +57,13 @@ class UserCanonicalProductPersonalizationTest {
 
         assertThat(result.matchedFilterIds()).containsExactly("organic", "gluten-free");
         assertThat(result.missedFilterIds()).isEmpty();
+        assertThat(result.unknownFilterIds()).containsExactly("crypto");
+        assertThat(result.hardConstraintFilterIds()).containsExactly("gluten-free");
         assertThat(result.whyMeantForYou())
-                .isEqualTo("Product details list organic and gluten-free, matching your saved preferences.")
-                .doesNotContain("rank", "score", "crypto");
+                .contains("Matched: organic and gluten-free.")
+                .contains("Unknown: Crypto.")
+                .contains("Hard constraints: Gluten-free (matched).")
+                .doesNotContain("rank", "score");
     }
 
     @Test
@@ -80,8 +84,10 @@ class UserCanonicalProductPersonalizationTest {
 
         assertThat(result.matchedFilterIds()).isEmpty();
         assertThat(result.missedFilterIds()).containsExactly("no-polyester");
+        assertThat(result.unknownFilterIds()).isEmpty();
+        assertThat(result.hardConstraintFilterIds()).containsExactly("no-polyester");
         assertThat(result.whyMeantForYou())
-                .isEqualTo("Product details list polyester, which may conflict with your saved preference.");
+                .isEqualTo("Conflicts: polyester. Hard constraints: No polyester (conflict).");
     }
 
     @Test
@@ -102,8 +108,9 @@ class UserCanonicalProductPersonalizationTest {
 
         assertThat(result.matchedFilterIds()).isEmpty();
         assertThat(result.missedFilterIds()).isEmpty();
+        assertThat(result.unknownFilterIds()).containsExactly("organic");
         assertThat(result.whyMeantForYou())
-                .isEqualTo("This looks relevant to your search based on the available product details.");
+                .isEqualTo("Unknown: Organic.");
     }
 
     @Test
@@ -123,8 +130,9 @@ class UserCanonicalProductPersonalizationTest {
         ).get(product.key());
 
         assertThat(result.matchedFilterIds()).isEmpty();
+        assertThat(result.unknownFilterIds()).containsExactly("organic");
         assertThat(result.whyMeantForYou())
-                .isEqualTo("This looks relevant to your search based on the available product details.");
+                .isEqualTo("Unknown: Organic.");
     }
 
     @Test
@@ -144,8 +152,9 @@ class UserCanonicalProductPersonalizationTest {
         ).get(product.key());
 
         assertThat(result.matchedFilterIds()).isEmpty();
+        assertThat(result.unknownFilterIds()).containsExactly("organic");
         assertThat(result.whyMeantForYou())
-                .isEqualTo("This looks relevant to your search based on the available product details.");
+                .isEqualTo("Unknown: Organic.");
     }
 
     @Test
@@ -165,8 +174,9 @@ class UserCanonicalProductPersonalizationTest {
         ).get(product.key());
 
         assertThat(result.matchedFilterIds()).isEmpty();
+        assertThat(result.unknownFilterIds()).containsExactly("organic");
         assertThat(result.whyMeantForYou())
-                .isEqualTo("This looks relevant to your search based on the available product details.");
+                .isEqualTo("Unknown: Organic.");
     }
 
     @Test
@@ -198,11 +208,12 @@ class UserCanonicalProductPersonalizationTest {
         var results = service.curateCanonical(List.of(negated, explicit), settings(glutenFree));
 
         assertThat(results.get(negated.key()).matchedFilterIds()).isEmpty();
+        assertThat(results.get(negated.key()).unknownFilterIds()).containsExactly("gluten-free");
         assertThat(results.get(negated.key()).whyMeantForYou())
-                .isEqualTo("This looks relevant to your search based on the available product details.");
+                .isEqualTo("Unknown: Gluten-free. Hard constraints: Gluten-free (unknown).");
         assertThat(results.get(explicit.key()).matchedFilterIds()).containsExactly("gluten-free");
         assertThat(results.get(explicit.key()).whyMeantForYou())
-                .isEqualTo("Product details list gluten-free, matching your saved preference.");
+                .isEqualTo("Matched: gluten-free. Hard constraints: Gluten-free (matched).");
     }
 
     @Test
@@ -228,8 +239,54 @@ class UserCanonicalProductPersonalizationTest {
         ).get(product.key());
 
         assertThat(result.matchedFilterIds()).isEmpty();
+        assertThat(result.unknownFilterIds()).containsExactly("gluten-free");
         assertThat(result.whyMeantForYou())
-                .isEqualTo("This looks relevant to your search based on the available product details.");
+                .isEqualTo("Unknown: Gluten-free. Hard constraints: Gluten-free (unknown).");
+    }
+
+    @Test
+    void classifiesQa06PreferenceEvidenceWithoutClaimingUnknownHardConstraints() {
+        CanonicalProduct product = product(
+                "black-streetwear-tee",
+                "Black Streetwear Tee",
+                "A black cotton-blend T-shirt.",
+                List.of(new ProductAttribute("style", "Color", "Black")),
+                List.of(new ProductMaterial("Cotton blend", null)),
+                List.of()
+        );
+
+        UserCanonicalProductPersonalizationResult result = service.curateCanonical(
+                List.of(product),
+                settings(
+                        filter("organic", "Organic", "Prefer organic products.", "food", "prefer", 10),
+                        filter("low-sugar", "Low sugar", "Prefer low-sugar foods.", "food", "prefer", 110),
+                        filter("natural-materials", "Natural materials", "Prefer natural materials.", "materials", "prefer", 300),
+                        filter("no-polyester", "No polyester", "Avoid polyester blends.", "materials", "avoid", 360),
+                        filter("sustainable-brands", "Sustainable brands", "Favor sustainability.", "sustainability", "prefer", 500),
+                        filter("highly-rated", "Strong reviews", "Prefer strong reviews.", "shopping", "prefer", 840),
+                        filter("best-value", "Best quality in budget", "Prefer value.", "shopping", "prefer", 800),
+                        filter("streetwear", "Streetwear", "Prefer streetwear styling.", "interests", "prefer", 2_080)
+                )
+        ).get(product.key());
+
+        assertThat(result.matchedFilterIds()).containsExactly("natural-materials", "streetwear");
+        assertThat(result.missedFilterIds()).isEmpty();
+        assertThat(result.unknownFilterIds())
+                .containsExactly(
+                        "no-polyester",
+                        "sustainable-brands",
+                        "highly-rated",
+                        "organic",
+                        "low-sugar",
+                        "best-value"
+                );
+        assertThat(result.hardConstraintFilterIds()).containsExactly("no-polyester");
+        assertThat(result.whyMeantForYou())
+                .contains("Matched: cotton and streetwear.")
+                .contains("Unknown: No polyester, Sustainable brands, and Strong reviews.")
+                .contains("Hard constraints: No polyester (unknown).")
+                .doesNotContainIgnoringCase("no trade-offs")
+                .doesNotContainIgnoringCase("polyester-free");
     }
 
     private UserSettingsResult settings(ShoppingFilterResult... filters) {
@@ -254,7 +311,18 @@ class UserCanonicalProductPersonalizationTest {
             String polarity,
             int displayOrder
     ) {
-        return new ShoppingFilterResult(id, label, description, "shopping", polarity, displayOrder);
+        return filter(id, label, description, "shopping", polarity, displayOrder);
+    }
+
+    private ShoppingFilterResult filter(
+            String id,
+            String label,
+            String description,
+            String category,
+            String polarity,
+            int displayOrder
+    ) {
+        return new ShoppingFilterResult(id, label, description, category, polarity, displayOrder);
     }
 
     private CanonicalProduct product(

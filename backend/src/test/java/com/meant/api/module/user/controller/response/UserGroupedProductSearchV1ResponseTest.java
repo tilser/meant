@@ -135,7 +135,9 @@ class UserGroupedProductSearchV1ResponseTest {
                         Map.of(canonicalProduct.key(), new UserCanonicalProductPersonalizationResult(
                                 "Product details from catalog.future.example match your saved preference.",
                                 List.of("organic"),
-                                List.of()
+                                List.of(),
+                                List.of("highly-rated"),
+                                List.of("no-polyester")
                         )),
                         List.of(),
                         1,
@@ -161,6 +163,9 @@ class UserGroupedProductSearchV1ResponseTest {
                     .isEqualTo("Product details from future-shop.example match your saved preference.");
             assertThat(mappedProduct.personalization().matchedFilterIds()).containsExactly("organic");
             assertThat(mappedProduct.personalization().missedFilterIds()).isEmpty();
+            assertThat(mappedProduct.personalization().unknownFilterIds()).containsExactly("highly-rated");
+            assertThat(mappedProduct.personalization().hardConstraintFilterIds())
+                    .containsExactly("no-polyester");
             assertThat(mappedProduct.offers()).singleElement().satisfies(mappedOffer -> {
                 assertThat(mappedOffer.key()).isEqualTo(offer.key());
                 assertThat(mappedOffer.merchantName()).isEqualTo("future-shop.example");

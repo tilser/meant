@@ -1572,8 +1572,12 @@ export interface components {
             whyMeantForYou: string;
             /** @description Active user filter IDs supported by explicit canonical-product evidence */
             matchedFilterIds: string[];
-            /** @description Active avoid-filter IDs contradicted by explicit canonical-product evidence */
+            /** @description Active filter IDs contradicted by explicit canonical-product evidence */
             missedFilterIds: string[];
+            /** @description Active filter IDs that available canonical-product facts neither support nor contradict */
+            unknownFilterIds: string[];
+            /** @description Active avoid or require filter IDs that must not be claimed satisfied without evidence */
+            hardConstraintFilterIds: string[];
         };
         /** @description Attribution for shared product facts */
         ProductAttributionResponse: {

@@ -19,6 +19,7 @@ import com.meant.api.module.user.service.command.UserLocationCommand;
 import com.meant.api.module.user.service.dto.ShoppingFilterResult;
 import com.meant.api.module.user.service.dto.UserLocationResult;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
+import com.meant.api.module.user.service.query.GetUserActiveShoppingFiltersQuery;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
@@ -64,6 +65,20 @@ public class UserSettingsService {
                 List.of(),
                 List.of()
         );
+    }
+
+    @Transactional(readOnly = true)
+    public List<ShoppingFilterResult> activeFilters(
+            @NotNull @Valid GetUserActiveShoppingFiltersQuery query
+    ) {
+        Set<String> activeFilterIds = Set.copyOf(activeFilterIds(query.userId()));
+        if (activeFilterIds.isEmpty()) {
+            return List.of();
+        }
+        return shoppingFilterRepository.findAllByOrderByDisplayOrderAsc().stream()
+                .filter(filter -> activeFilterIds.contains(filter.getId()))
+                .map(ShoppingFilterResult::from)
+                .toList();
     }
 
     @Transactional

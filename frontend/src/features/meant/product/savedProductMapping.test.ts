@@ -189,6 +189,8 @@ function groupedProduct(): Product {
           'This looks relevant to your search based on the available product details.',
         matchedFilterIds: [],
         missedFilterIds: [],
+        unknownFilterIds: [],
+        hardConstraintFilterIds: [],
       },
       recommendedOfferKey: offer.key,
       offers: [offer],

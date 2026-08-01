@@ -57,6 +57,8 @@ const product: Product = {
       whyMeantForYou: 'This looks relevant to your search based on the available product details.',
       matchedFilterIds: [],
       missedFilterIds: [],
+      unknownFilterIds: [],
+      hardConstraintFilterIds: [],
     },
     recommendedOfferKey: 'offer-a',
     offers: [],

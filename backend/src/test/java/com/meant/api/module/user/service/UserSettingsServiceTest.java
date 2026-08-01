@@ -17,6 +17,7 @@ import com.meant.api.module.user.service.command.UpdateUserSettingsCommand;
 import com.meant.api.module.user.service.command.UserLocationCommand;
 import com.meant.api.module.user.service.dto.UserLocationResult;
 import com.meant.api.module.user.service.dto.UserSettingsResult;
+import com.meant.api.module.user.service.query.GetUserActiveShoppingFiltersQuery;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
@@ -112,6 +113,15 @@ class UserSettingsServiceTest {
         assertThat(result.filters())
                 .extracting("id")
                 .containsExactly("organic", "cotton");
+    }
+
+    @Test
+    void readsOnlyTheActiveFiltersForAgentGrounding() {
+        var result = service.activeFilters(new GetUserActiveShoppingFiltersQuery(USER_ID));
+
+        assertThat(result).extracting("id").containsExactly("organic");
+        assertThat(userShoppingFilterRepository.findFilterIdsByUserIdCalls).isOne();
+        assertThat(shoppingFilterRepository.findAllByDisplayOrderCalls).isOne();
     }
 
     @Test

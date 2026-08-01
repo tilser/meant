@@ -49,7 +49,9 @@ class AgentCanonicalProductArtifactTest {
                 new UserCanonicalProductPersonalizationResult(
                         "Matches the user's running preference.",
                         List.of("running"),
-                        List.of()
+                        List.of(),
+                        List.of("strong-reviews"),
+                        List.of("no-polyester")
                 );
         AgentCanonicalProductArtifact artifact = AgentCanonicalProductArtifact.discovery(
                 product,
@@ -91,6 +93,10 @@ class AgentCanonicalProductArtifactTest {
         assertThat(durableArtifactJson.toString()).isEqualTo(establishedJson.toString());
         assertThat(artifactJson.get("recommendedOfferKey").asText())
                 .isEqualTo(product.offers().getFirst().key());
+        assertThat(artifactJson.at("/personalization/unknownFilterIds/0").asText())
+                .isEqualTo("strong-reviews");
+        assertThat(artifactJson.at("/personalization/hardConstraintFilterIds/0").asText())
+                .isEqualTo("no-polyester");
         assertThat(artifactJson.at("/offers/0/key").asText())
                 .isEqualTo(product.offers().getFirst().key());
         assertThat(artifactJson.at("/offers/0/merchantOrigin").asText())
@@ -128,6 +134,11 @@ class AgentCanonicalProductArtifactTest {
                 );
         assertThat(durableOfferJson.at("/checkoutUrl").asText())
                 .isEqualTo("https://running.example/cart/shoe-1-size-42");
+
+        AgentProductReferenceResult modelReference = new AgentProductReadResultService(
+                new AgentJsonSupport(mapper, properties())
+        ).reference(product, 1, null, personalization);
+        assertThat(modelReference.personalization()).isEqualTo(personalization);
     }
 
     @Test

@@ -470,7 +470,8 @@ export function ProductModal({
   const curatorTake = productCuratedTake(product, preferences)
   const curatorAdvantages = productCuratedAdvantages(product, preferences)
   const curatorTradeoffs = productCuratedTradeoffs(product, preferences)
-  const hasPreferenceMatches = product.satisfies.length > 0 || product.misses.length > 0
+  const hasPreferenceEvidence =
+    product.satisfies.length > 0 || product.misses.length > 0 || (product.unknowns?.length ?? 0) > 0
   const detailDescription = stripHtml(
     activeMerchantDetails?.description || product.detailDescription || '',
   )
@@ -1008,13 +1009,28 @@ export function ProductModal({
 
               <section className="mt-block">
                 <div className="mt-block-label mt-mono">Preference match</div>
-                {hasPreferenceMatches ? (
+                {hasPreferenceEvidence ? (
                   <div className="mt-chips">
                     {product.satisfies.map((id) => (
-                      <PrefChip key={id} label={prefLabel(preferences, id)} variant="lit" />
+                      <PrefChip
+                        key={id}
+                        label={`Matched: ${prefLabel(preferences, id)}`}
+                        variant="lit"
+                      />
                     ))}
                     {product.misses.map((id) => (
-                      <PrefChip key={id} label={prefLabel(preferences, id)} variant="missed" />
+                      <PrefChip
+                        key={id}
+                        label={`Conflict: ${prefLabel(preferences, id)}`}
+                        variant="missed"
+                      />
+                    ))}
+                    {(product.unknowns ?? []).map((id) => (
+                      <PrefChip
+                        key={id}
+                        label={`${product.hardConstraints?.includes(id) ? 'Hard constraint unknown' : 'Unknown'}: ${prefLabel(preferences, id)}`}
+                        variant="muted"
+                      />
                     ))}
                   </div>
                 ) : (

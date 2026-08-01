@@ -9,6 +9,8 @@ const preferences: Preference[] = [
   { id: 'natural', label: 'Natural materials', desc: '' },
   { id: 'local', label: 'Locally made', desc: '' },
   { id: 'repairable', label: 'Repairable', desc: '' },
+  { id: 'no-polyester', label: 'No polyester', desc: '', polarity: 'avoid' },
+  { id: 'highly-rated', label: 'Strong reviews', desc: '' },
 ]
 
 const product: Product = {
@@ -77,5 +79,34 @@ describe('ProductCard tag rails', () => {
       expect(markup).toContain('>Merchant<')
       expect(markup).not.toContain(technicalSeller)
     }
+  })
+
+  test('renders unknown preference evidence and does not claim there are no trade-offs', () => {
+    const markup = renderToStaticMarkup(
+      <ProductCard
+        product={{
+          ...product,
+          satisfies: [],
+          misses: [],
+          unknowns: ['no-polyester', 'highly-rated'],
+          hardConstraints: ['no-polyester'],
+          note: 'Unknown: No polyester and Strong reviews. Hard constraints: No polyester (unknown).',
+        }}
+        index={0}
+        deliveryLocations={[]}
+        preferences={preferences}
+        onOpen={() => undefined}
+        savedSet={new Set()}
+        savePendingSet={new Set()}
+        onToggleSave={() => undefined}
+      />,
+    )
+
+    expect(markup).toContain('Hard constraint unknown: No polyester')
+    expect(markup).toContain('Unknown: Strong reviews')
+    expect(markup).toContain(
+      'Unknown: No polyester and Strong reviews. Hard constraints: No polyester (unknown).',
+    )
+    expect(markup.toLowerCase()).not.toContain('no preference trade-offs')
   })
 })

@@ -57,8 +57,16 @@ test('generated OpenAPI schema exposes only federated V1 search routes', () => {
 
   const personalizationFields: Array<
     keyof components['schemas']['CanonicalProductPersonalizationResponse']
-  > = ['whyMeantForYou', 'matchedFilterIds', 'missedFilterIds']
+  > = [
+    'whyMeantForYou',
+    'matchedFilterIds',
+    'missedFilterIds',
+    'unknownFilterIds',
+    'hardConstraintFilterIds',
+  ]
   expect(personalizationFields).toContain('whyMeantForYou')
+  expect(personalizationFields).toContain('unknownFilterIds')
+  expect(personalizationFields).toContain('hardConstraintFilterIds')
 
   const canonicalAttributeFields: Array<
     keyof components['schemas']['CanonicalProductAttributeResponse']

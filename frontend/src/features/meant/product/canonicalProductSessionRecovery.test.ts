@@ -68,6 +68,8 @@ function canonicalProduct(key: string, offer: CanonicalOfferProfile): CanonicalP
       whyMeantForYou: 'Organic and gluten-free matches your preferences.',
       matchedFilterIds: [],
       missedFilterIds: [],
+      unknownFilterIds: [],
+      hardConstraintFilterIds: [],
     },
     recommendedOfferKey: offer.key,
     offers: [offer],

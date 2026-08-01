@@ -115,6 +115,8 @@ export function productFromCanonical(product: CanonicalProductProfile): Product 
     merchants: uniqueMerchantCount(product),
     satisfies: personalization?.matchedFilterIds ?? [],
     misses: personalization?.missedFilterIds ?? [],
+    unknowns: personalization?.unknownFilterIds ?? [],
+    hardConstraints: personalization?.hardConstraintFilterIds ?? [],
     note: personalization?.whyMeantForYou?.trim() || SEARCH_RELEVANCE_TAKE,
     pros: [],
     cons: [],

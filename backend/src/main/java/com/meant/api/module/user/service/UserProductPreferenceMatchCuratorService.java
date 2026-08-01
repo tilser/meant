@@ -123,10 +123,33 @@ public class UserProductPreferenceMatchCuratorService {
                 }
             });
             List<String> missedFilterIds = List.copyOf(missedFactsByFilterId.keySet());
+            Set<String> classified = Stream.concat(
+                            matchedFilterIds.stream(),
+                            missedFilterIds.stream()
+                    )
+                    .collect(Collectors.toSet());
+            List<String> unknownFilterIds = filtersById.keySet().stream()
+                    .filter(filterId -> !classified.contains(filterId))
+                    .sorted(Comparator
+                            .comparingInt((String filterId) -> unknownPriority(filtersById.get(filterId)))
+                            .thenComparingInt(filterId -> displayOrder(filtersById.get(filterId))))
+                    .toList();
+            List<String> hardConstraintFilterIds = filtersById.entrySet().stream()
+                    .filter(entry -> entry.getValue().hardConstraint())
+                    .map(Map.Entry::getKey)
+                    .toList();
             curated.put(product.key(), new UserCanonicalProductPersonalizationResult(
-                    canonicalTake(matchedFactsByFilterId.values(), missedFactsByFilterId.values()),
+                    canonicalTake(
+                            matchedFactsByFilterId,
+                            missedFactsByFilterId,
+                            unknownFilterIds,
+                            hardConstraintFilterIds,
+                            filtersById
+                    ),
                     matchedFilterIds,
-                    missedFilterIds
+                    missedFilterIds,
+                    unknownFilterIds,
+                    hardConstraintFilterIds
             ));
         }
         return Map.copyOf(curated);
@@ -308,34 +331,103 @@ public class UserProductPreferenceMatchCuratorService {
         return tokens(value).stream().findFirst().orElse("");
     }
 
-    private String canonicalTake(Collection<String> matchedEvidence, Collection<String> missedEvidence) {
-        List<String> matchedFacts = matchedEvidence.stream()
+    private String canonicalTake(
+            Map<String, String> matchedEvidence,
+            Map<String, String> missedEvidence,
+            List<String> unknownFilterIds,
+            List<String> hardConstraintFilterIds,
+            Map<String, CuratorFilter> filtersById
+    ) {
+        List<String> matchedFacts = matchedEvidence.values().stream()
                 .filter(value -> value != null && !value.isBlank())
                 .distinct()
                 .limit(3)
                 .toList();
-        List<String> missedFacts = missedEvidence.stream()
+        List<String> missedFacts = missedEvidence.values().stream()
                 .filter(value -> value != null && !value.isBlank())
                 .distinct()
                 .limit(3)
                 .toList();
-        if (!matchedFacts.isEmpty() && !missedFacts.isEmpty()) {
-            String preferenceWord = matchedFacts.size() == 1 ? "preference" : "preferences";
-            String conflict = missedFacts.size() == 1 ? "another saved preference" : "other saved preferences";
-            return limit("Product details list %s, matching your saved %s, but also list %s, which may conflict with %s."
-                    .formatted(humanList(matchedFacts), preferenceWord, humanList(missedFacts), conflict));
-        }
+        List<String> unknownLabels = filterLabels(unknownFilterIds, filtersById);
+        List<String> hardConstraints = hardConstraintFilterIds.stream()
+                .map(filterId -> hardConstraintSummary(
+                        filterId,
+                        matchedEvidence,
+                        missedEvidence,
+                        filtersById
+                ))
+                .filter(value -> value != null && !value.isBlank())
+                .limit(3)
+                .toList();
+        List<String> parts = new ArrayList<>();
         if (!matchedFacts.isEmpty()) {
-            String preferenceWord = matchedFacts.size() == 1 ? "preference" : "preferences";
-            return limit("Product details list %s, matching your saved %s."
-                    .formatted(humanList(matchedFacts), preferenceWord));
+            parts.add("Matched: " + humanList(matchedFacts) + ".");
         }
         if (!missedFacts.isEmpty()) {
-            String preferenceWord = missedFacts.size() == 1 ? "preference" : "preferences";
-            return limit("Product details list %s, which may conflict with your saved %s."
-                    .formatted(humanList(missedFacts), preferenceWord));
+            parts.add("Conflicts: " + humanList(missedFacts) + ".");
         }
-        return fallbackTake(null);
+        if (!unknownLabels.isEmpty()) {
+            parts.add("Unknown: " + humanList(unknownLabels) + ".");
+        }
+        if (!hardConstraints.isEmpty()) {
+            parts.add("Hard constraints: " + humanList(hardConstraints) + ".");
+        }
+        return parts.isEmpty() ? fallbackTake(null) : limit(String.join(" ", parts));
+    }
+
+    private List<String> filterLabels(
+            List<String> filterIds,
+            Map<String, CuratorFilter> filtersById
+    ) {
+        return filterIds.stream()
+                .map(filtersById::get)
+                .filter(Objects::nonNull)
+                .map(filter -> filter.label() == null ? filter.id() : filter.label())
+                .filter(label -> !label.isBlank())
+                .limit(3)
+                .toList();
+    }
+
+    private int unknownPriority(CuratorFilter filter) {
+        if (filter == null) {
+            return 5;
+        }
+        if (filter.hardConstraint()) {
+            return 0;
+        }
+        if ("sustainability".equals(filter.source().category())) {
+            return 1;
+        }
+        if ("highly-rated".equals(filter.id()) || "many-reviews".equals(filter.id())) {
+            return 2;
+        }
+        if ("interests".equals(filter.source().category())) {
+            return 3;
+        }
+        return 4;
+    }
+
+    private int displayOrder(CuratorFilter filter) {
+        return filter == null || filter.source().displayOrder() == null
+                ? Integer.MAX_VALUE
+                : filter.source().displayOrder();
+    }
+
+    private String hardConstraintSummary(
+            String filterId,
+            Map<String, String> matchedEvidence,
+            Map<String, String> missedEvidence,
+            Map<String, CuratorFilter> filtersById
+    ) {
+        CuratorFilter filter = filtersById.get(filterId);
+        if (filter == null) {
+            return null;
+        }
+        String label = filter.label() == null ? filter.id() : filter.label();
+        String status = matchedEvidence.containsKey(filterId)
+                ? "matched"
+                : missedEvidence.containsKey(filterId) ? "conflict" : "unknown";
+        return label + " (" + status + ")";
     }
 
     private String curatorTake(
@@ -485,7 +577,8 @@ public class UserProductPreferenceMatchCuratorService {
             List<String> phrases,
             List<List<String>> evidenceTokenGroups,
             List<String> avoidedTerms,
-            boolean avoid
+            boolean avoid,
+            boolean hardConstraint
     ) {
 
         static CuratorFilter from(ShoppingFilterResult filter) {
@@ -514,7 +607,8 @@ public class UserProductPreferenceMatchCuratorService {
                         .toList();
             }
             boolean avoid = "avoid".equals(filter.polarity()) || AVOID_PREFIXES.contains(firstToken(filter.label()));
-            return new CuratorFilter(filter, phrases, evidenceTokenGroups, avoidedTerms, avoid);
+            boolean hardConstraint = avoid || "require".equals(filter.polarity());
+            return new CuratorFilter(filter, phrases, evidenceTokenGroups, avoidedTerms, avoid, hardConstraint);
         }
 
         private String id() {

@@ -125,7 +125,7 @@ class GetProductAgentToolTest {
                         2
                 )
         );
-        when(results.reference(product, 1, merchantDetail)).thenReturn(reference);
+        when(results.reference(product, 1, merchantDetail, null)).thenReturn(reference);
         when(results.detailArtifacts(canonicalDetail, 1)).thenReturn(List.of());
 
         GetProductAgentTool tool = new GetProductAgentTool(
@@ -209,7 +209,7 @@ class GetProductAgentToolTest {
                 "offer-coral",
                 List.of()
         );
-        when(results.reference(product, 1, null)).thenReturn(reference);
+        when(results.reference(product, 1, null, null)).thenReturn(reference);
         when(results.detailArtifacts(canonicalDetail, 1)).thenReturn(List.of());
 
         GetProductAgentTool tool = new GetProductAgentTool(
@@ -227,6 +227,6 @@ class GetProductAgentToolTest {
                 .contains("LETHAL SPEED RS MENS FOOTBALL")
                 .doesNotContain("variantDetails");
         assertThat(result.safeSummary()).contains("selectable variant details were unavailable");
-        verify(results).reference(product, 1, null);
+        verify(results).reference(product, 1, null, null);
     }
 }

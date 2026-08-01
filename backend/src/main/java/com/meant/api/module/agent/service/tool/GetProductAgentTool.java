@@ -69,7 +69,7 @@ public class GetProductAgentTool implements AgentTool {
                 .orElseThrow(AgentException::notFound);
         RehydratedProductDetails variantDetails = variantDetails(profile, context, selectedOffer);
         AgentProductListResult output = new AgentProductListResult(
-                List.of(resultService.reference(detail.product(), 1, variantDetails)),
+                List.of(resultService.reference(detail.product(), 1, variantDetails, detail.personalization())),
                 null,
                 false,
                 false,

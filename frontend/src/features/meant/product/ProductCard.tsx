@@ -249,7 +249,8 @@ export function ProductCard({
   const open = () => onOpen(product)
   const savePending = savePendingSet.has(product.id)
   const catalogBadges = catalogBadgeLabels(product)
-  const preferenceTagCount = product.satisfies.length + product.misses.length
+  const preferenceTagCount =
+    product.satisfies.length + product.misses.length + (product.unknowns?.length ?? 0)
   const catalogTagCount = catalogBadges.length + (product.detailError ? 1 : 0)
   const liveStage = product.agentStage ?? 'ranked'
   const curatedFields = productCuratedFields(product, preferences)
@@ -320,10 +321,28 @@ export function ProductCard({
         {preferenceTagCount > 0 ? (
           <ProductTagRail ariaLabel="Preference tags" itemCount={preferenceTagCount}>
             {product.satisfies.map((id) => (
-              <PrefChip key={id} label={prefLabel(preferences, id)} variant="lit" small />
+              <PrefChip
+                key={id}
+                label={`Matched: ${prefLabel(preferences, id)}`}
+                variant="lit"
+                small
+              />
             ))}
             {product.misses.map((id) => (
-              <PrefChip key={id} label={prefLabel(preferences, id)} variant="missed" small />
+              <PrefChip
+                key={id}
+                label={`Conflict: ${prefLabel(preferences, id)}`}
+                variant="missed"
+                small
+              />
+            ))}
+            {(product.unknowns ?? []).map((id) => (
+              <PrefChip
+                key={id}
+                label={`${product.hardConstraints?.includes(id) ? 'Hard constraint unknown' : 'Unknown'}: ${prefLabel(preferences, id)}`}
+                variant="muted"
+                small
+              />
             ))}
           </ProductTagRail>
         ) : null}

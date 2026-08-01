@@ -256,8 +256,12 @@ public record UserGroupedProductSearchV1Response(
             String whyMeantForYou,
             @Schema(description = "Active user filter IDs supported by explicit canonical-product evidence", requiredMode = Schema.RequiredMode.REQUIRED)
             List<String> matchedFilterIds,
-            @Schema(description = "Active avoid-filter IDs contradicted by explicit canonical-product evidence", requiredMode = Schema.RequiredMode.REQUIRED)
-            List<String> missedFilterIds
+            @Schema(description = "Active filter IDs contradicted by explicit canonical-product evidence", requiredMode = Schema.RequiredMode.REQUIRED)
+            List<String> missedFilterIds,
+            @Schema(description = "Active filter IDs that available canonical-product facts neither support nor contradict", requiredMode = Schema.RequiredMode.REQUIRED)
+            List<String> unknownFilterIds,
+            @Schema(description = "Active avoid or require filter IDs that must not be claimed satisfied without evidence", requiredMode = Schema.RequiredMode.REQUIRED)
+            List<String> hardConstraintFilterIds
     ) {
         static CanonicalProductPersonalizationResponse from(
                 UserCanonicalProductPersonalizationResult personalization,
@@ -269,7 +273,9 @@ public record UserGroupedProductSearchV1Response(
             return new CanonicalProductPersonalizationResponse(
                     CatalogBuyerPresentation.text(resolved.whyMeantForYou(), provenance),
                     resolved.matchedFilterIds(),
-                    resolved.missedFilterIds()
+                    resolved.missedFilterIds(),
+                    resolved.unknownFilterIds(),
+                    resolved.hardConstraintFilterIds()
             );
         }
     }

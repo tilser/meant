@@ -36,13 +36,22 @@ public class AgentProductReadResultService {
     }
 
     public AgentProductReferenceResult reference(CanonicalProduct product, int ordinal) {
-        return reference(product, ordinal, null);
+        return reference(product, ordinal, null, null);
     }
 
     public AgentProductReferenceResult reference(
             CanonicalProduct product,
             int ordinal,
             RehydratedProductDetails details
+    ) {
+        return reference(product, ordinal, details, null);
+    }
+
+    public AgentProductReferenceResult reference(
+            CanonicalProduct product,
+            int ordinal,
+            RehydratedProductDetails details,
+            UserCanonicalProductPersonalizationResult personalization
     ) {
         List<ResultProvenance> provenance = Stream.concat(
                         product.provenance().stream(),
@@ -67,6 +76,9 @@ public class AgentProductReadResultService {
                 imageUrl,
                 product.offers().getFirst().key(),
                 offers,
+                personalization == null
+                        ? UserCanonicalProductPersonalizationResult.searchRelevance()
+                        : personalization,
                 AgentProductVariantDetailsResult.from(details)
         );
     }

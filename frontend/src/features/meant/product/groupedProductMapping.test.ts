@@ -21,6 +21,8 @@ function canonicalProduct(key: string): CanonicalProductProfile {
       whyMeantForYou: 'This looks relevant to your search based on the available product details.',
       matchedFilterIds: [],
       missedFilterIds: [],
+      unknownFilterIds: [],
+      hardConstraintFilterIds: [],
     },
     recommendedOfferKey: `${key}-offer-b`,
     offers: ['a', 'b'].map((suffix, index) => ({
@@ -222,6 +224,8 @@ describe('grouped product card mapping', () => {
         'Product details list organic and gluten-free, matching your saved preferences.',
       matchedFilterIds: ['organic', 'gluten-free'],
       missedFilterIds: [],
+      unknownFilterIds: [],
+      hardConstraintFilterIds: ['gluten-free'],
     }
 
     const mapped = productFromCanonical(canonical)
@@ -236,5 +240,25 @@ describe('grouped product card mapping', () => {
       ]),
     ).toBe(canonical.personalization.whyMeantForYou)
     expect(mapped.note).not.toContain('Ranked #')
+  })
+
+  test('preserves matched, conflicting, unknown, and hard-constraint evidence separately', () => {
+    const canonical = canonicalProduct('qa-06')
+    canonical.personalization = {
+      whyMeantForYou:
+        'Matched: streetwear. Conflicts: polyester. Unknown: Strong reviews. Hard constraints: No polyester (conflict).',
+      matchedFilterIds: ['streetwear'],
+      missedFilterIds: ['no-polyester'],
+      unknownFilterIds: ['highly-rated'],
+      hardConstraintFilterIds: ['no-polyester'],
+    }
+
+    const mapped = productFromCanonical(canonical)
+
+    expect(mapped.satisfies).toEqual(['streetwear'])
+    expect(mapped.misses).toEqual(['no-polyester'])
+    expect(mapped.unknowns).toEqual(['highly-rated'])
+    expect(mapped.hardConstraints).toEqual(['no-polyester'])
+    expect(mapped.note).toBe(canonical.personalization.whyMeantForYou)
   })
 })

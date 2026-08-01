@@ -32,6 +32,7 @@ import com.meant.api.module.agent.service.dto.AgentShelfItem;
 import com.meant.api.module.agent.service.dto.AgentVisibleProductContext;
 import com.meant.api.module.agent.service.dto.AgentVisibleProductReference;
 import com.meant.api.module.cart.service.BuyerSafeRoutingScopeKey;
+import com.meant.api.module.user.service.dto.ShoppingFilterResult;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -62,6 +63,7 @@ class AgentContextAssemblerTest {
     private final ShoppingMissionRepository missions = mock(ShoppingMissionRepository.class);
     private final AgentVisibleProductContextService visibleProductContexts =
             mock(AgentVisibleProductContextService.class);
+    private final AgentContextProfileService contextProfiles = mock(AgentContextProfileService.class);
     private final AgentContextAssembler assembler = new AgentContextAssembler(
             conversations,
             runs,
@@ -71,7 +73,8 @@ class AgentContextAssemblerTest {
             missions,
             properties(),
             new AgentCartSnapshotSupport(new ObjectMapper()),
-            visibleProductContexts
+            visibleProductContexts,
+            contextProfiles
     );
 
     @Test
@@ -132,6 +135,10 @@ class AgentContextAssemblerTest {
                 .contains("deciding yourself which tools and follow-up questions are useful")
                 .contains("Server-issued artifacts and their stable IDs are authoritative references")
                 .contains("search_catalog returns products together with appliedFilters and unsetFilters")
+                .contains("distinguish matched")
+                .contains("explicit conflicts, unknowns, and hard constraints")
+                .contains("Never claim a hard constraint is satisfied without direct evidence")
+                .contains("never say there are no trade-offs")
                 .contains("Before every cart addition, call")
                 .contains("select_product_variant in the current run")
                 .contains("complete requested option combination")
@@ -161,6 +168,46 @@ class AgentContextAssemblerTest {
                 .doesNotContain("cartLineId=" + removedLineId)
                 .contains("priorCartLineId=" + removedLineId + " offerKey=offer-jacket-1")
                 .doesNotContain("[CART_LINE]");
+    }
+
+    @Test
+    void includesTheCompleteActivePreferenceSetInVerifiedContext() {
+        givenRunAndMessages();
+        when(contextProfiles.activePreferences(USER_ID)).thenReturn(List.of(
+                new ShoppingFilterResult(
+                        "streetwear",
+                        "Streetwear",
+                        "Prefer streetwear styling.",
+                        "interests",
+                        "prefer",
+                        10
+                ),
+                new ShoppingFilterResult(
+                        "no-polyester",
+                        "No polyester",
+                        "Avoid polyester blends.",
+                        "materials",
+                        "avoid",
+                        20
+                ),
+                new ShoppingFilterResult(
+                        "highly-rated",
+                        "Strong reviews",
+                        "Prefer products with strong reviews.",
+                        "shopping",
+                        "prefer",
+                        30
+                )
+        ));
+
+        String grounding = assembler.assemble(RUN_ID).messages().get(1).text();
+
+        assertThat(grounding)
+                .contains("Authoritative active saved preferences")
+                .contains("This is the complete active set for this run")
+                .contains("id=streetwear label=Streetwear category=interests polarity=prefer hardConstraint=false")
+                .contains("id=no-polyester label=No polyester category=materials polarity=avoid hardConstraint=true")
+                .contains("id=highly-rated label=Strong reviews category=shopping polarity=prefer hardConstraint=false");
     }
 
     @Test
@@ -282,7 +329,8 @@ class AgentContextAssemblerTest {
                 missions,
                 properties(4_096),
                 new AgentCartSnapshotSupport(new ObjectMapper()),
-                visibleProductContexts
+                visibleProductContexts,
+                contextProfiles
         );
 
         AgentModelContext context = tightBudgetAssembler.assemble(RUN_ID);
@@ -608,6 +656,7 @@ class AgentContextAssemblerTest {
         when(messages.findById(TRIGGER_MESSAGE_ID)).thenReturn(Optional.of(triggering));
         when(messages.findContextMessages(any(), any(), anyLong(), any()))
                 .thenReturn(chronological.reversed());
+        when(contextProfiles.activePreferences(USER_ID)).thenReturn(List.of());
     }
 
     private AgentMessage message(long sequence, AgentMessageRole role, String text) {

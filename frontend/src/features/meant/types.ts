@@ -110,6 +110,8 @@ export interface Product {
   merchants: number
   satisfies: readonly PreferenceId[]
   misses: readonly PreferenceId[]
+  unknowns?: readonly PreferenceId[]
+  hardConstraints?: readonly PreferenceId[]
   note: string
   pros: readonly string[]
   cons: readonly string[]

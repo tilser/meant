@@ -42,6 +42,8 @@ function canonicalProduct(
       whyMeantForYou: 'Matches your saved trail-running preference.',
       matchedFilterIds: ['trail-running'],
       missedFilterIds: [],
+      unknownFilterIds: [],
+      hardConstraintFilterIds: [],
     },
     recommendedOfferKey: offerKey,
     offers: [
@@ -450,6 +452,8 @@ describe('agent artifact mapping', () => {
           whyMeantForYou: 'Matches your durable trail preference.',
           matchedFilterIds: ['trail'],
           missedFilterIds: [],
+          unknownFilterIds: [],
+          hardConstraintFilterIds: [],
         },
         offerRankingExplanations: {
           'exact-offer-detail': { scoreBasisPoints: 9000 },

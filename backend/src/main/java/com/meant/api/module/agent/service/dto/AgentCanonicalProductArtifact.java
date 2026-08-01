@@ -212,7 +212,9 @@ public record AgentCanonicalProductArtifact(
         return new UserCanonicalProductPersonalizationResult(
                 CatalogBuyerPresentation.text(resolved.whyMeantForYou(), provenance),
                 resolved.matchedFilterIds(),
-                resolved.missedFilterIds()
+                resolved.missedFilterIds(),
+                resolved.unknownFilterIds(),
+                resolved.hardConstraintFilterIds()
         );
     }
 

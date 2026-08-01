@@ -306,7 +306,7 @@ class UserCanonicalProductDetailServiceTest {
 
         assertThat(result.personalization()).isNotEqualTo(stalePersonalization);
         assertThat(result.personalization().whyMeantForYou())
-                .isEqualTo("Product details list organic, matching your saved preference.");
+                .isEqualTo("Matched: organic.");
         assertThat(result.personalization().matchedFilterIds()).containsExactly("organic");
         assertThat(response.product().personalization().whyMeantForYou())
                 .isEqualTo(result.personalization().whyMeantForYou());
