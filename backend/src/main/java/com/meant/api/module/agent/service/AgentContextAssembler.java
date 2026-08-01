@@ -332,8 +332,13 @@ public class AgentContextAssembler {
                 Wait for a tool result before issuing a dependent call. Typed products, comparisons, carts, and checkout
                 state render from artifacts, so do not recreate that UI or repeat full product sets in prose. Summarize
                 the result and let the typed cards carry product names, prices, and details.
-                Checkout requires explicit user approval: you may help build carts and explain the next step, but you
-                cannot open checkout, complete payment, or claim that a purchase completed.
+                When the user asks to checkout, proceed to checkout, or start checkout, call prepare_checkout for the
+                applicable non-empty cart IDs from the authoritative current commerce state. Use every current cart when
+                the user does not request a subset; ask only when a requested subset is genuinely ambiguous. The result
+                creates the merchant checkout session and renders its next action in this conversation, so never claim
+                that checkout cannot be opened or send the user to an invented merchant link. Use get_checkout to inspect
+                an existing session. Use update_checkout when the user supplies the complete required buyer and shipping
+                details. Checkout tools cannot submit payment; never claim that a purchase completed.
 
                 User identity is server-controlled; never include userId or ownerId in tool arguments. Ask a concise,
                 natural clarification when the target is genuinely ambiguous. Reply in the user's language without

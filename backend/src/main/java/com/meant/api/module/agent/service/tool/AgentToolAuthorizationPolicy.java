@@ -8,7 +8,8 @@ import org.springframework.stereotype.Service;
 
 /**
  * Structural tool gate. Language and inferred intent never participate in authorization.
- * Checkout preparation is reserved for the explicit user-action lane ({@code runId == null}).
+ * Checkout session preparation and updates do not submit payment, so they are available to the model.
+ * Irreversible commerce mutations remain unavailable in every agent execution lane.
  */
 @Service
 public class AgentToolAuthorizationPolicy {
@@ -26,11 +27,7 @@ public class AgentToolAuthorizationPolicy {
         if (context == null || descriptor == null) {
             return false;
         }
-        if (context.runId() == null) {
-            return descriptor.riskClass() != AgentToolRisk.IRREVERSIBLE_MUTATION;
-        }
-        return descriptor.riskClass() == AgentToolRisk.READ
-                || descriptor.riskClass() == AgentToolRisk.REVERSIBLE_MUTATION;
+        return descriptor.riskClass() != AgentToolRisk.IRREVERSIBLE_MUTATION;
     }
 
     /** Invocation arguments are validated by {@code ReferenceIntegrityPolicy}; this gate remains risk-only. */

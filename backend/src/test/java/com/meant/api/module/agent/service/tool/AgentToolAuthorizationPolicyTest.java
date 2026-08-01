@@ -14,11 +14,12 @@ class AgentToolAuthorizationPolicyTest {
     private final AgentToolAuthorizationPolicy policy = new AgentToolAuthorizationPolicy();
 
     @Test
-    void modelLaneAvailabilityDependsOnlyOnRiskAndNotOnUserLanguage() {
+    void modelLaneExposesCheckoutPreparationButNeverIrreversibleMutations() {
         List<AgentToolDescriptor> descriptors = List.of(
                 descriptor("search_catalog", AgentToolRisk.READ),
                 descriptor("prepare_carts", AgentToolRisk.REVERSIBLE_MUTATION),
                 descriptor("prepare_checkout", AgentToolRisk.CHECKOUT_PREPARATION),
+                descriptor("update_checkout", AgentToolRisk.CHECKOUT_PREPARATION),
                 descriptor("place_order", AgentToolRisk.IRREVERSIBLE_MUTATION)
         );
 
@@ -30,7 +31,7 @@ class AgentToolAuthorizationPolicyTest {
         )) {
             assertThat(policy.available(modelContext(text), descriptors))
                     .extracting(AgentToolDescriptor::name)
-                    .containsExactly("search_catalog", "prepare_carts");
+                    .containsExactly("search_catalog", "prepare_carts", "prepare_checkout", "update_checkout");
         }
     }
 
@@ -45,11 +46,11 @@ class AgentToolAuthorizationPolicyTest {
     }
 
     @Test
-    void modelLaneCannotPrepareCheckoutEvenWhenUserTextRequestsIt() {
+    void modelLaneCanPrepareCheckoutWhenTheModelChoosesTheTool() {
         assertThat(policy.authorized(
                 modelContext("Prepare checkout now."),
                 descriptor("prepare_checkout", AgentToolRisk.CHECKOUT_PREPARATION)
-        )).isFalse();
+        )).isTrue();
     }
 
     private AgentToolExecutionContext modelContext(String text) {

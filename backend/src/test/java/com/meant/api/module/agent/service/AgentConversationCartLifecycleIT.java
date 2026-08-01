@@ -16,7 +16,6 @@ import com.meant.api.module.agent.repository.AgentArtifactReferenceRepository;
 import com.meant.api.module.agent.repository.AgentRunRepository;
 import com.meant.api.module.agent.repository.AgentToolInvocationRepository;
 import com.meant.api.module.agent.service.command.CreateAgentConversationCommand;
-import com.meant.api.module.agent.service.command.RecordAgentUserActionCommand;
 import com.meant.api.module.agent.service.command.SubmitAgentTurnCommand;
 import com.meant.api.module.agent.service.dto.AgentModelRequest;
 import com.meant.api.module.agent.service.dto.AgentModelResponse;
@@ -91,7 +90,6 @@ class AgentConversationCartLifecycleIT extends PostgresIntegrationTestSupport {
     @Autowired private AgentConversationService conversationService;
     @Autowired private AgentTurnService turnService;
     @Autowired private AgentRunCoordinator coordinator;
-    @Autowired private AgentUserActionService userActionService;
     @Autowired private AgentRunRepository runRepository;
     @Autowired private AgentToolInvocationRepository invocationRepository;
     @Autowired private AgentArtifactReferenceRepository artifactRepository;
@@ -102,7 +100,7 @@ class AgentConversationCartLifecycleIT extends PostgresIntegrationTestSupport {
     @MockitoBean private CartService cartService;
 
     @Test
-    void checkoutRequiresAnExplicitUserActionAfterTheModelReadsThePersistedCart() throws Exception {
+    void conversationalCheckoutRequestCreatesCheckoutAfterTheModelReadsThePersistedCart() throws Exception {
         persistUser();
         String offerKey = "offer:silk-wave-swim-shorts:navy-small";
         CartResult activeCart = cartResult(List.of(line(
@@ -120,26 +118,24 @@ class AgentConversationCartLifecycleIT extends PostgresIntegrationTestSupport {
         scriptModel(modelRequests,
                 tool("read-cart", "get_active_carts", "{}"),
                 text("Your cart contains 1 x 1082 - Silk Wave Swim Shorts - Navy / Small."),
-                text("Use the checkout confirmation button when you are ready."));
+                tool("create-checkout", "prepare_checkout",
+                        "{\"cartIds\":[\"" + CART_ID + "\"]}"),
+                text("Your checkout is ready in this conversation."));
 
         UUID conversationId = conversationService.create(
                 new CreateAgentConversationCommand(USER_ID, "Swim shorts checkout")).conversationId();
         UUID cartReadRunId = runTurn(conversationId, "what is inside my cart?", "cart-read-before-checkout");
         UUID checkoutRunId = runTurn(conversationId, "lets do checkout", "checkout-existing-cart");
 
-        userActionService.perform(new RecordAgentUserActionCommand(
-                USER_ID,
-                conversationId,
-                "prepare_checkout",
-                "{\"cartIds\":[\"" + CART_ID + "\"]}",
-                "checkout-existing-cart-user-action",
-                "Approved checkout preparation"
-        ));
-
         assertThat(invocations(cartReadRunId))
                 .singleElement()
                 .satisfies(invocation -> assertThat(invocation.getToolName()).isEqualTo("get_active_carts"));
-        assertThat(invocations(checkoutRunId)).isEmpty();
+        assertThat(invocations(checkoutRunId))
+                .singleElement()
+                .satisfies(invocation -> {
+                    assertThat(invocation.getToolName()).isEqualTo("prepare_checkout");
+                    assertThat(invocation.getStatus()).isEqualTo(AgentToolInvocationStatus.COMPLETED);
+                });
 
         AgentModelRequest checkoutRequest = modelRequests.stream()
                 .filter(request -> request.messages().stream()
@@ -157,7 +153,8 @@ class AgentConversationCartLifecycleIT extends PostgresIntegrationTestSupport {
                         .contains("productContext=1082 - Silk Wave Swim Shorts | Field Supply | Navy / Small"));
         assertThat(checkoutRequest.tools())
                 .extracting(tool -> tool.name())
-                .doesNotContain("prepare_checkout");
+                .contains("prepare_checkout", "get_checkout", "update_checkout")
+                .doesNotContain("complete_checkout");
 
         ArgumentCaptor<GetCheckoutQuery> checkout = ArgumentCaptor.forClass(GetCheckoutQuery.class);
         verify(cartService).checkout(checkout.capture(), any(UUID.class));

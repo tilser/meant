@@ -18,7 +18,6 @@ import com.meant.api.module.agent.repository.AgentRunRepository;
 import com.meant.api.module.agent.repository.AgentToolInvocationRepository;
 import com.meant.api.module.agent.repository.ShoppingMissionRepository;
 import com.meant.api.module.agent.service.command.CreateAgentConversationCommand;
-import com.meant.api.module.agent.service.command.RecordAgentUserActionCommand;
 import com.meant.api.module.agent.service.command.SubmitAgentTurnCommand;
 import com.meant.api.module.agent.service.dto.AgentArtifact;
 import com.meant.api.module.agent.service.dto.AgentModelRequest;
@@ -80,7 +79,6 @@ class AgentNorthStarMissionCheckoutIT extends PostgresIntegrationTestSupport {
     @Autowired private AgentConversationService conversationService;
     @Autowired private AgentTurnService turnService;
     @Autowired private AgentRunCoordinator coordinator;
-    @Autowired private AgentUserActionService userActionService;
     @Autowired private AgentArtifactService artifactService;
     @Autowired private AgentRunRepository runRepository;
     @Autowired private AgentToolInvocationRepository invocationRepository;
@@ -126,7 +124,7 @@ class AgentNorthStarMissionCheckoutIT extends PostgresIntegrationTestSupport {
     }
 
     @Test
-    void picnicMissionBuildsCartsAndRequiresUserApprovalBeforeCheckout() throws InterruptedException {
+    void picnicMissionBuildsCartsAndCreatesCheckoutWhenTheUserRequestsIt() throws InterruptedException {
         var conversation = conversationService.create(
                 new CreateAgentConversationCommand(USER_ID, "Summer picnic mission"));
         artifactService.persist(
@@ -159,8 +157,11 @@ class AgentNorthStarMissionCheckoutIT extends PostgresIntegrationTestSupport {
                           {"offerKey":"%s","quantity":1}
                         ]}
                         """.formatted(BLANKET_OFFER, CUPS_OFFER, SNACKS_OFFER));
+                case 5 -> toolResponse("prepare-checkouts", "prepare_checkout", """
+                        {"cartIds":["%s","%s"]}
+                        """.formatted(CART_ONE_ID, CART_TWO_ID));
                 default -> new AgentModelResponse(
-                        "Two merchant carts are ready; confirm before preparing checkout.",
+                        "Both merchant checkouts are ready in this conversation.",
                         List.of(),
                         new AgentModelUsage(80L, 20L),
                         "stop",
@@ -177,21 +178,13 @@ class AgentNorthStarMissionCheckoutIT extends PostgresIntegrationTestSupport {
         ));
         coordinator.schedule(accepted.runId());
 
-        verify(modelGateway, timeout(8_000).times(6)).turn(any(), any(), any());
+        verify(modelGateway, timeout(8_000).times(7)).turn(any(), any(), any());
         awaitTerminalRun(accepted.runId());
-        var checkoutAction = userActionService.perform(new RecordAgentUserActionCommand(
-                USER_ID,
-                conversation.conversationId(),
-                "prepare_checkout",
-                "{\"cartIds\":[\"" + CART_ONE_ID + "\",\"" + CART_TWO_ID + "\"]}",
-                "north-star-picnic-checkout",
-                "Approved checkout preparation"
-        ));
 
         var run = runRepository.findById(accepted.runId()).orElseThrow();
         assertThat(run.getStatus()).isEqualTo(AgentRunStatus.COMPLETED);
-        assertThat(run.getIterationCount()).isEqualTo(6);
-        assertThat(run.getToolInvocationCount()).isEqualTo(5);
+        assertThat(run.getIterationCount()).isEqualTo(7);
+        assertThat(run.getToolInvocationCount()).isEqualTo(6);
 
         var invocations = invocationRepository.findByRunIdOrderByCreatedAtAsc(run.getId());
         assertThat(invocations)
@@ -201,7 +194,8 @@ class AgentNorthStarMissionCheckoutIT extends PostgresIntegrationTestSupport {
                         "select_product_variant",
                         "select_product_variant",
                         "select_product_variant",
-                        "prepare_carts"
+                        "prepare_carts",
+                        "prepare_checkout"
                 );
         assertThat(invocations)
                 .extracting(tool -> tool.getStatus())
@@ -230,15 +224,15 @@ class AgentNorthStarMissionCheckoutIT extends PostgresIntegrationTestSupport {
         assertThat(artifacts).filteredOn(value -> value.getArtifactType() == AgentArtifactType.CART)
                 .extracting(value -> value.getCartId())
                 .containsExactlyInAnyOrder(CART_ONE_ID, CART_TWO_ID);
-        assertThat(checkoutAction.artifacts()).filteredOn(value -> value.type() == AgentArtifactType.CHECKOUT)
+        assertThat(artifacts).filteredOn(value -> value.getArtifactType() == AgentArtifactType.CHECKOUT)
                 .satisfiesExactlyInAnyOrder(
                         value -> {
-                            assertThat(value.cartId()).isEqualTo(CART_ONE_ID);
-                            assertThat(value.checkoutAttemptId()).isEqualTo(CHECKOUT_ONE_ID);
+                            assertThat(value.getCartId()).isEqualTo(CART_ONE_ID);
+                            assertThat(value.getCheckoutAttemptId()).isEqualTo(CHECKOUT_ONE_ID);
                         },
                         value -> {
-                            assertThat(value.cartId()).isEqualTo(CART_TWO_ID);
-                            assertThat(value.checkoutAttemptId()).isEqualTo(CHECKOUT_TWO_ID);
+                            assertThat(value.getCartId()).isEqualTo(CART_TWO_ID);
+                            assertThat(value.getCheckoutAttemptId()).isEqualTo(CHECKOUT_TWO_ID);
                         }
                 );
         assertThat(artifacts).allSatisfy(value -> {
@@ -253,10 +247,11 @@ class AgentNorthStarMissionCheckoutIT extends PostgresIntegrationTestSupport {
                 .flatExtracting(CreateCartCommand::addItems)
                 .extracting(CreateCartCommand.AddItem::offerKey)
                 .containsExactlyInAnyOrder(BLANKET_OFFER, CUPS_OFFER, SNACKS_OFFER);
-        assertThat(requests).hasSize(6);
-        assertThat(requests).allSatisfy(request -> assertThat(request.tools())
-                .noneMatch(tool -> tool.name().equals("prepare_checkout")
-                        || tool.name().equals("complete_checkout")));
+        assertThat(requests).hasSize(7);
+        assertThat(requests).allSatisfy(request -> {
+            assertThat(request.tools()).anyMatch(tool -> tool.name().equals("prepare_checkout"));
+            assertThat(request.tools()).noneMatch(tool -> tool.name().equals("complete_checkout"));
+        });
     }
 
     private AgentModelResponse toolResponse(String id, String name, String arguments) {
