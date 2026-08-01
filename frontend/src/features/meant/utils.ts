@@ -10,6 +10,7 @@ import type {
   CheckoutPayload,
   ClothingFit,
   CorePreferenceId,
+  MonetaryAmount,
   Offer,
   Order,
   Preference,
@@ -52,18 +53,36 @@ export function minorUnitsToMajor(
     : minorUnits / 10 ** exponent
 }
 
+export function monetaryAmount(
+  amount: number | null | undefined,
+  currency: string | null | undefined,
+): MonetaryAmount | null {
+  if (amount == null || !Number.isFinite(amount) || currencyExponent(currency) == null) {
+    return null
+  }
+  return { amount, currency: currency!.trim().toUpperCase() }
+}
+
+export function monetaryAmountFromMinorUnits(
+  minorUnits: number | null | undefined,
+  currency: string | null | undefined,
+): MonetaryAmount | null {
+  return monetaryAmount(minorUnitsToMajor(minorUnits, currency), currency)
+}
+
 export function money(
   value: number | null | undefined,
   currency: string | null | undefined = 'USD',
 ): string {
-  if (value == null || !Number.isFinite(value) || !currency?.trim()) {
+  const amount = monetaryAmount(value, currency)
+  if (!amount) {
     return 'Price unavailable'
   }
   try {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
-      currency: currency.trim().toUpperCase(),
-    }).format(value)
+      currency: amount.currency,
+    }).format(amount.amount)
   } catch {
     return 'Price unavailable'
   }
@@ -323,10 +342,14 @@ function preferenceScore(product: Product, activeIds: ReadonlySet<PreferenceId>)
 }
 
 export function productPriceFrom(product: Product, locations: DeliveryLocations): number | null {
-  if (product.canonicalProduct) return product.priceFrom
-  const offers = availableOffers(product, locations)
+  const productMoney = monetaryAmount(product.priceFrom, product.priceCurrency)
+  if (product.canonicalProduct) return productMoney?.amount ?? null
+  if (!productMoney) return null
+  const offers = availableOffers(product, locations).filter(
+    (offer) => monetaryAmount(offer.price, offer.priceCurrency)?.currency === productMoney.currency,
+  )
   const prices = offers.map((offer) => offer.price).filter(Number.isFinite)
-  return prices.length > 0 ? Math.min(...prices) : product.priceFrom
+  return prices.length > 0 ? Math.min(...prices) : productMoney.amount
 }
 
 export function productMerchantCount(product: Product, locations: DeliveryLocations): number {
@@ -550,15 +573,16 @@ export function cartLines(cart: readonly CartItem[], products: readonly Product[
       ? exactOffer
       : (product.offers.find((candidate) => candidate.merchant === item.merchant) ??
         product.offers[0])
-    const price = cartItemUnitPrice(item, product)
-    if (price === null) {
+    const price = cartItemUnitMoney(item, product)
+    if (!price) {
       return []
     }
     return [
       {
         ...item,
         product,
-        price,
+        price: price.amount,
+        priceCurrency: price.currency,
         delivery: offer?.delivery ?? 'Calculated at checkout',
       },
     ]
@@ -738,6 +762,7 @@ export interface CartGroup {
   deliveryRaw: number
   delivery: number
   total: number
+  currency: string | null
   remoteTotal: number | null
   remoteSubtotal: number | null
   deliveryGroups: readonly CartDeliveryGroup[]
@@ -779,6 +804,8 @@ export function cartGroups(lines: readonly CartLine[]): CartGroup[] {
     const deliveryRaw = selectedDeliveryCost ?? inferredDelivery ?? (subtotal >= 50 ? 0 : 4.99)
     const delivery = deliveryRaw
     const total = Math.max(0, remoteTotal ?? subtotal + deliveryRaw)
+    const currencies = new Set(items.map((item) => item.priceCurrency))
+    const currency = currencies.size === 1 ? (currencies.values().next().value ?? null) : null
     const hasDeliveryOptions = deliveryGroupsWithOptions.length > 0
     const hasSelectedDelivery = deliveryGroupsWithOptions.every((group) =>
       Boolean(selectedCartDeliveryOption(group)),
@@ -792,6 +819,7 @@ export function cartGroups(lines: readonly CartLine[]): CartGroup[] {
       deliveryRaw,
       delivery,
       total,
+      currency,
       remoteTotal,
       remoteSubtotal,
       deliveryGroups,
@@ -919,33 +947,42 @@ function parseCartAmount(value?: string | number | null): number | null {
   return Number.isFinite(amount) ? amount : null
 }
 
-export function cartItemUnitPrice(item: CartItem, product: Product): number | null {
-  const remoteUnitPrice = parseCartAmount(item.unitPriceAmount)
-  if (remoteUnitPrice !== null) return remoteUnitPrice
-
+export function cartItemUnitMoney(item: CartItem, product: Product): MonetaryAmount | null {
   const offerKey = item.offerKey?.trim()
   const productVariantId = item.productVariantId?.trim()
+  const exactOffer =
+    (offerKey
+      ? product.offers.find((candidate) => candidate.offerKey?.trim() === offerKey)
+      : undefined) ??
+    (productVariantId
+      ? product.offers.find((candidate) => candidate.productVariantId === productVariantId)
+      : undefined)
+  const remoteUnitPrice = parseCartAmount(item.unitPriceAmount)
+  const remoteMoney = monetaryAmount(
+    remoteUnitPrice,
+    item.cartCurrency ?? item.orderCurrency ?? exactOffer?.priceCurrency,
+  )
+  if (remoteMoney) return remoteMoney
+
   if (offerKey || productVariantId) {
-    const exactOffer =
-      (offerKey
-        ? product.offers.find((candidate) => candidate.offerKey?.trim() === offerKey)
-        : undefined) ??
-      (productVariantId
-        ? product.offers.find((candidate) => candidate.productVariantId === productVariantId)
-        : undefined)
-    if (exactOffer && Number.isFinite(exactOffer.price)) return exactOffer.price
+    const exactOfferMoney = monetaryAmount(exactOffer?.price, exactOffer?.priceCurrency)
+    if (exactOfferMoney) return exactOfferMoney
 
     const canonicalPrice = offerKey
       ? product.canonicalProduct?.offers.find((candidate) => candidate.key === offerKey)?.price
       : null
     return canonicalPrice
-      ? minorUnitsToMajor(canonicalPrice.minorUnits, canonicalPrice.currency)
+      ? monetaryAmountFromMinorUnits(canonicalPrice.minorUnits, canonicalPrice.currency)
       : null
   }
 
   const legacyOffer =
     product.offers.find((candidate) => candidate.merchant === item.merchant) ?? product.offers[0]
-  return legacyOffer && Number.isFinite(legacyOffer.price) ? legacyOffer.price : null
+  return monetaryAmount(legacyOffer?.price, legacyOffer?.priceCurrency ?? product.priceCurrency)
+}
+
+export function cartItemUnitPrice(item: CartItem, product: Product): number | null {
+  return cartItemUnitMoney(item, product)?.amount ?? null
 }
 
 export function orderTotal(order: Order, products: readonly Product[] = PRODUCTS): number {

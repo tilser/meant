@@ -24,6 +24,7 @@ const {
   createUserInventoryItem,
   deleteUserProductSearchPreference,
   getCartCheckout,
+  getMerchantProductDetails,
   getSavedProduct,
   rehydrateCanonicalProducts,
   searchLocationSuggestions,
@@ -84,6 +85,20 @@ describe('embedded checkout session API', () => {
     for (const request of requests) {
       expect(await request.text()).toBe('')
     }
+  })
+})
+
+describe('merchant product details API', () => {
+  test('sends the selected account currency to product rehydration', async () => {
+    await getMerchantProductDetails({
+      merchantId: 'merchant-1',
+      productId: 'product-1',
+      currency: 'USD',
+    })
+
+    const url = new URL(requests[0]!.url)
+    expect(url.searchParams.get('productId')).toBe('product-1')
+    expect(url.searchParams.get('currency')).toBe('USD')
   })
 })
 

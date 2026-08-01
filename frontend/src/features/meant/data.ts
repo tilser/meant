@@ -979,6 +979,7 @@ export const PRODUCTS: readonly Product[] = [
     tone: '#e9ede8',
     match: 96,
     priceFrom: 7.4,
+    priceCurrency: 'USD',
     merchants: 4,
     satisfies: ['organic', 'low-sugar', 'highly-rated'],
     misses: [],
@@ -992,9 +993,9 @@ export const PRODUCTS: readonly Product[] = [
         "Reviewers consistently mention it keeps them full until lunch and isn't overly sweet.",
     },
     offers: [
-      { merchant: 'Whole Foods', price: 7.4, delivery: 'Tomorrow' },
-      { merchant: 'Thrive Market', price: 7.9, delivery: '2 days' },
-      { merchant: 'iHerb', price: 8.2, delivery: '3 days' },
+      { merchant: 'Whole Foods', price: 7.4, priceCurrency: 'USD', delivery: 'Tomorrow' },
+      { merchant: 'Thrive Market', price: 7.9, priceCurrency: 'USD', delivery: '2 days' },
+      { merchant: 'iHerb', price: 8.2, priceCurrency: 'USD', delivery: '3 days' },
     ],
   },
   {
@@ -1005,6 +1006,7 @@ export const PRODUCTS: readonly Product[] = [
     tone: '#e7ebef',
     match: 94,
     priceFrom: 38,
+    priceCurrency: 'USD',
     merchants: 3,
     audiences: ['unisex'],
     satisfies: [
@@ -1024,8 +1026,8 @@ export const PRODUCTS: readonly Product[] = [
       insight: 'Buyers love the weight and fit; a few mention sizing up is unnecessary.',
     },
     offers: [
-      { merchant: 'Field & Loom', price: 38, delivery: '3 days' },
-      { merchant: 'Everlane', price: 42, delivery: '2 days' },
+      { merchant: 'Field & Loom', price: 38, priceCurrency: 'USD', delivery: '3 days' },
+      { merchant: 'Everlane', price: 42, priceCurrency: 'USD', delivery: '2 days' },
     ],
   },
   {
@@ -1036,6 +1038,7 @@ export const PRODUCTS: readonly Product[] = [
     tone: '#eceae7',
     match: 91,
     priceFrom: 149,
+    priceCurrency: 'USD',
     merchants: 5,
     satisfies: ['highly-rated', 'best-value', 'quiet-operation'],
     misses: [],
@@ -1048,9 +1051,9 @@ export const PRODUCTS: readonly Product[] = [
       insight: 'Owners praise consistency cup-to-cup; the main complaint is its footprint.',
     },
     offers: [
-      { merchant: 'Kuro', price: 149, delivery: '4 days' },
-      { merchant: 'Williams Sonoma', price: 159, delivery: '2 days' },
-      { merchant: 'Amazon', price: 154, delivery: 'Tomorrow' },
+      { merchant: 'Kuro', price: 149, priceCurrency: 'USD', delivery: '4 days' },
+      { merchant: 'Williams Sonoma', price: 159, priceCurrency: 'USD', delivery: '2 days' },
+      { merchant: 'Amazon', price: 154, priceCurrency: 'USD', delivery: 'Tomorrow' },
     ],
   },
   {
@@ -1061,6 +1064,7 @@ export const PRODUCTS: readonly Product[] = [
     tone: '#eaede6',
     match: 89,
     priceFrom: 18.5,
+    priceCurrency: 'USD',
     merchants: 3,
     satisfies: ['organic', 'highly-rated'],
     misses: [],
@@ -1073,8 +1077,8 @@ export const PRODUCTS: readonly Product[] = [
       insight: 'Described as fresh and peppery; reviewers repurchase frequently.',
     },
     offers: [
-      { merchant: 'Casa Verde', price: 18.5, delivery: '3 days' },
-      { merchant: 'Thrive Market', price: 19.2, delivery: '2 days' },
+      { merchant: 'Casa Verde', price: 18.5, priceCurrency: 'USD', delivery: '3 days' },
+      { merchant: 'Thrive Market', price: 19.2, priceCurrency: 'USD', delivery: '2 days' },
     ],
   },
   {
@@ -1085,6 +1089,7 @@ export const PRODUCTS: readonly Product[] = [
     tone: '#e8ebee',
     match: 92,
     priceFrom: 95,
+    priceCurrency: 'USD',
     merchants: 4,
     audiences: ['women'],
     satisfies: ['natural-materials', 'no-polyester', 'sustainable-brands', 'merino-wool'],
@@ -1098,8 +1103,8 @@ export const PRODUCTS: readonly Product[] = [
       insight: 'Praised for softness and warmth without bulk.',
     },
     offers: [
-      { merchant: 'Northbound', price: 95, delivery: '3 days' },
-      { merchant: 'Wool&', price: 110, delivery: '4 days' },
+      { merchant: 'Northbound', price: 95, priceCurrency: 'USD', delivery: '3 days' },
+      { merchant: 'Wool&', price: 110, priceCurrency: 'USD', delivery: '4 days' },
     ],
   },
   {
@@ -1110,6 +1115,7 @@ export const PRODUCTS: readonly Product[] = [
     tone: '#eceaea',
     match: 71,
     priceFrom: 120,
+    priceCurrency: 'USD',
     merchants: 3,
     audiences: ['unisex'],
     satisfies: ['sustainable-brands', 'highly-rated', 'recycled-materials'],
@@ -1123,8 +1129,8 @@ export const PRODUCTS: readonly Product[] = [
       insight: 'Loved for comfort and weight; some note the synthetic upper runs warm.',
     },
     offers: [
-      { merchant: 'Stride Lab', price: 120, delivery: '2 days' },
-      { merchant: 'Amazon', price: 124, delivery: 'Tomorrow' },
+      { merchant: 'Stride Lab', price: 120, priceCurrency: 'USD', delivery: '2 days' },
+      { merchant: 'Amazon', price: 124, priceCurrency: 'USD', delivery: 'Tomorrow' },
     ],
   },
   {
@@ -1135,6 +1141,7 @@ export const PRODUCTS: readonly Product[] = [
     tone: '#e9eaee',
     match: 90,
     priceFrom: 1099,
+    priceCurrency: 'USD',
     merchants: 2,
     satisfies: ['highly-rated', 'best-value', 'usb-c'],
     misses: [],
@@ -1148,8 +1155,8 @@ export const PRODUCTS: readonly Product[] = [
       insight: 'Praised for battery and weight; a few note the USB-C-only ports need adapters.',
     },
     offers: [
-      { merchant: 'Lumen Store', price: 1099, delivery: '3 days' },
-      { merchant: 'Amazon', price: 1119, delivery: 'Tomorrow' },
+      { merchant: 'Lumen Store', price: 1099, priceCurrency: 'USD', delivery: '3 days' },
+      { merchant: 'Amazon', price: 1119, priceCurrency: 'USD', delivery: 'Tomorrow' },
     ],
   },
   {
@@ -1160,6 +1167,7 @@ export const PRODUCTS: readonly Product[] = [
     tone: '#e8ebee',
     match: 88,
     priceFrom: 389,
+    priceCurrency: 'USD',
     merchants: 2,
     satisfies: ['highly-rated', 'best-value', 'usb-c'],
     misses: [],
@@ -1173,8 +1181,8 @@ export const PRODUCTS: readonly Product[] = [
       insight: 'Reviewers love the single-cable setup and color accuracy.',
     },
     offers: [
-      { merchant: 'Crisp Store', price: 389, delivery: '3 days' },
-      { merchant: 'Amazon', price: 399, delivery: 'Tomorrow' },
+      { merchant: 'Crisp Store', price: 389, priceCurrency: 'USD', delivery: '3 days' },
+      { merchant: 'Amazon', price: 399, priceCurrency: 'USD', delivery: 'Tomorrow' },
     ],
   },
   {
@@ -1185,6 +1193,7 @@ export const PRODUCTS: readonly Product[] = [
     tone: '#eceae9',
     match: 84,
     priceFrom: 125,
+    priceCurrency: 'USD',
     merchants: 2,
     satisfies: ['highly-rated', 'usb-c', 'hdmi'],
     misses: [],
@@ -1198,8 +1207,8 @@ export const PRODUCTS: readonly Product[] = [
       insight: 'Trusted for durability; the USB-A-only cable trips up newer-laptop owners.',
     },
     offers: [
-      { merchant: 'Amazon', price: 129, delivery: 'Tomorrow' },
-      { merchant: 'Hold Store', price: 125, delivery: '4 days' },
+      { merchant: 'Amazon', price: 129, priceCurrency: 'USD', delivery: 'Tomorrow' },
+      { merchant: 'Hold Store', price: 125, priceCurrency: 'USD', delivery: '4 days' },
     ],
   },
   {
@@ -1210,6 +1219,7 @@ export const PRODUCTS: readonly Product[] = [
     tone: '#eaeaec',
     match: 86,
     priceFrom: 19,
+    priceCurrency: 'USD',
     merchants: 2,
     satisfies: ['best-value', 'usb-c', 'compact', 'travel-friendly'],
     misses: [],
@@ -1224,8 +1234,8 @@ export const PRODUCTS: readonly Product[] = [
       insight: 'Reviewers call it a must-have for USB-C-only laptops.',
     },
     offers: [
-      { merchant: 'Lumen Store', price: 19, delivery: '3 days' },
-      { merchant: 'Amazon', price: 21, delivery: 'Tomorrow' },
+      { merchant: 'Lumen Store', price: 19, priceCurrency: 'USD', delivery: '3 days' },
+      { merchant: 'Amazon', price: 21, priceCurrency: 'USD', delivery: 'Tomorrow' },
     ],
   },
 ]

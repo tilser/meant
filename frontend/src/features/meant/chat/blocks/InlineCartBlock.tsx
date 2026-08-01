@@ -45,6 +45,10 @@ export function InlineCartBlock({
   const itemCount = lines.reduce((sum, line) => sum + line.qty, 0)
   const showInitialLoading = loading && lines.length === 0
   const total = groups.reduce((sum, group) => sum + group.total, 0)
+  const currencies = new Set(
+    groups.map((group) => group.currency).filter((value): value is string => Boolean(value)),
+  )
+  const totalCurrency = currencies.size === 1 ? currencies.values().next().value : null
   const productById = new Map(products.map((product) => [product.id, product]))
   const cartAfterQty = (target: CartItem, qty: number) =>
     qty <= 0
@@ -158,7 +162,9 @@ export function InlineCartBlock({
                     +
                   </button>
                 </div>
-                <span className="mt-ct-cart-price">{money(line.price * line.qty)}</span>
+                <span className="mt-ct-cart-price">
+                  {money(line.price * line.qty, line.priceCurrency)}
+                </span>
                 <button
                   className="mt-ct-cart-remove"
                   type="button"
@@ -188,7 +194,9 @@ export function InlineCartBlock({
             <span className="mt-mono mt-ct-cart-foot-label">
               {groups.length} merchant{groups.length === 1 ? '' : 's'}
             </span>
-            <strong>{money(total)}</strong>
+            <strong>
+              {totalCurrency ? money(total, totalCurrency) : 'Calculated per merchant'}
+            </strong>
           </div>
           <div className="mt-ct-cart-foot-actions">
             <button className="mt-ct-cart-openfull" type="button" onClick={onOpenCart}>

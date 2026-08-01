@@ -82,4 +82,56 @@ describe('productFromSearchResult merchant display identity', () => {
     expect(product.brand).toBe('Merchant')
     expect(product.offers[0]?.merchant).toBe('Merchant')
   })
+
+  test('keeps a selected merchant-native amount paired with its source currency', () => {
+    const product = productFromSearchResult(
+      searchResult({
+        title: 'Salthouse T-Shirt Black',
+        priceCurrency: 'EUR',
+        selectedVariantPriceAmount: '32.00',
+        selectedVariantPriceCurrency: 'eur',
+      }),
+      [],
+    )
+
+    expect(product.priceFrom).toBe(32)
+    expect(product.priceCurrency).toBe('EUR')
+    expect(product.priceFromMinorUnits).toBeNull()
+    expect(product.offers[0]?.price).toBe(32)
+    expect(product.offers[0]?.priceCurrency).toBe('EUR')
+  })
+
+  test('uses the account-currency search price when current merchant detail is native EUR', () => {
+    const product = productFromSearchResult(
+      searchResult({
+        title: 'Salthouse T-Shirt Black',
+        priceMinAmount: 3669,
+        priceMaxAmount: 3669,
+        priceCurrency: 'USD',
+        selectedVariantPriceAmount: '32.00',
+        selectedVariantPriceCurrency: 'EUR',
+      }),
+      [],
+    )
+
+    expect(product.priceFrom).toBe(36.69)
+    expect(product.priceCurrency).toBe('USD')
+    expect(product.priceFromMinorUnits).toBe(3669)
+    expect(product.offers[0]?.price).toBe(36.69)
+    expect(product.offers[0]?.priceCurrency).toBe('USD')
+  })
+
+  test('does not attach an unpaired selected amount to the search-result currency', () => {
+    const product = productFromSearchResult(
+      searchResult({
+        selectedVariantPriceAmount: '32.00',
+        selectedVariantPriceCurrency: null,
+      }),
+      [],
+    )
+
+    expect(product.priceFrom).toBe(129)
+    expect(product.priceCurrency).toBe('USD')
+    expect(product.priceFromMinorUnits).toBe(12900)
+  })
 })

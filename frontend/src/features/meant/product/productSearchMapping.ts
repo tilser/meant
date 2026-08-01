@@ -9,7 +9,7 @@ import type {
   ProductCatalogCategory,
   ProductMedia,
 } from '../types'
-import { displayProductCategoryValue } from '../utils'
+import { displayProductCategoryValue, monetaryAmount, monetaryAmountFromMinorUnits } from '../utils'
 import { productWithCuratedFields } from './productCuration'
 
 function stripHtml(value: string | null | undefined): string {
@@ -19,12 +19,9 @@ function stripHtml(value: string | null | undefined): string {
     .trim()
 }
 
-function parsePriceAmount(value: string | number | null | undefined): number | null {
+function parseMajorPriceAmount(value: string | null | undefined): number | null {
   if (value === null || value === undefined) {
     return null
-  }
-  if (typeof value === 'number') {
-    return value / 100
   }
   const parsed = Number.parseFloat(normalizeLocalizedPriceAmount(value))
   return Number.isFinite(parsed) ? parsed : null
@@ -100,24 +97,39 @@ function normalizeRatingScore(value: number | null | undefined): number | null {
   return Math.max(0, Math.min(5, value))
 }
 
-function searchProductPrice(product: UserProductSearchProductProfile): number {
-  return (
-    parsePriceAmount(product.selectedVariantPriceAmount) ??
-    parsePriceAmount(product.detailPriceMin) ??
-    parsePriceAmount(product.priceMinAmount) ??
-    0
+function searchProductPrice(product: UserProductSearchProductProfile) {
+  const displayCurrency = monetaryAmountFromMinorUnits(0, product.priceCurrency)?.currency ?? null
+  const currentDetailPrices = [
+    monetaryAmount(
+      parseMajorPriceAmount(product.selectedVariantPriceAmount),
+      product.selectedVariantPriceCurrency,
+    ),
+    monetaryAmount(parseMajorPriceAmount(product.detailPriceMin), product.detailPriceCurrency),
+  ]
+  const matchingDetailPrice = currentDetailPrices.find(
+    (price) => price && (!displayCurrency || price.currency === displayCurrency),
   )
+  if (matchingDetailPrice) {
+    return { ...matchingDetailPrice, minorUnits: null }
+  }
+  const searchPrice = monetaryAmountFromMinorUnits(product.priceMinAmount, displayCurrency)
+  return searchPrice ? { ...searchPrice, minorUnits: product.priceMinAmount } : null
 }
 
 function searchProductListPrice(
   product: UserProductSearchProductProfile,
-  currentPrice: number,
+  currentPrice: ReturnType<typeof searchProductPrice>,
 ): number | null {
-  const listPrice = parsePriceAmount(product.listPriceAmount)
-  if (listPrice === null || listPrice <= currentPrice) {
+  const listPrice = monetaryAmountFromMinorUnits(product.listPriceAmount, product.listPriceCurrency)
+  if (
+    !currentPrice ||
+    !listPrice ||
+    listPrice.currency !== currentPrice.currency ||
+    listPrice.amount <= currentPrice.amount
+  ) {
     return null
   }
-  return listPrice
+  return listPrice.amount
 }
 
 function searchProductMedia(product: UserProductSearchProductProfile): ProductMedia[] {
@@ -261,7 +273,9 @@ export function productFromSearchResult(
     productUrl: product.url,
     remote: true,
     match: product.matchScore,
-    priceFrom: price,
+    priceFrom: price?.amount ?? null,
+    priceFromMinorUnits: price?.minorUnits ?? null,
+    priceCurrency: price?.currency ?? null,
     listPrice,
     merchants: 1,
     satisfies: matchedFilterIds,
@@ -286,7 +300,9 @@ export function productFromSearchResult(
     offers: [
       {
         merchant: merchantDisplay,
-        price,
+        price: price?.amount ?? Number.NaN,
+        priceMinorUnits: price?.minorUnits ?? null,
+        priceCurrency: price?.currency ?? null,
         delivery:
           product.available === false || product.selectedVariantAvailable === false
             ? 'Availability unclear'

@@ -8,7 +8,7 @@ import { merchantDisplayOrigin } from './merchantOrigin'
 import { MerchantCheckoutHandoff } from './MerchantCheckoutHandoff'
 import { MerchantCheckoutLink } from './MerchantCheckoutLink'
 import { SavedCheckoutDetailsPrompt } from './SavedCheckoutDetailsPrompt'
-import { merchantDeliveryCoverageSummary, money } from '../utils'
+import { merchantDeliveryCoverageSummary, minorUnitsToMajor, money } from '../utils'
 import type { ActiveCheckoutSession, CheckoutAssistantHandler } from './checkoutTypes'
 import { savedCheckoutDetails } from './savedCheckoutDetails'
 import {
@@ -25,25 +25,22 @@ import {
 
 function formatCheckoutAmount(session: ActiveCheckoutSession): string {
   if (typeof session.profile.totalAmountMinor === 'number') {
-    const amount = session.profile.totalAmountMinor / 100
-    const currency = session.profile.currency?.trim().toUpperCase()
-    if (currency && currency !== 'USD') {
-      try {
-        return new Intl.NumberFormat(undefined, {
-          style: 'currency',
-          currency,
-        }).format(amount)
-      } catch {
-        return `${amount.toFixed(2)} ${currency}`
-      }
-    }
-    return money(amount)
+    const amount = minorUnitsToMajor(session.profile.totalAmountMinor, session.profile.currency)
+    return money(amount, session.profile.currency)
   }
   const fallback = session.items.reduce((sum, item) => {
     const amount = Number.parseFloat(item.lineTotalAmount ?? item.cartTotalAmount ?? '')
     return Number.isFinite(amount) ? sum + amount : sum
   }, 0)
-  return fallback > 0 ? money(fallback) : 'Estimated by merchant'
+  const itemCurrencies = new Set(
+    session.items
+      .map((item) => item.cartCurrency ?? item.orderCurrency)
+      .filter((currency): currency is string => Boolean(currency?.trim())),
+  )
+  const fallbackCurrency = itemCurrencies.size === 1 ? itemCurrencies.values().next().value : null
+  return fallback > 0 && fallbackCurrency
+    ? money(fallback, fallbackCurrency)
+    : 'Estimated by merchant'
 }
 
 export function CartCheckoutDialog({

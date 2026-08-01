@@ -77,6 +77,7 @@ test('offers the same saved-details prompt in cart and chat checkout surfaces', 
       productVariantId: 'variant-1',
       cartLineId: 'line-1',
       unitPriceAmount: '10.00',
+      cartCurrency: 'USD',
     },
   ]
   const profile: CheckoutProfile = {

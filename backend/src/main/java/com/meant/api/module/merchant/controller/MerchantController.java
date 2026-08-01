@@ -213,10 +213,12 @@ public class MerchantController {
             @PathVariable UUID merchantId,
             @RequestParam String productId,
             @RequestParam(required = false) String addressCountry,
-            @RequestParam(required = false) String language
+            @RequestParam(required = false) String language,
+            @RequestParam(required = false) String currency
     ) {
         return MerchantProductDetailsResponse.from(merchantProductDetailsService.get(
-                new GetMerchantProductDetailsQuery(merchantId, productId, addressCountry, language)
+                new GetMerchantProductDetailsQuery(
+                        merchantId, productId, addressCountry, language, currency)
         ));
     }
 }

@@ -384,7 +384,10 @@ export function DiscoverChatBlockView({
             </span>
             <span className="mt-ct-decision-name">{block.product.name}</span>
             <span className="mt-ct-decision-price">
-              {money(productPriceFrom(block.product, deliveryLocations))}
+              {money(
+                productPriceFrom(block.product, deliveryLocations),
+                block.product.priceCurrency,
+              )}
             </span>
           </span>
         </button>
@@ -419,7 +422,8 @@ export function DiscoverChatBlockView({
         <div className="mt-ct-watchalert-body">
           <div className="mt-mono mt-ct-watchalert-key">Price watch</div>
           <div className="mt-ct-watchalert-text">
-            The <b>{block.product.name}</b> dropped to {money(block.price)} at{' '}
+            The <b>{block.product.name}</b> dropped to{' '}
+            {money(block.price, block.product.priceCurrency)} at{' '}
             {merchantAdjacentDisplayLabel(block.merchant)}.
           </div>
         </div>
@@ -497,8 +501,8 @@ export function DiscoverChatBlockView({
             Added <b>{block.product.name}</b> to your cart
           </span>
           <span className="mt-ct-added-meta">
-            {money(addedPrice)} · {merchantAdjacentDisplayLabel(block.merchant)} · {addedCount} in
-            cart
+            {money(addedPrice, block.product.priceCurrency)} ·{' '}
+            {merchantAdjacentDisplayLabel(block.merchant)} · {addedCount} in cart
           </span>
         </div>
         <div className="mt-ct-added-actions">
@@ -556,7 +560,7 @@ export function DiscoverChatBlockView({
                 </span>
                 <span className="mt-ct-mini2-name">{product.name}</span>
                 <span className="mt-ct-mini2-price">
-                  {money(productPriceFrom(product, deliveryLocations))}
+                  {money(productPriceFrom(product, deliveryLocations), product.priceCurrency)}
                 </span>
               </button>
             ))}

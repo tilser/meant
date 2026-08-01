@@ -3004,6 +3004,7 @@ export function MeantApp() {
             compareIds={compareIds}
             preferences={allPreferences}
             deliveryLocations={deliveryLocations}
+            preferredCurrency={currency}
             onRemove={removeCompareProduct}
             onAdd={addCompareProduct}
             onOpen={openProduct}
@@ -3250,6 +3251,7 @@ export function MeantApp() {
       <ProductModal
         product={currentActiveProduct}
         userId={userId}
+        preferredCurrency={currency}
         deliveryLocations={deliveryLocations}
         preferences={allPreferences}
         saved={currentActiveProduct ? savedSet.has(currentActiveProduct.id) : false}

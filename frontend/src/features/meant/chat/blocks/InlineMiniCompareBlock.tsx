@@ -45,7 +45,7 @@ export function InlineMiniCompareBlock({
             </span>
             <span className="mt-ct-mini-name">{product.name}</span>
             <span className="mt-mono mt-ct-mini-price">
-              {money(productPriceFrom(product, deliveryLocations))}
+              {money(productPriceFrom(product, deliveryLocations), product.priceCurrency)}
             </span>
           </button>
         ))}

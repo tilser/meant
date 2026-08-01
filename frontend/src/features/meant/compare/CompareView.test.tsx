@@ -6,7 +6,7 @@ import { CompareView } from './CompareView'
 
 const technicalSeller = 'sollys-online-grocery.myshopify.com'
 
-function product(id: string, price: number): Product {
+function product(id: string, price: number, currency = 'USD'): Product {
   return {
     id,
     name: `Trail shoe ${id}`,
@@ -15,6 +15,7 @@ function product(id: string, price: number): Product {
     tone: '#eee',
     match: 90,
     priceFrom: price,
+    priceCurrency: currency,
     merchants: 1,
     satisfies: [],
     misses: [],
@@ -26,6 +27,7 @@ function product(id: string, price: number): Product {
       {
         merchant: technicalSeller,
         price,
+        priceCurrency: currency,
         delivery: 'Calculated at checkout',
       },
     ],
@@ -50,5 +52,27 @@ describe('CompareView merchant display identity', () => {
 
     expect(markup).toContain('Merchant')
     expect(markup).not.toContain(technicalSeller)
+  })
+
+  test('does not compare or relabel a merchant-native EUR price for a USD account', () => {
+    const products = [product('usd', 36.69, 'USD'), product('eur', 32, 'EUR')]
+    const markup = renderToStaticMarkup(
+      <CompareView
+        products={products}
+        savedProducts={[]}
+        compareIds={products.map((item) => item.id)}
+        preferences={[]}
+        deliveryLocations={[]}
+        preferredCurrency="USD"
+        onRemove={() => undefined}
+        onAdd={() => undefined}
+        onOpen={() => undefined}
+      />,
+    )
+
+    expect(markup).toContain('$36.69')
+    expect(markup).toContain('Price unavailable')
+    expect(markup).not.toContain('$32.00')
+    expect(markup).not.toContain('€32.00')
   })
 })

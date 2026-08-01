@@ -290,13 +290,19 @@ export function CartView({
       savings,
       total,
       delivery: cartSummaryDelivery(subtotal, savings, total),
-      currency: snapshot?.currency ?? null,
+      currency: snapshot?.currency ?? group.currency,
     }
   })
   const itemsTotal = groupSummaries.reduce((sum, summary) => sum + summary.subtotal, 0)
   const discountTotal = groupSummaries.reduce((sum, summary) => sum + summary.savings, 0)
   const deliveryTotal = groupSummaries.reduce((sum, summary) => sum + summary.delivery, 0)
   const grandTotal = groupSummaries.reduce((sum, summary) => sum + summary.total, 0)
+  const currencies = new Set(
+    groupSummaries
+      .map((summary) => summary.currency)
+      .filter((value): value is string => Boolean(value)),
+  )
+  const summaryCurrency = currencies.size === 1 ? currencies.values().next().value : null
   const codeCount = groupSummaries.reduce(
     (sum, summary) => sum + (summary.snapshot?.appliedCodes.length ?? 0),
     0,
@@ -655,7 +661,9 @@ export function CartView({
                             +
                           </button>
                         </div>
-                        <div className="mt-citem-price">{money(line.price * line.qty)}</div>
+                        <div className="mt-citem-price">
+                          {money(line.price * line.qty, line.priceCurrency)}
+                        </div>
                         <button
                           className="mt-citem-remove"
                           type="button"
@@ -847,23 +855,43 @@ export function CartView({
             </div>
             <div className="mt-sum-row">
               <span>Items ({lines.reduce((sum, line) => sum + line.qty, 0)})</span>
-              <span>{money(itemsTotal)}</span>
+              <span>
+                {summaryCurrency ? cartMoney(itemsTotal, summaryCurrency) : 'Per merchant'}
+              </span>
             </div>
             <div className={`mt-sum-row ${discountTotal > 0 ? 'save' : 'muted'}`}>
               <span>Applied savings</span>
-              <span>{discountTotal > 0 ? `-${money(discountTotal)}` : money(0)}</span>
+              <span>
+                {summaryCurrency
+                  ? discountTotal > 0
+                    ? `-${cartMoney(discountTotal, summaryCurrency)}`
+                    : cartMoney(0, summaryCurrency)
+                  : 'Per merchant'}
+              </span>
             </div>
             <div className="mt-sum-row">
               <span>Delivery</span>
-              <span>{deliveryTotal === 0 ? 'Free' : money(deliveryTotal)}</span>
+              <span>
+                {deliveryTotal === 0
+                  ? 'Free'
+                  : summaryCurrency
+                    ? cartMoney(deliveryTotal, summaryCurrency)
+                    : 'Per merchant'}
+              </span>
             </div>
             <div className="mt-sum-total">
               <span>Total</span>
-              <span>{money(grandTotal)}</span>
+              <span>
+                {summaryCurrency
+                  ? cartMoney(grandTotal, summaryCurrency)
+                  : 'Calculated per merchant'}
+              </span>
             </div>
             {discountTotal > 0 ? (
               <div className="mt-sum-note mt-mono">
-                You are saving {money(discountTotal)} with merchant-applied codes.
+                {summaryCurrency
+                  ? `You are saving ${cartMoney(discountTotal, summaryCurrency)} with merchant-applied codes.`
+                  : 'Savings are calculated per merchant currency.'}
               </div>
             ) : null}
             {warnCount > 0 ? (

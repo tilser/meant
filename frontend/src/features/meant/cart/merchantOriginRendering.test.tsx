@@ -102,3 +102,57 @@ test('renders only the trusted merchant origin across full-cart surfaces', () =>
   expect(markup).toContain(merchantOrigin)
   expect(markup).not.toContain(transportIdentity)
 })
+
+test('renders a merchant-native cart amount with its own currency instead of the account symbol', () => {
+  const euroProduct: Product = {
+    ...product,
+    name: 'Salthouse T-Shirt Black',
+    priceFrom: 32,
+    priceCurrency: 'EUR',
+    offers: product.offers.map((offer) => ({ ...offer, price: 32, priceCurrency: 'EUR' })),
+  }
+  const euroItem: CartItem = {
+    ...item,
+    unitPriceAmount: '32.00',
+    cartCurrency: 'EUR',
+  }
+  const euroSnapshot: MerchantCartSnapshot = {
+    ...snapshot,
+    subtotalAmount: 32,
+    totalAmount: 32,
+    currency: 'EUR',
+  }
+  const markup = renderToStaticMarkup(
+    <>
+      <CartPopover
+        cart={[euroItem]}
+        products={[euroProduct]}
+        cartSnapshots={{ 'merchant-1': euroSnapshot }}
+        mutationBlocked={false}
+        onViewFull={() => undefined}
+        onClose={() => undefined}
+        onRemove={() => undefined}
+      />
+      <CartView
+        cart={[euroItem]}
+        products={[euroProduct]}
+        cartSnapshots={{ 'merchant-1': euroSnapshot }}
+        deliveryLocations={[]}
+        onRemove={() => undefined}
+        onQty={() => undefined}
+        onAdd={() => undefined}
+        onApplyCode={async () => ({ ok: true })}
+        onRemoveCode={async () => ({ ok: true })}
+        onDeliveryAddress={() => true}
+        onDeliveryOption={() => true}
+        onCheckout={() => undefined}
+        agentBusy={false}
+        checkoutMerchantKey={null}
+        checkoutError={null}
+      />
+    </>,
+  )
+
+  expect(markup).toContain('€32.00')
+  expect(markup).not.toContain('$32.00')
+})

@@ -50,6 +50,11 @@ export interface Offer {
   available?: boolean | null
 }
 
+export interface MonetaryAmount {
+  amount: number
+  currency: string
+}
+
 export interface ReviewSummary {
   score: number | null
   count: number
@@ -202,6 +207,7 @@ export interface CartItem {
 export interface CartLine extends CartItem {
   product: Product
   price: number
+  priceCurrency: string
   delivery: string
 }
 

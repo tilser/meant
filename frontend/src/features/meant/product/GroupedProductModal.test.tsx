@@ -540,10 +540,11 @@ describe('canonical product detail', () => {
         ],
       },
     }
-    const renderSavedDetail = (detailProduct: Product) =>
+    const renderSavedDetail = (detailProduct: Product, preferredCurrency = 'USD') =>
       renderToStaticMarkup(
         <ProductModal
           product={detailProduct}
+          preferredCurrency={preferredCurrency}
           deliveryLocations={[]}
           preferences={[]}
           saved={true}
@@ -635,6 +636,13 @@ describe('canonical product detail', () => {
     expect(invalidCurrencyMarkup).not.toContain('Sale price')
     expect(invalidCurrencyMarkup).not.toContain('mt-modal-price-was')
     expect(invalidCurrencyMarkup).not.toContain('mt-modal-price-saving')
+
+    const mismatchedCurrencyMarkup = renderSavedDetail(withPriceCurrencies('EUR', 'EUR'))
+    expect(mismatchedCurrencyMarkup).toContain(
+      '<strong class="mt-modal-price">Price unavailable</strong>',
+    )
+    expect(mismatchedCurrencyMarkup).not.toContain('€11.00')
+    expect(mismatchedCurrencyMarkup).not.toContain('$11.00')
 
     const soldOutAnchorMarkup = renderSavedDetail({
       ...savedWithDetail,

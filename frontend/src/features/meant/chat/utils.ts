@@ -61,6 +61,14 @@ export function createMiniCompareBlock(
   }
 
   const prices = nextProducts.map((product) => productPriceFrom(product, deliveryLocations))
+  const priceCurrencies = new Set(
+    nextProducts
+      .map((product) => product.priceCurrency?.trim().toUpperCase())
+      .filter((currency): currency is string => Boolean(currency)),
+  )
+  const pricesComparable =
+    priceCurrencies.size === 1 &&
+    nextProducts.every((product) => Boolean(product.priceCurrency?.trim()))
   const reviews = nextProducts.map((product) => product.review.score ?? 0)
   const fitGaps = nextProducts.map((product) => product.misses.length)
   const rows: readonly MiniCompareRow[] = [
@@ -74,8 +82,8 @@ export function createMiniCompareBlock(
     },
     {
       label: 'From',
-      values: prices.map((price) => money(price)),
-      winnerIndex: winningIndex(prices, false),
+      values: prices.map((price, index) => money(price, nextProducts[index]?.priceCurrency)),
+      winnerIndex: pricesComparable ? winningIndex(prices, false) : -1,
     },
     {
       label: 'Reviews',

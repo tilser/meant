@@ -1321,6 +1321,7 @@ export async function getMerchantProductDetails(input: {
   productId: string
   addressCountry?: string | null
   language?: string | null
+  currency?: string | null
   signal?: AbortSignal
   expectedUserId?: string
 }): Promise<MerchantProductDetailsProfile> {
@@ -1330,6 +1331,9 @@ export async function getMerchantProductDetails(input: {
   }
   if (input.language) {
     search.set('language', input.language)
+  }
+  if (input.currency) {
+    search.set('currency', input.currency)
   }
   const response = await fetch(
     `${API_URL}/api/merchants/${encodeURIComponent(input.merchantId)}/product-details?${search.toString()}`,

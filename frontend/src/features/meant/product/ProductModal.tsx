@@ -175,6 +175,7 @@ function variantSavings(
 export function ProductModal({
   product,
   userId,
+  preferredCurrency = 'USD',
   deliveryLocations,
   preferences,
   saved,
@@ -198,6 +199,7 @@ export function ProductModal({
 }: Readonly<{
   product: Product | null
   userId?: string
+  preferredCurrency?: string
   deliveryLocations: readonly UserLocation[]
   preferences: readonly Preference[]
   saved: boolean
@@ -325,6 +327,7 @@ export function ProductModal({
       productId: merchantDetailProductId,
       addressCountry: deliveryCountryCode,
       language,
+      currency: preferredCurrency,
       signal: controller.signal,
       expectedUserId: userId,
     })
@@ -343,7 +346,14 @@ export function ProductModal({
         setDetailLoadError('Latest product details are unavailable right now.')
       })
     return () => controller.abort()
-  }, [deliveryCountryCode, merchantDetailMerchantId, merchantDetailProductId, product?.id, userId])
+  }, [
+    deliveryCountryCode,
+    merchantDetailMerchantId,
+    merchantDetailProductId,
+    preferredCurrency,
+    product?.id,
+    userId,
+  ])
 
   useEffect(
     () => () => {
@@ -486,13 +496,18 @@ export function ProductModal({
   const selectedVariantListPriceCurrency =
     selectedPurchaseVariant?.listPriceCurrency ??
     activeMerchantDetails?.selectedVariantListPriceCurrency
-  const selectedVariantPrice = detailMoney(selectedVariantPriceAmount, selectedVariantPriceCurrency)
-  const selectedVariantSavings = variantSavings(
-    selectedVariantPriceAmount,
-    selectedVariantPriceCurrency,
-    selectedVariantListPriceAmount,
-    selectedVariantListPriceCurrency,
-  )
+  const selectedVariantPrice =
+    selectedVariantPriceCurrency?.trim().toUpperCase() === preferredCurrency.trim().toUpperCase()
+      ? detailMoney(selectedVariantPriceAmount, selectedVariantPriceCurrency)
+      : null
+  const selectedVariantSavings = selectedVariantPrice
+    ? variantSavings(
+        selectedVariantPriceAmount,
+        selectedVariantPriceCurrency,
+        selectedVariantListPriceAmount,
+        selectedVariantListPriceCurrency,
+      )
+    : null
   const selectedVariantListPrice = selectedVariantSavings
     ? detailMoney(selectedVariantListPriceAmount, selectedVariantListPriceCurrency)
     : null
@@ -587,7 +602,8 @@ export function ProductModal({
                   : 'Checkout unavailable'
   const fallbackPriceAmount = productPriceFrom(actionProduct, deliveryLocations)
   const fallbackPrice =
-    fallbackPriceAmount === null
+    fallbackPriceAmount === null ||
+    actionProduct.priceCurrency?.trim().toUpperCase() !== preferredCurrency.trim().toUpperCase()
       ? null
       : detailMoney(String(fallbackPriceAmount), actionProduct.priceCurrency)
   const displayedPrice = selectedVariantPrice ?? fallbackPrice ?? 'Price unavailable'

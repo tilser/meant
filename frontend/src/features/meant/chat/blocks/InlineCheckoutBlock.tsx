@@ -97,6 +97,10 @@ export function InlineCheckoutBlock({
   const assistantLogRef = useRef<HTMLDivElement | null>(null)
   const lines = cartLines(cart, products)
   const groups = cartGroups(lines)
+  const currencies = new Set(
+    groups.map((group) => group.currency).filter((value): value is string => Boolean(value)),
+  )
+  const totalCurrency = currencies.size === 1 ? currencies.values().next().value : null
   const liveGroups = actionCart
     ? cartGroups(cartLines(actionCart, actionProducts ?? products))
     : groups
@@ -364,7 +368,9 @@ export function InlineCheckoutBlock({
         <>
           <div className="mt-ct-checkout-total">
             <span>Estimated total</span>
-            <strong>{money(total)}</strong>
+            <strong>
+              {totalCurrency ? money(total, totalCurrency) : 'Calculated per merchant'}
+            </strong>
           </div>
           {alerts.some((alert) => alert.kind === 'warn') ? (
             <div className="mt-ct-checkout-warn">
@@ -428,10 +434,10 @@ export function InlineCheckoutBlock({
                       </div>
                       <div className="mt-mono mt-ct-cogroup-meta">
                         {group.items.reduce((sum, line) => sum + line.qty, 0)} items · Estimated{' '}
-                        {money(group.total)}
+                        {money(group.total, group.currency)}
                       </div>
                     </div>
-                    <strong>{money(group.total)}</strong>
+                    <strong>{money(group.total, group.currency)}</strong>
                   </div>
                   {checkoutStartError?.merchantKey === group.merchantKey &&
                   payingMerchant === null ? (

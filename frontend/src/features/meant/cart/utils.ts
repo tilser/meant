@@ -90,17 +90,7 @@ export function selectedDeliveryOptionsForCart(
 }
 
 function formatCartAmount(amount: number, currency?: string | null): string {
-  if (!currency || currency.toUpperCase() === 'USD') {
-    return money(amount)
-  }
-  try {
-    return new Intl.NumberFormat(undefined, {
-      style: 'currency',
-      currency,
-    }).format(amount)
-  } catch {
-    return `${amount.toFixed(2)} ${currency}`
-  }
+  return money(amount, currency)
 }
 
 export function deliveryOptionTitle(option: CartDeliveryOption): string {
@@ -221,10 +211,7 @@ export function cartSnapshotFromProfile(
 }
 
 export function cartMoney(value: number, currency?: string | null): string {
-  if (!currency || currency === 'USD') {
-    return money(value)
-  }
-  return `${currency} ${value.toFixed(2)}`
+  return money(value, currency)
 }
 
 export function appliedCodeDisplay(code: AppliedCartCode): string {

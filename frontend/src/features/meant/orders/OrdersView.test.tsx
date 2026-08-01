@@ -8,12 +8,15 @@ import { orderFromProfile, orderLineTotal, orderLineUnitPrice } from './orderMap
 
 const product = {
   id: 'product-a',
+  priceFrom: 10,
+  priceCurrency: 'USD',
   offers: [
     {
       offerKey: 'offer-small',
       productVariantId: 'variant-small',
       merchant: 'Shared merchant',
       price: 10,
+      priceCurrency: 'USD',
       delivery: 'Standard',
     },
     {
@@ -21,6 +24,7 @@ const product = {
       productVariantId: 'variant-large',
       merchant: 'Shared merchant',
       price: 18,
+      priceCurrency: 'USD',
       delivery: 'Standard',
     },
   ],

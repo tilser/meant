@@ -10,9 +10,12 @@ import com.meant.api.module.catalog.service.dto.CatalogProductRehydrationResult;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationContext;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationStatus;
 import com.meant.api.module.catalog.service.dto.CommercialFactsFreshness;
+import com.meant.api.module.catalog.service.dto.DeliveryMethod;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifier;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifierType;
+import com.meant.api.module.catalog.service.dto.Money;
 import com.meant.api.module.catalog.service.dto.OfferAvailability;
+import com.meant.api.module.catalog.service.dto.OfferDelivery;
 import com.meant.api.module.catalog.service.dto.RehydratedCommercialFacts;
 import com.meant.api.module.catalog.service.dto.ResultFreshness;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -22,6 +25,62 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 class CatalogProductRehydrationServiceTest {
+
+    @Test
+    void removesMismatchedPriceWithoutRelabelingOrDiscardingAvailabilityAndProvenance() {
+        CatalogProductReference reference = reference("saved-eur");
+        ResultFreshness freshness = new ResultFreshness(
+                Instant.parse("2026-07-11T00:00:00Z"),
+                Instant.parse("2026-07-11T00:02:00Z")
+        );
+        OfferAvailability availability = OfferAvailability.unknown();
+        CatalogProductRehydrationProvider provider = new CatalogProductRehydrationProvider() {
+            @Override
+            public boolean supports(com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity source) {
+                return MerchantCatalogSourceIdentity.DISCOVERY_SOURCE.equals(source);
+            }
+
+            @Override
+            public List<CatalogProductRehydrationResult> rehydrate(
+                    List<CatalogProductReference> references,
+                    CatalogRehydrationContext context
+            ) {
+                return List.of(CatalogProductRehydrationResult.fresh(
+                        reference,
+                        reference,
+                        new RehydratedCommercialFacts(
+                                "Salthouse T-Shirt Black",
+                                "Salthouse",
+                                new Money(3_200, "EUR"),
+                                availability,
+                                reference.externalVariantReference(),
+                                List.of(),
+                                List.of(new OfferDelivery(
+                                        DeliveryMethod.SHIPPING, "US", 2, 4, new Money(500, "EUR"))),
+                                List.of(),
+                                freshness,
+                                CommercialFactsFreshness.fromSingleObservation(freshness)
+                        )
+                ));
+            }
+        };
+
+        CatalogProductRehydrationResult result = service(List.of(provider)).rehydrate(
+                reference,
+                new CatalogRehydrationContext("US", "en", "USD")
+        );
+
+        assertThat(result.status()).isEqualTo(CatalogRehydrationStatus.FRESH);
+        assertThat(result.reference()).isEqualTo(reference);
+        assertThat(result.resolvedReference()).isEqualTo(reference);
+        assertThat(result.facts().price()).isNull();
+        assertThat(result.facts().availability()).isEqualTo(availability);
+        assertThat(result.facts().fulfillment().getFirst().minimumBusinessDays()).isEqualTo(2);
+        assertThat(result.facts().fulfillment().getFirst().cost()).isNull();
+        assertThat(result.facts().purchaseFreshness().price()).isNull();
+        assertThat(result.facts().purchaseFreshness().availability()).isEqualTo(freshness);
+        assertThat(result.facts().purchaseFreshness().fulfillment()).isEqualTo(freshness);
+    }
 
     @Test
     void batchesOneResultPageAndReturnsFreshTypedFactsWithoutNPlusOneDispatch() {

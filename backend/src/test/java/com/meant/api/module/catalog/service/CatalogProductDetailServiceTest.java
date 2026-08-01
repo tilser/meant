@@ -27,6 +27,24 @@ import org.junit.jupiter.api.Test;
 class CatalogProductDetailServiceTest {
 
     @Test
+    void removesMismatchedDetailPricesWhileKeepingVariantAvailability() {
+        RehydratedProductDetails details = detailsWithCurrency("EUR");
+
+        var result = service(null, details).getDetails(
+                reference(),
+                new CatalogRehydrationContext("US", "en", "USD")
+        );
+
+        assertThat(result.details().priceRange()).isNull();
+        assertThat(result.details().listPriceRange()).isNull();
+        assertThat(result.details().selectedVariant().priceAmount()).isNull();
+        assertThat(result.details().selectedVariant().priceCurrency()).isNull();
+        assertThat(result.details().selectedVariant().listPriceAmount()).isNull();
+        assertThat(result.details().selectedVariant().available()).isTrue();
+        assertThat(result.details().variants().getFirst().available()).isTrue();
+    }
+
+    @Test
     void partialSelectionCountsEveryCompatibleVariantWithoutMarkingItExact() {
         ProductAttribute blue = option("Color", "Blue");
         CatalogProductDetailSelection selection = new CatalogProductDetailSelection(List.of(blue), List.of());
@@ -248,6 +266,59 @@ class CatalogProductDetailServiceTest {
                 null,
                 null,
                 "Merchant");
+    }
+
+    private RehydratedProductDetails detailsWithCurrency(String currency) {
+        RehydratedProductDetails.Variant variant = new RehydratedProductDetails.Variant(
+                "variant",
+                null,
+                "Black",
+                null,
+                null,
+                "32.00",
+                currency,
+                "40.00",
+                currency,
+                null,
+                null,
+                null,
+                List.of(),
+                true,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of()
+        );
+        return new RehydratedProductDetails(
+                "product",
+                null,
+                "Salthouse T-Shirt Black",
+                null,
+                null,
+                null,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(variant),
+                1,
+                new RehydratedProductDetails.PriceRange("32.00", "32.00", currency),
+                new RehydratedProductDetails.PriceRange("40.00", "40.00", currency),
+                false,
+                variant,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                null,
+                null,
+                null,
+                "Salthouse"
+        );
     }
 
     private RehydratedProductDetails.Variant variant(List<ProductAttribute> options) {

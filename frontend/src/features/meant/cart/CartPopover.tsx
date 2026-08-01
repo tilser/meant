@@ -5,7 +5,7 @@ import type { CartItem, Product, ProductId } from '../types'
 import { cartGroups, cartItemIdentity, cartLines, computeSmartAlerts, money } from '../utils'
 import { merchantDisplayOrigin } from './merchantOrigin'
 import type { MerchantCartSnapshot } from './types'
-import { cartSnapshotSavings, cartSnapshotSubtotal, cartSnapshotTotal } from './utils'
+import { cartMoney, cartSnapshotSavings, cartSnapshotSubtotal, cartSnapshotTotal } from './utils'
 
 export function CartPopover({
   cart,
@@ -85,6 +85,7 @@ export function CartPopover({
     return {
       group,
       snapshot,
+      currency: snapshot?.currency ?? group.currency,
       subtotal: cartSnapshotSubtotal(snapshot, group.subtotal),
       savings: cartSnapshotSavings(snapshot, group.subtotal, fallbackTotal),
       total: cartSnapshotTotal(snapshot, fallbackTotal),
@@ -96,6 +97,12 @@ export function CartPopover({
     0,
   )
   const grandTotal = groupSummaries.reduce((sum, summary) => sum + summary.total, 0)
+  const currencies = new Set(
+    groupSummaries
+      .map((summary) => summary.currency)
+      .filter((value): value is string => Boolean(value)),
+  )
+  const totalCurrency = currencies.size === 1 ? currencies.values().next().value : null
   const itemCount = lines.reduce((sum, line) => sum + line.qty, 0)
 
   return (
@@ -116,7 +123,11 @@ export function CartPopover({
         </div>
         <div className={`mt-cart-sig ${codeCount > 0 ? 'mt-cart-sig-good' : 'mt-cart-sig-muted'}`}>
           <SparkMark size={13} />
-          {codeCount > 0 ? `${codeCount} applied · -${money(discountTotal)}` : 'No applied codes'}
+          {codeCount > 0 && totalCurrency
+            ? `${codeCount} applied · -${cartMoney(discountTotal, totalCurrency)}`
+            : codeCount > 0
+              ? `${codeCount} applied across merchant currencies`
+              : 'No applied codes'}
         </div>
       </div>
       <div className="mt-cart-pop-list">
@@ -128,13 +139,16 @@ export function CartPopover({
             <div className="mt-cart-pop-info">
               <div className="mt-cart-pop-name">{line.product.name}</div>
               <div className="mt-mono mt-cart-pop-meta">
-                {line.qty} × {money(line.price)} · {merchantDisplayOrigin(line.merchantOrigin)}
+                {line.qty} × {money(line.price, line.priceCurrency)} ·{' '}
+                {merchantDisplayOrigin(line.merchantOrigin)}
               </div>
               {line.variantTitle ? (
                 <div className="mt-mono mt-cart-pop-meta">{line.variantTitle}</div>
               ) : null}
             </div>
-            <div className="mt-cart-pop-price">{money(line.price * line.qty)}</div>
+            <div className="mt-cart-pop-price">
+              {money(line.price * line.qty, line.priceCurrency)}
+            </div>
             <button
               className="mt-cart-pop-x"
               type="button"
@@ -151,12 +165,16 @@ export function CartPopover({
       <div className="mt-cart-pop-foot">
         {discountTotal > 0 ? (
           <div className="mt-cart-pop-save mt-mono">
-            You are saving {money(discountTotal)} with applied merchant codes.
+            {totalCurrency
+              ? `You are saving ${cartMoney(discountTotal, totalCurrency)} with applied merchant codes.`
+              : 'Savings are calculated per merchant currency.'}
           </div>
         ) : null}
         <div className="mt-cart-pop-total">
           <span>Total</span>
-          <span>{money(grandTotal)}</span>
+          <span>
+            {totalCurrency ? cartMoney(grandTotal, totalCurrency) : 'Calculated per merchant'}
+          </span>
         </div>
         <button className="mt-cart-pop-detail" type="button" onClick={onViewFull}>
           View full cart

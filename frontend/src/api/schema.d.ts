@@ -4962,6 +4962,7 @@ export interface operations {
                 productId: string;
                 addressCountry?: string;
                 language?: string;
+                currency?: string;
             };
             header?: never;
             path: {

@@ -13,6 +13,7 @@ export function CompareView({
   compareIds,
   preferences,
   deliveryLocations,
+  preferredCurrency = 'USD',
   onRemove,
   onAdd,
   onOpen,
@@ -22,6 +23,7 @@ export function CompareView({
   compareIds: readonly ProductId[]
   preferences: readonly Preference[]
   deliveryLocations: readonly UserLocation[]
+  preferredCurrency?: string
   onRemove: (index: number) => void
   onAdd: (product: Product) => void
   onOpen: (product: Product, products: readonly Product[]) => void
@@ -43,8 +45,23 @@ export function CompareView({
   const rankedItems = items.filter((product) => !product.rankingUnavailable)
   const bestMatch =
     rankedItems.length >= 2 ? Math.max(...rankedItems.map((product) => product.match)) : null
+  const normalizedPreferredCurrency = preferredCurrency.trim().toUpperCase()
+  const priceInPreferredCurrency = (product: Product) =>
+    product.priceCurrency?.trim().toUpperCase() === normalizedPreferredCurrency
+      ? productPriceFrom(product, deliveryLocations)
+      : null
+  const offerInPreferredCurrency = (product: Product) =>
+    bestOffer(
+      {
+        ...product,
+        offers: product.offers.filter(
+          (offer) => offer.priceCurrency?.trim().toUpperCase() === normalizedPreferredCurrency,
+        ),
+      },
+      deliveryLocations,
+    )
   const knownPrices = items
-    .map((product) => productPriceFrom(product, deliveryLocations))
+    .map(priceInPreferredCurrency)
     .filter((price): price is number => price != null)
   const bestPrice = enough && knownPrices.length > 0 ? Math.min(...knownPrices) : null
   const bestMerchantCount = enough
@@ -55,8 +72,8 @@ export function CompareView({
         (left, right) =>
           Number(Boolean(left.rankingUnavailable)) - Number(Boolean(right.rankingUnavailable)) ||
           right.match - left.match ||
-          (productPriceFrom(left, deliveryLocations) ?? Number.POSITIVE_INFINITY) -
-            (productPriceFrom(right, deliveryLocations) ?? Number.POSITIVE_INFINITY),
+          (priceInPreferredCurrency(left) ?? Number.POSITIVE_INFINITY) -
+            (priceInPreferredCurrency(right) ?? Number.POSITIVE_INFINITY),
       )[0]
     : null
   const comparisonPreferenceIds = preferences
@@ -117,9 +134,8 @@ export function CompareView({
               gridStyle={gridStyle}
               cells={items.map((product) => ({
                 key: product.id,
-                value: money(productPriceFrom(product, deliveryLocations), product.priceCurrency),
-                win:
-                  bestPrice !== null && productPriceFrom(product, deliveryLocations) === bestPrice,
+                value: money(priceInPreferredCurrency(product), normalizedPreferredCurrency),
+                win: bestPrice !== null && priceInPreferredCurrency(product) === bestPrice,
               }))}
               addSpacer={showAdd}
             />
@@ -191,7 +207,7 @@ export function CompareView({
             <div className="mt-cmp-grid mt-cmp-row mt-cmp-last" style={gridStyle}>
               <div className="mt-cmp-rowlabel">Best price at</div>
               {items.map((product) => {
-                const offer = bestOffer(product, deliveryLocations)
+                const offer = offerInPreferredCurrency(product)
                 return (
                   <div key={product.id} className="mt-cmp-cell">
                     {offer ? (

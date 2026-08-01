@@ -61,6 +61,7 @@ const product: Product = {
   tone: 'neutral',
   match: 80,
   priceFrom: 20,
+  priceCurrency: 'USD',
   merchants: 1,
   satisfies: [],
   misses: [],
@@ -119,6 +120,7 @@ function line(deliveryGroups: readonly CartDeliveryGroup[]): CartLine {
     qty: 1,
     product,
     price: 20,
+    priceCurrency: 'USD',
     delivery: 'standard',
     deliveryGroups,
   }
@@ -272,7 +274,12 @@ describe('shopping decision utilities', () => {
 
     expect(productPriceFrom(cereal, uk)).toBe(8.2)
     expect(productMerchantCount(cereal, uk)).toBe(1)
-    expect(bestOffer(cereal, uk)).toEqual({ merchant: 'iHerb', price: 8.2, delivery: '3 days' })
+    expect(bestOffer(cereal, uk)).toEqual({
+      merchant: 'iHerb',
+      price: 8.2,
+      priceCurrency: 'USD',
+      delivery: '3 days',
+    })
   })
 
   test('returns no best offer when current product offers are unavailable', () => {
@@ -283,13 +290,38 @@ describe('shopping decision utilities', () => {
     const mixed = {
       ...product,
       offers: [
-        { offerKey: 'saved-no-price', merchant: 'Unknown price', price: Number.NaN, delivery: '' },
-        { offerKey: 'saved-priced', merchant: 'Priced', price: 15, delivery: 'Tomorrow' },
+        {
+          offerKey: 'saved-no-price',
+          merchant: 'Unknown price',
+          price: Number.NaN,
+          priceCurrency: 'USD',
+          delivery: '',
+        },
+        {
+          offerKey: 'saved-priced',
+          merchant: 'Priced',
+          price: 15,
+          priceCurrency: 'USD',
+          delivery: 'Tomorrow',
+        },
       ],
     }
 
     expect(bestOffer(mixed, [])?.offerKey).toBe('saved-priced')
     expect(productPriceFrom(mixed, [])).toBe(15)
+  })
+
+  test('does not compare a merchant-native offer amount against a different product currency', () => {
+    const mixedCurrency = productWith({
+      priceFrom: 36.69,
+      priceCurrency: 'USD',
+      offers: [
+        { merchant: 'Native EUR', price: 32, priceCurrency: 'EUR', delivery: 'Tomorrow' },
+        { merchant: 'Display USD', price: 36.69, priceCurrency: 'USD', delivery: 'Tomorrow' },
+      ],
+    })
+
+    expect(productPriceFrom(mixedCurrency, [])).toBe(36.69)
   })
 })
 
@@ -616,6 +648,7 @@ describe('cart and order utilities', () => {
           productVariantId: 'variant-small',
           merchant: 'Shared merchant',
           price: 10,
+          priceCurrency: 'USD',
           delivery: 'Standard',
         },
         {
@@ -623,6 +656,7 @@ describe('cart and order utilities', () => {
           productVariantId: 'variant-large',
           merchant: 'Shared merchant',
           price: 18,
+          priceCurrency: 'USD',
           delivery: 'Standard',
         },
       ],
