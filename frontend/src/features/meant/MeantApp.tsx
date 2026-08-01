@@ -3,6 +3,7 @@ import {
   type SetStateAction,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -163,6 +164,7 @@ import type {
   View,
 } from './types'
 import { cartItemIdentity, cartLines, cartMerchantKey, normalizedMerchantName } from './utils'
+import { resetPrimaryNavigationScroll } from './shared/primaryNavigationScroll'
 
 const EMPTY_TASTE_PROFILE: UserTasteProfile = {
   profileHash: '',
@@ -629,6 +631,7 @@ function SavedView({
 
 export function MeantApp() {
   const [view, setView] = useState<View>('discover')
+  const [primaryNavigationSequence, setPrimaryNavigationSequence] = useState(0)
   const [authMode, setAuthMode] = useState<AuthMode>('signin')
   const { session, loading: authLoading, signOut, ...authActions } = useSupabaseAuth()
   const authed = Boolean(session)
@@ -1683,6 +1686,7 @@ export function MeantApp() {
   const nav = useCallback(
     (next: View, options?: NavOptions) => {
       setView(next)
+      setPrimaryNavigationSequence((current) => current + 1)
       if (next === 'discover' && options?.home) {
         setDiscoverHomeRequestId((current) => current + 1)
       }
@@ -1691,10 +1695,14 @@ export function MeantApp() {
       if (next === 'orders') {
         void loadOrders({ silent: true })
       }
-      window.scrollTo({ top: 0 })
     },
     [loadOrders],
   )
+
+  useLayoutEffect(() => {
+    if (primaryNavigationSequence === 0) return
+    resetPrimaryNavigationScroll(document.scrollingElement)
+  }, [primaryNavigationSequence])
 
   const addMessageToShelf = useCallback(
     (payload: Extract<ShelfDragPayload, { kind: 'message' }>) => {
