@@ -33,6 +33,7 @@ import com.meant.api.plugin.checkout.update.UpdateCheckoutCapability;
 import com.meant.api.plugin.checkout.update.dto.UpdateCheckoutRequest;
 import com.meant.api.plugin.support.UcpSession;
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
+import com.meant.api.plugin.transport.profile.AgentAttributionProperties;
 import com.meant.api.plugin.transport.registry.CapabilityRegistry;
 import java.net.InetAddress;
 import java.util.List;
@@ -48,6 +49,8 @@ import tools.jackson.databind.ObjectMapper;
 class MerchantCheckoutPluginDispatchServiceTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final AgentAttributionProperties attributionProperties = new AgentAttributionProperties(
+            "app.usemeant.com", "meant", "agentic_commerce");
 
     @Test
     void dispatchesCartToCreateCheckoutAndStoresContinueUrlOnSession() throws Exception {
@@ -334,9 +337,9 @@ class MerchantCheckoutPluginDispatchServiceTest {
 
     private CapabilityRegistry registry() {
         return new CapabilityRegistry(List.of(
-                new CreateCheckoutCapability(objectMapper),
+                new CreateCheckoutCapability(objectMapper, attributionProperties),
                 new GetCheckoutCapability(objectMapper),
-                new UpdateCheckoutCapability(objectMapper)
+                new UpdateCheckoutCapability(objectMapper, attributionProperties)
         ));
     }
 

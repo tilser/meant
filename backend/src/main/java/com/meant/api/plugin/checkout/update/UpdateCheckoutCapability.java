@@ -15,6 +15,8 @@ import com.meant.api.plugin.spi.CapabilityId;
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import com.meant.api.plugin.spi.UcpCapability;
 import com.meant.api.plugin.spi.UcpToolResponse;
+import com.meant.api.plugin.support.UcpAttribution;
+import com.meant.api.plugin.transport.profile.AgentAttributionProperties;
 import java.util.List;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
@@ -26,9 +28,11 @@ public class UpdateCheckoutCapability implements UcpCapability<UpdateCheckoutReq
     public static final CapabilityId ID = CapabilityId.of("dev.ucp.shopping.checkout.update");
 
     private final ObjectMapper objectMapper;
+    private final UcpAttribution attribution;
 
-    public UpdateCheckoutCapability(ObjectMapper objectMapper) {
+    public UpdateCheckoutCapability(ObjectMapper objectMapper, AgentAttributionProperties attributionProperties) {
         this.objectMapper = objectMapper;
+        this.attribution = attributionProperties.attribution();
     }
 
     @Override
@@ -68,7 +72,8 @@ public class UpdateCheckoutCapability implements UcpCapability<UpdateCheckoutReq
                         request.currency(),
                         request.context(),
                         FulfillmentExtensionSupport.fulfillment(request.fulfillment()),
-                        DiscountExtensionSupport.replacementDiscountCodes(request.discountCodes())
+                        DiscountExtensionSupport.replacementDiscountCodes(request.discountCodes()),
+                        attribution
                 )
         );
     }

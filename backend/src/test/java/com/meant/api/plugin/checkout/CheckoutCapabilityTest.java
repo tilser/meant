@@ -27,6 +27,8 @@ import com.meant.api.plugin.checkout.update.dto.UpdateCheckoutRequest;
 import com.meant.api.plugin.spi.CapabilityAdvertisement;
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import com.meant.api.plugin.spi.UcpToolResponse;
+import com.meant.api.plugin.support.UcpAttribution;
+import com.meant.api.plugin.transport.profile.AgentAttributionProperties;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -36,10 +38,13 @@ import tools.jackson.databind.ObjectMapper;
 class CheckoutCapabilityTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final AgentAttributionProperties attributionProperties = new AgentAttributionProperties(
+            "app.usemeant.com", "meant", "agentic_commerce");
+    private final UcpAttribution attribution = attributionProperties.attribution();
 
     @Test
     void createBuildsTypedArgumentsAndParsesTypedResponse() throws Exception {
-        CreateCheckoutCapability capability = new CreateCheckoutCapability(objectMapper);
+        CreateCheckoutCapability capability = new CreateCheckoutCapability(objectMapper, attributionProperties);
 
         CreateCheckoutArguments arguments = capability.buildArguments(
                 new CreateCheckoutRequest(
@@ -75,6 +80,10 @@ class CheckoutCapabilityTest {
         assertThat(arguments.checkout().discounts().codes()).containsExactly("SAVE10");
         assertThat(arguments.checkout().fulfillment().methods().getFirst())
                 .satisfies(method -> assertThat(method.id()).isEqualTo("method_1"));
+        assertThat(arguments.checkout().attribution()).isEqualTo(attribution);
+        assertThat(serializedArguments).contains(
+                "\"attribution\":{\"referring_domain\":\"app.usemeant.com\","
+                        + "\"utm_source\":\"meant\",\"utm_medium\":\"agentic_commerce\"}");
         assertThat(response.resolvedCheckout().id()).isEqualTo("gid://shopify/Checkout/1");
         assertThat(response.resolvedCheckout().cartId()).isEqualTo("gid://shopify/Cart/1");
         assertThat(response.resolvedCheckout().continueUrl()).isEqualTo("https://merchant.example/continue");
@@ -112,7 +121,7 @@ class CheckoutCapabilityTest {
 
     @Test
     void updateBuildsBuyerEmailAndShippingArgumentsAndParsesTypedResponse() throws Exception {
-        UpdateCheckoutCapability capability = new UpdateCheckoutCapability(objectMapper);
+        UpdateCheckoutCapability capability = new UpdateCheckoutCapability(objectMapper, attributionProperties);
 
         UpdateCheckoutArguments arguments = capability.buildArguments(
                 new UpdateCheckoutRequest(
@@ -154,13 +163,14 @@ class CheckoutCapabilityTest {
         assertThat(arguments.checkout().fulfillment().methods().getFirst())
                 .satisfies(method -> assertThat(method.id()).isEqualTo("method_1"));
         assertThat(arguments.checkout().discounts().codes()).containsExactly("SAVE10");
+        assertThat(arguments.checkout().attribution()).isEqualTo(attribution);
         assertThat(serializedArguments).doesNotContain("shipping_address", "available_methods");
         assertThat(response.resolvedCheckout().status()).isEqualTo("open");
     }
 
     @Test
     void updateDistinguishesUnchangedDiscountsFromExplicitClear() throws Exception {
-        UpdateCheckoutCapability capability = new UpdateCheckoutCapability(objectMapper);
+        UpdateCheckoutCapability capability = new UpdateCheckoutCapability(objectMapper, attributionProperties);
 
         UpdateCheckoutArguments unchanged = capability.buildArguments(
                 updateRequest(null), NegotiatedCapabilities.none());
@@ -210,7 +220,7 @@ class CheckoutCapabilityTest {
 
     @Test
     void rootCheckoutResponseParsesExtensionFields() {
-        CreateCheckoutCapability capability = new CreateCheckoutCapability(objectMapper);
+        CreateCheckoutCapability capability = new CreateCheckoutCapability(objectMapper, attributionProperties);
 
         UcpCheckoutResponse response = capability.parseResponse(new UcpToolResponse(
                 """

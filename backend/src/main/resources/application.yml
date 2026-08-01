@@ -131,6 +131,10 @@ ucp:
     profile-url: ${UCP_AGENT_PROFILE_URL:https://shopify.dev/ucp/agent-profiles/2026-04-08/valid-with-capabilities.json}
     protocol-version: ${UCP_AGENT_PROTOCOL_VERSION:2026-04-08}
     signing-key-id: ${UCP_AGENT_SIGNING_KEY_ID:meant-local}
+    attribution:
+      referring-domain: ${UCP_AGENT_ATTRIBUTION_REFERRING_DOMAIN:app.usemeant.com}
+      utm-source: ${UCP_AGENT_ATTRIBUTION_UTM_SOURCE:meant}
+      utm-medium: ${UCP_AGENT_ATTRIBUTION_UTM_MEDIUM:agentic_commerce}
   diagnostics:
     checkout-wire-logging-enabled: ${UCP_CHECKOUT_WIRE_LOGGING_ENABLED:false}
   signing:

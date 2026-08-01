@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.meant.api.plugin.support.UcpAttribution;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -19,6 +20,7 @@ public record CartToolArguments(
         List<LineItem> lineItems,
         CartBuyer buyer,
         CartContext context,
+        UcpAttribution attribution,
         CartSignals signals,
         Fulfillment fulfillment,
         Discounts discounts,
@@ -43,6 +45,7 @@ public record CartToolArguments(
                 addLineItems(addItems),
                 emptyToNull(buyerIdentity),
                 emptyToNull(context),
+                null,
                 emptyToNull(signals),
                 fulfillment(deliveryAddressesToAdd, deliveryAddressesToReplace, selectedDeliveryOptions),
                 nonEmptyDiscounts(discountCodes),
@@ -87,6 +90,7 @@ public record CartToolArguments(
                 lineItems,
                 emptyToNull(buyerIdentity),
                 emptyToNull(context),
+                null,
                 emptyToNull(signals),
                 fulfillment(deliveryAddressesToAdd, deliveryAddressesToReplace, selectedDeliveryOptions),
                 replacementDiscounts(discountCodes),
@@ -106,8 +110,13 @@ public record CartToolArguments(
             String note
     ) {
         return new CartToolArguments(
-                addLineItems(lineItems), emptyToNull(buyer), emptyToNull(context), emptyToNull(signals),
-                fulfillment, discounts, codes(giftCardCodes), note);
+                addLineItems(lineItems), emptyToNull(buyer), emptyToNull(context), null,
+                emptyToNull(signals), fulfillment, discounts, codes(giftCardCodes), note);
+    }
+
+    public CartToolArguments withAttribution(UcpAttribution value) {
+        return new CartToolArguments(
+                lineItems, buyer, context, value, signals, fulfillment, discounts, giftCardCodes, note);
     }
 
     private static List<LineItem> addLineItems(List<CartAddItem> addItems) {

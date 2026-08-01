@@ -47,6 +47,10 @@ merchant:
 ucp:
   agent:
     profile-url: http://localhost:8080/.well-known/ucp-agent.json
+    attribution:
+      referring-domain: app.usemeant.com
+      utm-source: meant
+      utm-medium: agentic_commerce
 
 order:
   webhook:

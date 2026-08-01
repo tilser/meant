@@ -25,6 +25,8 @@ import com.meant.api.plugin.cart.update.dto.UpdateCartRequest;
 import com.meant.api.plugin.cart.update.dto.CartReplacementState;
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import com.meant.api.plugin.spi.UcpToolResponse;
+import com.meant.api.plugin.support.UcpAttribution;
+import com.meant.api.plugin.transport.profile.AgentAttributionProperties;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -34,10 +36,13 @@ import tools.jackson.databind.ObjectMapper;
 class CartCapabilityTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final AgentAttributionProperties attributionProperties = new AgentAttributionProperties(
+            "app.usemeant.com", "meant", "agentic_commerce");
+    private final UcpAttribution attribution = attributionProperties.attribution();
 
     @Test
     void createBuildsTypedArgumentsAndParsesTypedResponse() throws Exception {
-        CreateCartCapability capability = new CreateCartCapability(objectMapper);
+        CreateCartCapability capability = new CreateCartCapability(objectMapper, attributionProperties);
 
         CreateCartArguments arguments = capability.buildArguments(
                 new CreateCartRequest(
@@ -62,6 +67,10 @@ class CartCapabilityTest {
         assertThat(arguments.cart().discounts().codes()).containsExactly("SAVE5");
         assertThat(arguments.cart().giftCardCodes()).containsExactly("CARD1234");
         assertThat(arguments.cart().note()).isEqualTo("Please gift wrap");
+        assertThat(arguments.cart().attribution()).isEqualTo(attribution);
+        assertThat(objectMapper.writeValueAsString(arguments)).contains(
+                "\"attribution\":{\"referring_domain\":\"app.usemeant.com\","
+                        + "\"utm_source\":\"meant\",\"utm_medium\":\"agentic_commerce\"}");
         assertThat(response.cart().id()).isEqualTo("gid://shopify/Cart/1");
         assertThat(response.cart().continueUrl()).isEqualTo("https://merchant.example/continue");
         assertThat(response.cart().expiresAt()).isEqualTo(Instant.parse("2026-06-16T12:05:00Z"));
@@ -70,7 +79,7 @@ class CartCapabilityTest {
 
     @Test
     void createCarriesExactConfiguredOfferIdentityIntoTheRemoteCall() {
-        CreateCartCapability capability = new CreateCartCapability(objectMapper);
+        CreateCartCapability capability = new CreateCartCapability(objectMapper, attributionProperties);
         CartAddItem item = new CartAddItem(
                 "product-1",
                 "variant-1",
@@ -111,7 +120,7 @@ class CartCapabilityTest {
 
     @Test
     void updateBuildsTypedArgumentsAndParsesTypedResponse() {
-        UpdateCartCapability capability = new UpdateCartCapability(objectMapper);
+        UpdateCartCapability capability = new UpdateCartCapability(objectMapper, attributionProperties);
 
         UpdateCartArguments arguments = capability.buildArguments(
                 new UpdateCartRequest(
@@ -149,12 +158,13 @@ class CartCapabilityTest {
         assertThat(arguments.cart().lineItems().get(2).item().id())
                 .isEqualTo("gid://shopify/ProductVariant/3");
         assertThat(arguments.cart().lineItems().get(2).quantity()).isZero();
+        assertThat(arguments.cart().attribution()).isEqualTo(attribution);
         assertThat(response.cart().lines()).hasSize(1);
     }
 
     @Test
     void updateDistinguishesUnchangedDiscountsFromExplicitClear() throws Exception {
-        UpdateCartCapability capability = new UpdateCartCapability(objectMapper);
+        UpdateCartCapability capability = new UpdateCartCapability(objectMapper, attributionProperties);
 
         UpdateCartArguments unchanged = capability.buildArguments(updateRequest(null), NegotiatedCapabilities.none());
         UpdateCartArguments cleared = capability.buildArguments(updateRequest(List.of()), NegotiatedCapabilities.none());
@@ -166,7 +176,7 @@ class CartCapabilityTest {
 
     @Test
     void providerUpdateSerializesTheCompleteIntendedCartState() {
-        UpdateCartCapability capability = new UpdateCartCapability(objectMapper);
+        UpdateCartCapability capability = new UpdateCartCapability(objectMapper, attributionProperties);
         CartAddItem first = new CartAddItem("product-1", "variant-1",
                 List.of(new CartAddItem.SelectedOption("variant", "Color", "Black")),
                 List.of(), null, 3);
@@ -188,6 +198,7 @@ class CartCapabilityTest {
         assertThat(arguments.cart().lineItems().getFirst().item().selectedOptions())
                 .containsExactlyElementsOf(first.selectedOptions());
         assertThat(arguments.cart().context().addressCountry()).isEqualTo("US");
+        assertThat(arguments.cart().attribution()).isEqualTo(attribution);
     }
 
     private UpdateCartRequest updateRequest(List<String> discountCodes) {
@@ -198,7 +209,7 @@ class CartCapabilityTest {
 
     @Test
     void providerUpdateSerializesRequiredEmptyLineItemsWhenRemovingTheLastItem() throws Exception {
-        UpdateCartCapability capability = new UpdateCartCapability(objectMapper);
+        UpdateCartCapability capability = new UpdateCartCapability(objectMapper, attributionProperties);
         UpdateCartArguments arguments = capability.buildArguments(new UpdateCartRequest(
                 "cart-1", List.of(), List.of(), List.of(), List.of(), null, null,
                 List.of(), List.of(), List.of(), List.of(), List.of(), null,
@@ -277,7 +288,7 @@ class CartCapabilityTest {
                 List.of(),
                 remote.cart().note());
 
-        UpdateCartArguments arguments = new UpdateCartCapability(objectMapper).buildArguments(
+        UpdateCartArguments arguments = new UpdateCartCapability(objectMapper, attributionProperties).buildArguments(
                 new UpdateCartRequest(
                         "cart-1", List.of(), List.of(), List.of(), List.of(), null, null,
                         List.of(), List.of(), List.of(), List.of(), List.of(), null, replacement),
@@ -301,7 +312,7 @@ class CartCapabilityTest {
 
     @Test
     void createParsesShopifyRootCartResponse() {
-        CreateCartCapability capability = new CreateCartCapability(objectMapper);
+        CreateCartCapability capability = new CreateCartCapability(objectMapper, attributionProperties);
 
         UcpCartResponse response = capability.parseResponse(new UcpToolResponse(
                 """
@@ -344,7 +355,7 @@ class CartCapabilityTest {
 
     @Test
     void createParsesShopifyConnectionCartLines() {
-        CreateCartCapability capability = new CreateCartCapability(objectMapper);
+        CreateCartCapability capability = new CreateCartCapability(objectMapper, attributionProperties);
 
         UcpCartResponse response = capability.parseResponse(new UcpToolResponse(
                 """

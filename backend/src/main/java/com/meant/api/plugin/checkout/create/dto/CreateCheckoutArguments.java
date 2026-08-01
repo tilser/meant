@@ -6,6 +6,7 @@ import com.meant.api.plugin.checkout.common.dto.CheckoutContext;
 import com.meant.api.plugin.checkout.extension.buyerconsent.dto.BuyerWithConsent;
 import com.meant.api.plugin.checkout.extension.discount.dto.CheckoutDiscounts;
 import com.meant.api.plugin.checkout.extension.fulfillment.dto.CheckoutFulfillment;
+import com.meant.api.plugin.support.UcpAttribution;
 import java.util.List;
 
 @JsonInclude(JsonInclude.Include.NON_EMPTY)
@@ -23,7 +24,8 @@ public record CreateCheckoutArguments(
             String currency,
             CheckoutContext context,
             CheckoutDiscounts discounts,
-            CheckoutFulfillment fulfillment
+            CheckoutFulfillment fulfillment,
+            UcpAttribution attribution
     ) {
     }
 

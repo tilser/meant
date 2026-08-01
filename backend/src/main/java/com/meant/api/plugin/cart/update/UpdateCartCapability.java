@@ -11,6 +11,8 @@ import com.meant.api.plugin.spi.CapabilityId;
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import com.meant.api.plugin.spi.UcpCapability;
 import com.meant.api.plugin.spi.UcpToolResponse;
+import com.meant.api.plugin.support.UcpAttribution;
+import com.meant.api.plugin.transport.profile.AgentAttributionProperties;
 import java.util.List;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
@@ -22,9 +24,11 @@ public class UpdateCartCapability implements UcpCapability<UpdateCartRequest, Uc
     public static final CapabilityId ID = CapabilityId.of("dev.ucp.shopping.cart.update");
 
     private final ObjectMapper objectMapper;
+    private final UcpAttribution attribution;
 
-    public UpdateCartCapability(ObjectMapper objectMapper) {
+    public UpdateCartCapability(ObjectMapper objectMapper, AgentAttributionProperties attributionProperties) {
         this.objectMapper = objectMapper;
+        this.attribution = attributionProperties.attribution();
     }
 
     @Override
@@ -42,9 +46,7 @@ public class UpdateCartCapability implements UcpCapability<UpdateCartRequest, Uc
             UpdateCartRequest request,
             NegotiatedCapabilities activeCapabilities
     ) {
-        return new UpdateCartArguments(
-                request.cartId(),
-                request.replacementState() == null ? CartToolArguments.update(
+        CartToolArguments cart = request.replacementState() == null ? CartToolArguments.update(
                         request.addItems(),
                         request.updateItems(),
                         request.removeItems(),
@@ -57,8 +59,8 @@ public class UpdateCartCapability implements UcpCapability<UpdateCartRequest, Uc
                         request.discountCodes(),
                         request.giftCardCodes(),
                         request.note()
-                ) : request.replacementState().arguments()
-        );
+                ) : request.replacementState().arguments();
+        return new UpdateCartArguments(request.cartId(), cart.withAttribution(attribution));
     }
 
     @Override

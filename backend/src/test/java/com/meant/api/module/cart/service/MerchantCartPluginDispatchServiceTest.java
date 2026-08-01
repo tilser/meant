@@ -39,6 +39,7 @@ import com.meant.api.plugin.cart.update.dto.UpdateCartRequest;
 import com.meant.api.plugin.support.UcpSession;
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import com.meant.api.plugin.transport.registry.CapabilityRegistry;
+import com.meant.api.plugin.transport.profile.AgentAttributionProperties;
 import java.net.InetAddress;
 import java.util.List;
 import java.util.Set;
@@ -55,6 +56,8 @@ import tools.jackson.databind.ObjectMapper;
 class MerchantCartPluginDispatchServiceTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final AgentAttributionProperties attributionProperties = new AgentAttributionProperties(
+            "app.usemeant.com", "meant", "agentic_commerce");
 
     @Test
     void dispatchesCartLifecycleAndMapsGetAfterCancelToNotFound() throws Exception {
@@ -371,9 +374,9 @@ class MerchantCartPluginDispatchServiceTest {
 
     private CapabilityRegistry registry() {
         return new CapabilityRegistry(List.of(
-                new CreateCartCapability(objectMapper),
+                new CreateCartCapability(objectMapper, attributionProperties),
                 new GetCartCapability(objectMapper),
-                new UpdateCartCapability(objectMapper),
+                new UpdateCartCapability(objectMapper, attributionProperties),
                 new CancelCartCapability(objectMapper)
         ));
     }

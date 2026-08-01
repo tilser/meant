@@ -11,6 +11,8 @@ import com.meant.api.plugin.spi.CapabilityId;
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import com.meant.api.plugin.spi.UcpCapability;
 import com.meant.api.plugin.spi.UcpToolResponse;
+import com.meant.api.plugin.support.UcpAttribution;
+import com.meant.api.plugin.transport.profile.AgentAttributionProperties;
 import java.util.List;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
@@ -22,9 +24,11 @@ public class CreateCartCapability implements UcpCapability<CreateCartRequest, Uc
     public static final CapabilityId ID = CapabilityId.of("dev.ucp.shopping.cart.create");
 
     private final ObjectMapper objectMapper;
+    private final UcpAttribution attribution;
 
-    public CreateCartCapability(ObjectMapper objectMapper) {
+    public CreateCartCapability(ObjectMapper objectMapper, AgentAttributionProperties attributionProperties) {
         this.objectMapper = objectMapper;
+        this.attribution = attributionProperties.attribution();
     }
 
     @Override
@@ -54,7 +58,7 @@ public class CreateCartCapability implements UcpCapability<CreateCartRequest, Uc
                         request.discountCodes(),
                         request.giftCardCodes(),
                         request.note()
-                )
+                ).withAttribution(attribution)
         );
     }
 

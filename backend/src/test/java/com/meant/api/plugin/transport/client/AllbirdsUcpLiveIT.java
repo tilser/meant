@@ -9,6 +9,7 @@ import com.meant.api.plugin.cart.update.dto.UpdateCartRequest;
 import com.meant.api.plugin.spi.NegotiatedCapabilities;
 import com.meant.api.plugin.spi.UcpToolResponse;
 import com.meant.api.plugin.transport.profile.AgentIdentity;
+import com.meant.api.plugin.transport.profile.AgentAttributionProperties;
 import java.net.URI;
 import java.util.List;
 import java.util.Map;
@@ -33,7 +34,10 @@ class AllbirdsUcpLiveIT {
             "https://www.machinecommerce.dev/ucp/agent-profile/ucp-agent.json";
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final UpdateCartCapability updateCartCapability = new UpdateCartCapability(objectMapper);
+    private final AgentAttributionProperties attributionProperties = new AgentAttributionProperties(
+            "app.usemeant.com", "meant", "agentic_commerce");
+    private final UpdateCartCapability updateCartCapability =
+            new UpdateCartCapability(objectMapper, attributionProperties);
     private final RestClient restClient = RestClient.builder()
             .requestFactory(new JdkClientHttpRequestFactory())
             .build();
