@@ -30,9 +30,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.ObjectMapper;
 
+@ExtendWith(OutputCaptureExtension.class)
 class UserProductSearchQualificationModelServiceTest {
 
     @Test
@@ -253,7 +257,9 @@ class UserProductSearchQualificationModelServiceTest {
     }
 
     @Test
-    void fallsBackToAnUnqualifiedSearchAfterTheOnlyModelCallFails() {
+    void fallsBackToAnUnqualifiedSearchAndLogsTheFailureMessageAfterTheOnlyModelCallFails(
+            CapturedOutput output
+    ) {
         FakeOpenRouterChatClient client = new FakeOpenRouterChatClient(
                 new OpenRouterException("OpenRouter timed out"),
                 combinedQuestionResponse()
@@ -265,6 +271,9 @@ class UserProductSearchQualificationModelServiceTest {
         assertThat(plan.effectiveQuery()).isEqualTo("desk lamp");
         assertThat(plan.missingTargets()).isEmpty();
         assertThat(plan.attributes().state()).isEqualTo(UserProductSearchFilterState.NOT_APPLICABLE);
+        assertThat(output)
+                .contains("failureType=com.meant.api.common.exception.OpenRouterException")
+                .contains("failureMessage=OpenRouter timed out");
     }
 
     @Test

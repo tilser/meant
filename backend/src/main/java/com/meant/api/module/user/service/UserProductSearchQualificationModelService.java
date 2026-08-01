@@ -174,9 +174,10 @@ public class UserProductSearchQualificationModelService {
         } catch (RuntimeException exception) {
             log.warn(
                     "Product-search qualification model failed; continuing without model-derived filters. "
-                            + "model={}, failureType={}",
+                            + "model={}, failureType={}, failureMessage={}",
                     model,
-                    exception.getClass().getName()
+                    exception.getClass().getName(),
+                    exception.getMessage()
             );
             return result(unqualifiedPlan(query), model);
         }
