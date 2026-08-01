@@ -60,7 +60,12 @@ public class PickRecommendedProductAgentTool implements AgentTool {
                 .orElseThrow(() -> AgentProductReadToolException.invalid(
                         "None of the selected candidates is currently purchasable."));
         AgentProductListResult output = new AgentProductListResult(
-                List.of(resultService.reference(picked.product(), 1)),
+                List.of(resultService.reference(
+                        picked.product(),
+                        1,
+                        null,
+                        picked.personalization()
+                )),
                 null,
                 false,
                 false,

@@ -59,7 +59,12 @@ public class CompareProductsAgentTool implements AgentTool {
                 new RehydrateUserCanonicalProductsQuery(context.userId(), keys));
         List<UserProductDetailResult> details = result.products();
         List<AgentProductReferenceResult> references = IntStream.range(0, details.size())
-                .mapToObj(index -> resultService.reference(details.get(index).product(), index + 1))
+                .mapToObj(index -> resultService.reference(
+                        details.get(index).product(),
+                        index + 1,
+                        null,
+                        details.get(index).personalization()
+                ))
                 .toList();
         List<AgentArtifact> artifacts = new ArrayList<>(IntStream.range(0, details.size())
                 .mapToObj(index -> resultService.detailArtifacts(details.get(index), index + 1))

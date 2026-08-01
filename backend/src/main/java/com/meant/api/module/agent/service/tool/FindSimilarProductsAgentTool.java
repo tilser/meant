@@ -130,7 +130,12 @@ public class FindSimilarProductsAgentTool implements AgentTool {
         );
         List<CanonicalProduct> products = result.products();
         List<AgentProductReferenceResult> references = IntStream.range(0, products.size())
-                .mapToObj(index -> resultService.reference(products.get(index), index + 1))
+                .mapToObj(index -> resultService.reference(
+                        products.get(index),
+                        index + 1,
+                        null,
+                        result.productPersonalizations().get(products.get(index).key())
+                ))
                 .toList();
         List<AgentArtifact> artifacts = IntStream.range(0, products.size())
                 .mapToObj(index -> resultService.discoveryArtifacts(
