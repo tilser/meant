@@ -6,10 +6,8 @@ import com.meant.api.module.user.entity.UserProductSearchQualificationRequest;
 import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.repository.UserProductSearchQualificationRepository;
 import com.meant.api.module.user.repository.UserProductSearchQualificationRequestRepository;
-import com.meant.api.module.user.service.command.PersistUserProductSearchQualificationCommand;
 import com.meant.api.module.user.service.command.CancelUserProductSearchQualificationCommand;
-import com.meant.api.module.user.service.command.SaveUserProductSearchPreferencesCommand;
-import com.meant.api.module.user.service.command.UserProductSearchPreferenceCommand;
+import com.meant.api.module.user.service.command.PersistUserProductSearchQualificationCommand;
 import com.meant.api.module.user.service.dto.UserProductSearchQualificationPlan;
 import com.meant.api.module.user.service.dto.UserProductSearchQualificationSnapshot;
 import com.meant.api.module.user.service.query.FindPendingUserProductSearchQualificationQuery;
@@ -34,7 +32,6 @@ public class UserProductSearchQualificationPersistenceService {
     private final UserProductSearchQualificationRepository qualificationRepository;
     private final UserProductSearchQualificationRequestRepository requestRepository;
     private final UserProductSearchQualificationPlanCodec planCodec;
-    private final UserProductSearchPreferenceService preferenceService;
 
     @Transactional(readOnly = true)
     public Optional<UserProductSearchQualificationSnapshot> find(
@@ -251,7 +248,6 @@ public class UserProductSearchQualificationPersistenceService {
                 command.promptVersion().trim(),
                 now
         );
-        applyDurablePreferences(command.userId(), command.plan());
         return qualification;
     }
 
@@ -276,7 +272,6 @@ public class UserProductSearchQualificationPersistenceService {
                 command.promptVersion().trim(),
                 now
         );
-        applyDurablePreferences(command.userId(), command.plan());
         return existing;
     }
 
@@ -289,19 +284,6 @@ public class UserProductSearchQualificationPersistenceService {
                 || !java.util.Objects.equals(qualification.getMerchantId(), command.merchantId())) {
             throw UserException.notFound("Product-search qualification not found");
         }
-    }
-
-    private void applyDurablePreferences(UUID userId, UserProductSearchQualificationPlan plan) {
-        if (plan.durableAttributes().isEmpty()) {
-            return;
-        }
-        preferenceService.upsert(new SaveUserProductSearchPreferencesCommand(
-                userId,
-                plan.durableAttributes().stream()
-                        .map(attribute -> new UserProductSearchPreferenceCommand(
-                                attribute.scope(), attribute.name(), attribute.values()))
-                        .toList()
-        ));
     }
 
     private UserProductSearchQualificationSnapshot snapshot(UserProductSearchQualification qualification) {

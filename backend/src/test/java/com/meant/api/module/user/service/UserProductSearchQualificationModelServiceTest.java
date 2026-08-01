@@ -238,13 +238,33 @@ class UserProductSearchQualificationModelServiceTest {
     }
 
     @Test
-    void rejectsStructurallyInvalidJsonWithoutRetry() {
+    void fallsBackToAnUnqualifiedSearchAfterStructurallyInvalidJsonWithoutRetry() {
         FakeOpenRouterChatClient client = new FakeOpenRouterChatClient("not-json", combinedQuestionResponse());
 
-        assertThatThrownBy(() -> service(client).generate(query("desk lamp", "desk lamp", null)))
-                .isInstanceOf(OpenRouterException.class)
-                .hasMessageContaining("invalid product-search qualification JSON");
+        var plan = service(client).generate(query("desk lamp", "desk lamp", null)).plan();
+
         assertThat(client.calls).isEqualTo(1);
+        assertThat(plan.effectiveQuery()).isEqualTo("desk lamp");
+        assertThat(plan.missingFilters()).isEmpty();
+        assertThat(plan.missingTargets()).isEmpty();
+        assertThat(plan.durableAttributes()).isEmpty();
+        assertThat(plan.condition().state()).isEqualTo(UserProductSearchFilterState.NOT_APPLICABLE);
+        assertThat(plan.price().state()).isEqualTo(UserProductSearchFilterState.NOT_APPLICABLE);
+    }
+
+    @Test
+    void fallsBackToAnUnqualifiedSearchAfterTheOnlyModelCallFails() {
+        FakeOpenRouterChatClient client = new FakeOpenRouterChatClient(
+                new OpenRouterException("OpenRouter timed out"),
+                combinedQuestionResponse()
+        );
+
+        var plan = service(client).generate(query("desk lamp", "desk lamp", null)).plan();
+
+        assertThat(client.calls).isEqualTo(1);
+        assertThat(plan.effectiveQuery()).isEqualTo("desk lamp");
+        assertThat(plan.missingTargets()).isEmpty();
+        assertThat(plan.attributes().state()).isEqualTo(UserProductSearchFilterState.NOT_APPLICABLE);
     }
 
     @Test
@@ -302,7 +322,7 @@ class UserProductSearchQualificationModelServiceTest {
     }
 
     @Test
-    void rejectsAnAttributeDecisionWhenTheRequiredRelevanceFlagIsMissingWithoutRetry() {
+    void ignoresAResultMissingRequiredStructuralFieldsWithoutRetry() {
         String missingSizeRelevance = combinedQuestionResponse().replace(
                 "\"name\": \"SIZE\", \"relevant\": true, \"explicitAny\": false",
                 "\"name\": \"SIZE\", \"explicitAny\": false"
@@ -312,10 +332,11 @@ class UserProductSearchQualificationModelServiceTest {
                 combinedQuestionResponse()
         );
 
-        assertThatThrownBy(() -> service(client).generate(query("blue jeans", "blue jeans", null)))
-                .isInstanceOf(OpenRouterException.class)
-                .hasMessageContaining("attributes.SIZE.relevant is required");
+        var plan = service(client).generate(query("blue jeans", "blue jeans", null)).plan();
+
         assertThat(client.calls).isEqualTo(1);
+        assertThat(plan.effectiveQuery()).isEqualTo("blue jeans");
+        assertThat(plan.attributes().state()).isEqualTo(UserProductSearchFilterState.NOT_APPLICABLE);
     }
 
     private UserProductSearchQualificationPlan.Attribute attribute(

@@ -33,6 +33,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
 import tools.jackson.core.JacksonException;
@@ -41,6 +42,7 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 @Validated
 @RequiredArgsConstructor
+@Slf4j
 public class UserProductSearchQualificationModelService {
 
     private static final int MAX_ASSISTANT_MESSAGE_LENGTH = 1_500;
@@ -167,7 +169,61 @@ public class UserProductSearchQualificationModelService {
             @NotNull @Valid GenerateUserProductSearchQualificationQuery query
     ) {
         String model = openRouterProperties.models().chatModel();
-        return result(completeCandidate(model, query), model);
+        try {
+            return result(completeCandidate(model, query), model);
+        } catch (RuntimeException exception) {
+            log.warn(
+                    "Product-search qualification model failed; continuing without model-derived filters. "
+                            + "model={}, failureType={}",
+                    model,
+                    exception.getClass().getName()
+            );
+            return result(unqualifiedPlan(query), model);
+        }
+    }
+
+    private UserProductSearchQualificationPlan unqualifiedPlan(
+            GenerateUserProductSearchQualificationQuery query
+    ) {
+        String effectiveQuery = query.previousPlan() == null
+                ? query.originalQuery().trim()
+                : query.previousPlan().effectiveQuery();
+        if (effectiveQuery.length() > MAX_EFFECTIVE_QUERY_LENGTH) {
+            effectiveQuery = effectiveQuery.substring(0, MAX_EFFECTIVE_QUERY_LENGTH).trim();
+        }
+        UserProductSearchQualificationPlan.Provenance none =
+                UserProductSearchQualificationPlan.Provenance.none();
+        return new UserProductSearchQualificationPlan(
+                UserProductSearchQualificationPlan.CURRENT_SCHEMA_VERSION,
+                effectiveQuery,
+                "I’ll search with the information available.",
+                List.of(),
+                List.of(),
+                new UserProductSearchQualificationPlan.AvailableFilter(
+                        UserProductSearchFilterState.VALUE,
+                        true,
+                        UserProductSearchQualificationPlan.Provenance.system("sale-ready products only")
+                ),
+                new UserProductSearchQualificationPlan.ConditionFilter(
+                        UserProductSearchFilterState.NOT_APPLICABLE, List.of(), none),
+                new UserProductSearchQualificationPlan.LocationFilter(
+                        UserProductSearchFilterState.NOT_APPLICABLE, null, none),
+                new UserProductSearchQualificationPlan.LocationsFilter(
+                        UserProductSearchFilterState.NOT_APPLICABLE, List.of(), none),
+                new UserProductSearchQualificationPlan.PriceFilter(
+                        UserProductSearchFilterState.NOT_APPLICABLE, null, null, none),
+                new UserProductSearchQualificationPlan.ReferenceFilter(
+                        UserProductSearchFilterState.NOT_APPLICABLE, List.of(), none),
+                new UserProductSearchQualificationPlan.ReferenceFilter(
+                        UserProductSearchFilterState.NOT_APPLICABLE, List.of(), none),
+                new UserProductSearchQualificationPlan.AttributesFilter(
+                        UserProductSearchFilterState.NOT_APPLICABLE, List.of()),
+                new UserProductSearchQualificationPlan.RatingFilter(
+                        UserProductSearchFilterState.NOT_APPLICABLE, null, null, none),
+                new UserProductSearchQualificationPlan.PriceTierFilter(
+                        UserProductSearchFilterState.NOT_APPLICABLE, List.of(), none),
+                List.of()
+        );
     }
 
     private UserProductSearchQualificationModelResult result(
@@ -471,6 +527,7 @@ public class UserProductSearchQualificationModelService {
                 response.durableAttributes(), "durableAttributes");
 
         UserProductSearchQualificationPlan.AttributesFilter effectiveAttributes = attributes(attributes);
+        durableAttributes(durableAttributes, effectiveAttributes);
         return new UserProductSearchQualificationPlan(
                 UserProductSearchQualificationPlan.CURRENT_SCHEMA_VERSION,
                 effectiveQuery,
@@ -499,7 +556,7 @@ public class UserProductSearchQualificationModelService {
                 effectiveAttributes,
                 rating(rating),
                 priceTier(priceTier),
-                durableAttributes(durableAttributes, effectiveAttributes)
+                List.of()
         );
     }
 

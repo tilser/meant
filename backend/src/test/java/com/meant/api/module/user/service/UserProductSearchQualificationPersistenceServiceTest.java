@@ -13,7 +13,6 @@ import com.meant.api.module.user.repository.UserProductSearchQualificationReposi
 import com.meant.api.module.user.repository.UserProductSearchQualificationRequestRepository;
 import com.meant.api.module.user.service.command.PersistUserProductSearchQualificationCommand;
 import com.meant.api.module.user.service.command.CancelUserProductSearchQualificationCommand;
-import com.meant.api.module.user.service.command.SaveUserProductSearchPreferencesCommand;
 import com.meant.api.module.user.service.dto.UserProductSearchQualificationPlan;
 import com.meant.api.module.user.service.query.FindPendingUserProductSearchQualificationQuery;
 import com.meant.api.module.user.service.query.FindUserProductSearchQualificationByRequestQuery;
@@ -35,14 +34,13 @@ class UserProductSearchQualificationPersistenceServiceTest {
 
     private final List<String> writes = new ArrayList<>();
     private final FakeQualificationRepository repository = new FakeQualificationRepository(writes);
-    private final FakePreferenceService preferenceService = new FakePreferenceService(writes);
     private final UserProductSearchQualificationPlanCodec planCodec =
             new UserProductSearchQualificationPlanCodec(new ObjectMapper());
     private final FakeQualificationRequestRepository requestRepository =
             new FakeQualificationRequestRepository();
     private final UserProductSearchQualificationPersistenceService service =
             new UserProductSearchQualificationPersistenceService(
-                    repository.proxy(), requestRepository.proxy(), planCodec, preferenceService);
+                    repository.proxy(), requestRepository.proxy(), planCodec);
 
     @Test
     void isolatesTheWriteTransactionSoAConcurrentInsertCanBeReconciledAfterRollback()
@@ -56,7 +54,7 @@ class UserProductSearchQualificationPersistenceServiceTest {
     }
 
     @Test
-    void appliesDurablePreferencesInsideTheQualificationWriteBoundary() {
+    void doesNotApplyUnverifiedModelAttributesAsDurablePreferences() {
         UUID qualificationId = UUID.randomUUID();
         UUID userId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();
@@ -71,13 +69,7 @@ class UserProductSearchQualificationPersistenceServiceTest {
                 plan(true)
         ));
 
-        assertThat(writes).containsExactly("preferences", "qualification");
-        assertThat(preferenceService.saved.userId()).isEqualTo(userId);
-        assertThat(preferenceService.saved.preferences()).singleElement().satisfies(preference -> {
-            assertThat(preference.scope()).isEqualTo("footwear");
-            assertThat(preference.attributeName()).isEqualTo(UserProductSearchAttributeName.SIZE);
-            assertThat(preference.values()).containsExactly("10");
-        });
+        assertThat(writes).containsExactly("qualification");
         assertThat(repository.saved).isNotNull();
     }
 
@@ -114,7 +106,6 @@ class UserProductSearchQualificationPersistenceServiceTest {
                 .isInstanceOfSatisfying(UserException.class, exception ->
                         assertThat(exception.getStatus()).isEqualTo(HttpStatus.CONFLICT));
         assertThat(existing.getUpdatedAt()).isEqualTo(currentRevision);
-        assertThat(preferenceService.calls).isZero();
         assertThat(repository.saved).isNull();
     }
 
@@ -291,7 +282,6 @@ class UserProductSearchQualificationPersistenceServiceTest {
         assertThat(ready.getUpdatedAt()).isEqualTo(observedPendingRevision.plusSeconds(1));
         assertThat(requestRepository.saved).isNull();
         assertThat(repository.saved).isNull();
-        assertThat(preferenceService.calls).isZero();
     }
 
     @Test
@@ -344,7 +334,6 @@ class UserProductSearchQualificationPersistenceServiceTest {
         assertThat(replay.updatedAt()).isEqualTo(readyRevision);
         assertThat(replay.model()).isEqualTo("winner-model");
         assertThat(ready.getUpdatedAt()).isEqualTo(readyRevision);
-        assertThat(preferenceService.calls).isZero();
         assertThat(requestRepository.saved).isNull();
     }
 
@@ -545,25 +534,6 @@ class UserProductSearchQualificationPersistenceServiceTest {
                                 "footwear", UserProductSearchAttributeName.SIZE, List.of("10")))
                         : List.of()
         );
-    }
-
-    private static final class FakePreferenceService extends UserProductSearchPreferenceService {
-
-        private final List<String> writes;
-        private int calls;
-        private SaveUserProductSearchPreferencesCommand saved;
-
-        private FakePreferenceService(List<String> writes) {
-            super(null, null);
-            this.writes = writes;
-        }
-
-        @Override
-        public void upsert(SaveUserProductSearchPreferencesCommand command) {
-            calls++;
-            saved = command;
-            writes.add("preferences");
-        }
     }
 
     private static final class FakeQualificationRepository implements InvocationHandler {

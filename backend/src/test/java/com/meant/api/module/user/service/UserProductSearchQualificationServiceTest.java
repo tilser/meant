@@ -693,7 +693,7 @@ class UserProductSearchQualificationServiceTest {
         private int findByRequestCalls;
 
         private FakePersistenceService() {
-            super(null, null, null, null);
+            super(null, null, null);
         }
 
         @Override
