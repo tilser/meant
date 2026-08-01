@@ -15,6 +15,7 @@ import com.meant.api.module.cart.service.CartService;
 import com.meant.api.module.cart.service.command.UpdateCheckoutCommand;
 import com.meant.api.module.cart.service.dto.CheckoutResult;
 import com.meant.api.module.cart.service.query.GetCheckoutQuery;
+import com.meant.api.module.user.service.dto.UserCheckoutDetailsResult;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validator;
 import java.nio.charset.StandardCharsets;
@@ -35,6 +36,16 @@ import tools.jackson.databind.ObjectMapper;
 class AgentCheckoutToolSupport {
 
     private static final int MAX_ARGUMENT_BYTES = 64_000;
+    private static final Set<String> CHECKOUT_DETAILS_REQUIRED_CODES = Set.of(
+            "delivery_address_required",
+            "missing_shipping_address",
+            "address_invalid",
+            "delivery_address_invalid",
+            "address_undeliverable",
+            "delivery_no_delivery_available_for_merchandise_line",
+            "buyer_identity_required",
+            "missing_buyer_identity"
+    );
 
     private final AgentConversationRepository conversationRepository;
     private final AgentProductReadReferenceService referenceService;
@@ -89,10 +100,12 @@ class AgentCheckoutToolSupport {
                         new GetCheckoutQuery(cartId, context.userId(), false, context.buyerIp()),
                         scopedIdempotencyKey(context, cartId)
                 );
-                checkouts.add(AgentCheckoutResult.Checkout.from(prepared));
-                preparedCartIds.add(prepared.cartId());
-                if (prepared.checkoutAttemptId() != null) {
-                    checkoutAttemptIds.add(prepared.checkoutAttemptId());
+                PreparedCheckout resolved = reuseSavedCheckoutDetails(context, prepared);
+                checkouts.add(AgentCheckoutResult.Checkout.from(
+                        resolved.checkout(), resolved.savedCheckoutDetailsAutoApplied()));
+                preparedCartIds.add(resolved.checkout().cartId());
+                if (resolved.checkout().checkoutAttemptId() != null) {
+                    checkoutAttemptIds.add(resolved.checkout().checkoutAttemptId());
                 }
             } catch (CancellationException exception) {
                 throw exception;
@@ -108,6 +121,76 @@ class AgentCheckoutToolSupport {
         missionSupport.attachCartReferences(context, preparedCartIds);
         missionSupport.attachCheckoutReferences(context, checkoutAttemptIds);
         return new AgentCheckoutResult(checkouts, failures);
+    }
+
+    private PreparedCheckout reuseSavedCheckoutDetails(
+            AgentToolExecutionContext context,
+            CheckoutResult prepared
+    ) {
+        UserCheckoutDetailsResult details = prepared.savedCheckoutDetails();
+        if (details == null || !requiresCheckoutDetails(prepared)) {
+            return new PreparedCheckout(prepared, false);
+        }
+        try {
+            CheckoutResult updated = cartService.updateCheckout(
+                    savedCheckoutDetailsCommand(context, prepared.cartId(), details),
+                    savedDetailsIdempotencyKey(context, prepared.cartId())
+            );
+            return new PreparedCheckout(updated, !requiresCheckoutDetails(updated));
+        } catch (CancellationException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            if (Thread.currentThread().isInterrupted()) {
+                throw new CancellationException("Checkout preparation was cancelled");
+            }
+            // The checkout session is still useful when a stale saved profile is rejected or the
+            // follow-up update is unavailable. Return it so the buyer can provide different details.
+            return new PreparedCheckout(prepared, false);
+        }
+    }
+
+    private UpdateCheckoutCommand savedCheckoutDetailsCommand(
+            AgentToolExecutionContext context,
+            UUID cartId,
+            UserCheckoutDetailsResult details
+    ) {
+        return new UpdateCheckoutCommand(
+                cartId,
+                context.userId(),
+                new UpdateCheckoutCommand.Buyer(
+                        details.email(),
+                        details.firstName(),
+                        details.lastName(),
+                        details.phoneNumber()
+                ),
+                new UpdateCheckoutCommand.PostalAddress(
+                        details.streetAddress(),
+                        details.extendedAddress(),
+                        details.addressLocality(),
+                        details.addressRegion(),
+                        details.postalCode(),
+                        details.addressCountry()
+                ),
+                List.of(),
+                context.buyerIp()
+        );
+    }
+
+    private boolean requiresCheckoutDetails(CheckoutResult checkout) {
+        return checkout.messages().stream().anyMatch(this::requiresCheckoutDetails);
+    }
+
+    private boolean requiresCheckoutDetails(CheckoutResult.Message message) {
+        String code = normalized(message.code());
+        if (code.startsWith("buyer_identity") || CHECKOUT_DETAILS_REQUIRED_CODES.contains(code)) {
+            return true;
+        }
+        String path = normalized(message.path());
+        return path.startsWith("$.buyer") || path.contains("destination") || path.contains("delivery");
+    }
+
+    private String normalized(String value) {
+        return value == null ? "" : value.trim().toLowerCase(java.util.Locale.ROOT);
     }
 
     CheckoutResult get(AgentToolExecutionContext context, AgentCheckoutToolArguments.Get arguments) {
@@ -196,7 +279,23 @@ class AgentCheckoutToolSupport {
         );
     }
 
+    private UUID savedDetailsIdempotencyKey(AgentToolExecutionContext context, UUID cartId) {
+        if (context.idempotencyKey() == null) {
+            return null;
+        }
+        return UUID.nameUUIDFromBytes(
+                (context.idempotencyKey() + ":" + cartId + ":saved-checkout-details")
+                        .getBytes(StandardCharsets.UTF_8)
+        );
+    }
+
     private AgentException invalid(String message) {
         return new AgentException(HttpStatus.BAD_REQUEST, ApiErrorCode.BAD_REQUEST, message);
+    }
+
+    private record PreparedCheckout(
+            CheckoutResult checkout,
+            boolean savedCheckoutDetailsAutoApplied
+    ) {
     }
 }

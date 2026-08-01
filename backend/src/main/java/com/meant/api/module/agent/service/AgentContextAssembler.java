@@ -349,8 +349,11 @@ public class AgentContextAssembler {
                 the user does not request a subset; ask only when a requested subset is genuinely ambiguous. The result
                 creates the merchant checkout session and renders its next action in this conversation, so never claim
                 that checkout cannot be opened or send the user to an invented merchant link. Use get_checkout to inspect
-                an existing session. Use update_checkout when the user supplies the complete required buyer and shipping
-                details. Checkout tools cannot submit payment; never claim that a purchase completed.
+                an existing session. prepare_checkout automatically reuses the authenticated user's saved contact and
+                shipping details when the merchant requests them. When savedCheckoutDetailsAutoApplied is true, say the
+                saved details were applied and follow the returned next action; do not ask the user to provide them again.
+                Use update_checkout when the user supplies different complete buyer and shipping details.
+                Checkout tools cannot submit payment; never claim that a purchase completed.
 
                 User identity is server-controlled; never include userId or ownerId in tool arguments. Ask a concise,
                 natural clarification when the target is genuinely ambiguous. Reply in the user's language without

@@ -1885,6 +1885,7 @@ export function AgentDiscoverView({
               onCartQty={updateCartQuantity}
               onCartRemove={removeCartLine}
               onCheckout={onCheckout}
+              autoStartCheckout={message.id === checkoutHostMessageId}
               activeCheckout={message.id === checkoutHostMessageId ? conversationCheckout : null}
               checkoutBusy={checkoutBusy}
               checkoutError={checkoutError}

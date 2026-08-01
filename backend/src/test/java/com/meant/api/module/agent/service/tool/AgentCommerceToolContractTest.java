@@ -13,6 +13,7 @@ import com.meant.api.module.agent.repository.AgentConversationRepository;
 import com.meant.api.module.agent.service.AgentJsonSupport;
 import com.meant.api.module.agent.service.AgentProductReadReferenceService;
 import com.meant.api.module.agent.service.dto.AgentCartToolArguments;
+import com.meant.api.module.agent.service.dto.AgentCheckoutResult;
 import com.meant.api.module.agent.service.dto.AgentCheckoutToolArguments;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
 import com.meant.api.module.cart.service.CartService;
@@ -24,8 +25,10 @@ import com.meant.api.module.cart.service.dto.CartResult;
 import com.meant.api.module.cart.service.dto.CheckoutResult;
 import com.meant.api.module.cart.service.query.FindActiveCartByRoutingScopeQuery;
 import com.meant.api.module.cart.service.query.GetCheckoutQuery;
+import com.meant.api.module.user.service.dto.UserCheckoutDetailsResult;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -75,6 +78,8 @@ class AgentCommerceToolContractTest {
                 .satisfies(tool -> assertThat(tool.descriptor().description())
                         .contains("Each cart is checked out as a whole")
                         .contains("authoritative current commerce state or get_active_carts")
+                        .contains("automatically reuses")
+                        .contains("without exposing their values to the model")
                         .contains("never ask for or pass product descriptions"));
         for (AgentTool tool : tools) {
             String schema = tool.descriptor().inputSchemaJson();
@@ -423,6 +428,92 @@ class AgentCommerceToolContractTest {
         verify(cartService).updateCheckout(updateCommand.capture(), any());
         assertThat(prepareQuery.getValue().buyerIp()).isEqualTo("203.0.113.42");
         assertThat(updateCommand.getValue().buyerIp()).isEqualTo("203.0.113.42");
+    }
+
+    @Test
+    void prepareCheckoutAutomaticallyAppliesSavedDetailsRequestedByTheMerchant() throws Exception {
+        AgentConversationRepository conversations = ownedConversationRepository();
+        CartService cartService = mock(CartService.class);
+        AgentProductReadReferenceService references = mock(AgentProductReadReferenceService.class);
+        UUID cartId = UUID.randomUUID();
+        UserCheckoutDetailsResult savedDetails = new UserCheckoutDetailsResult(
+                USER_ID,
+                "buyer@example.test",
+                "David",
+                "Tilser",
+                "+420123456789",
+                "Main Street 1",
+                "Apartment 2",
+                "Prague",
+                "Prague",
+                "11000",
+                "CZ",
+                Instant.parse("2026-08-01T08:00:00Z")
+        );
+        CheckoutResult prepared = mock(CheckoutResult.class);
+        when(prepared.cartId()).thenReturn(cartId);
+        when(prepared.savedCheckoutDetails()).thenReturn(savedDetails);
+        when(prepared.messages()).thenReturn(List.of(new CheckoutResult.Message(
+                "error",
+                "delivery_address_required",
+                "requires_buyer_input",
+                "A destination address is required.",
+                "$.checkout.fulfillment.methods[0].destinations[0]"
+        )));
+        CheckoutResult updated = mock(CheckoutResult.class);
+        when(updated.cartId()).thenReturn(cartId);
+        when(updated.savedCheckoutDetails()).thenReturn(savedDetails);
+        when(updated.messages()).thenReturn(List.of());
+        when(cartService.checkout(any(GetCheckoutQuery.class), any())).thenReturn(prepared);
+        when(cartService.updateCheckout(any(UpdateCheckoutCommand.class), any())).thenReturn(updated);
+        AgentCheckoutToolSupport support = new AgentCheckoutToolSupport(
+                conversations,
+                references,
+                cartService,
+                mock(AgentMissionToolSupport.class),
+                objectMapper,
+                validator,
+                mock(AgentJsonSupport.class)
+        );
+        AgentToolExecutionContext context = context()
+                .withBuyerIp("203.0.113.42")
+                .withIdempotencyKey(UUID.randomUUID());
+
+        AgentCheckoutResult result = support.prepare(
+                context,
+                new AgentCheckoutToolArguments.Prepare(List.of(cartId))
+        );
+
+        assertThat(result.failures()).isEmpty();
+        assertThat(result.checkouts()).singleElement().satisfies(checkout -> {
+            assertThat(checkout.cartId()).isEqualTo(cartId);
+            assertThat(checkout.savedCheckoutDetailsAvailable()).isTrue();
+            assertThat(checkout.savedCheckoutDetailsAutoApplied()).isTrue();
+        });
+        assertThat(objectMapper.writeValueAsString(result))
+                .contains("\"savedCheckoutDetailsAvailable\":true")
+                .contains("\"savedCheckoutDetailsAutoApplied\":true")
+                .doesNotContain("buyer@example.test", "Main Street 1", "+420123456789");
+        ArgumentCaptor<UpdateCheckoutCommand> command = ArgumentCaptor.forClass(UpdateCheckoutCommand.class);
+        ArgumentCaptor<UUID> idempotencyKey = ArgumentCaptor.forClass(UUID.class);
+        verify(cartService).updateCheckout(command.capture(), idempotencyKey.capture());
+        assertThat(idempotencyKey.getValue()).isNotNull().isNotEqualTo(context.idempotencyKey());
+        assertThat(command.getValue()).satisfies(update -> {
+            assertThat(update.cartId()).isEqualTo(cartId);
+            assertThat(update.userId()).isEqualTo(USER_ID);
+            assertThat(update.buyerIp()).isEqualTo("203.0.113.42");
+            assertThat(update.discountCodes()).isEmpty();
+            assertThat(update.buyer().email()).isEqualTo("buyer@example.test");
+            assertThat(update.buyer().firstName()).isEqualTo("David");
+            assertThat(update.buyer().lastName()).isEqualTo("Tilser");
+            assertThat(update.buyer().phoneNumber()).isEqualTo("+420123456789");
+            assertThat(update.shippingAddress().streetAddress()).isEqualTo("Main Street 1");
+            assertThat(update.shippingAddress().extendedAddress()).isEqualTo("Apartment 2");
+            assertThat(update.shippingAddress().addressLocality()).isEqualTo("Prague");
+            assertThat(update.shippingAddress().addressRegion()).isEqualTo("Prague");
+            assertThat(update.shippingAddress().postalCode()).isEqualTo("11000");
+            assertThat(update.shippingAddress().addressCountry()).isEqualTo("CZ");
+        });
     }
 
     private AgentConversationRepository ownedConversationRepository() {

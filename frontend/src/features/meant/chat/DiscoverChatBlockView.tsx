@@ -106,6 +106,7 @@ export function DiscoverChatBlockView({
   onCartQty,
   onCartRemove,
   onCheckout,
+  autoStartCheckout = false,
   activeCheckout,
   checkoutBusy,
   checkoutError,
@@ -174,6 +175,7 @@ export function DiscoverChatBlockView({
     sourceItem?: CartItem,
   ) => void
   onCheckout: (payload: CheckoutPayload) => Promise<void> | void
+  autoStartCheckout?: boolean
   activeCheckout: ActiveCheckoutSession | null
   checkoutBusy: boolean
   checkoutError: string | null
@@ -691,6 +693,7 @@ export function DiscoverChatBlockView({
         actionCart={block.lines ? cart : undefined}
         actionProducts={block.lines ? cartProducts : undefined}
         onCheckout={onCheckout}
+        autoStartCheckout={autoStartCheckout}
         activeCheckout={activeCheckout}
         checkoutBusy={checkoutBusy}
         checkoutError={checkoutError}

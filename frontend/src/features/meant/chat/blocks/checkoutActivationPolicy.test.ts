@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 
-import { merchantCheckoutStartBlocked } from './checkoutActivationPolicy'
+import {
+  merchantCheckoutStartBlocked,
+  shouldAutoStartMerchantCheckout,
+} from './checkoutActivationPolicy'
 
 describe('merchantCheckoutStartBlocked', () => {
   test('blocks a second merchant while the current checkout session is active', () => {
@@ -39,5 +42,30 @@ describe('merchantCheckoutStartBlocked', () => {
     expect(
       merchantCheckoutStartBlocked({ ...base, groupReady: true, payingMerchant: 'merchant-a' }),
     ).toBe(true)
+  })
+})
+
+describe('shouldAutoStartMerchantCheckout', () => {
+  const readyCheckout = {
+    enabled: true,
+    merchantCount: 1,
+    groupReady: true,
+    checkoutBusy: false,
+    payingMerchant: null,
+    activeCartId: null,
+    targetCartId: 'cart-a',
+  }
+
+  test('starts the newest ready single-merchant agent checkout', () => {
+    expect(shouldAutoStartMerchantCheckout(readyCheckout)).toBe(true)
+  })
+
+  test('keeps historical, multi-merchant, busy, and active checkouts manual', () => {
+    expect(shouldAutoStartMerchantCheckout({ ...readyCheckout, enabled: false })).toBe(false)
+    expect(shouldAutoStartMerchantCheckout({ ...readyCheckout, merchantCount: 2 })).toBe(false)
+    expect(shouldAutoStartMerchantCheckout({ ...readyCheckout, checkoutBusy: true })).toBe(false)
+    expect(
+      shouldAutoStartMerchantCheckout({ ...readyCheckout, activeCartId: 'cart-existing' }),
+    ).toBe(false)
   })
 })

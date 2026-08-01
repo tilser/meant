@@ -18,6 +18,9 @@ public class AgentCheckoutPrepareTool implements AgentTool {
             "prepare_checkout",
             "Create or refresh one owned merchant checkout session per selected cart and return explicit "
                     + "user-facing next actions. The result renders the checkout UI in this conversation. "
+                    + "When the merchant requests contact or shipping details, the tool automatically reuses the "
+                    + "authenticated user's saved checkout details when available and reports whether they were "
+                    + "applied without exposing their values to the model. "
                     + "Each cart is checked out as a whole, including all of its current lines. Use cart IDs from "
                     + "the authoritative current commerce state or get_active_carts; never ask for or pass product "
                     + "descriptions, offer keys, or cart-line IDs. This tool never submits payment and never handles "

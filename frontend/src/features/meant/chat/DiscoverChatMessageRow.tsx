@@ -256,6 +256,7 @@ export function DiscoverChatMessageRow({
   onCartQty,
   onCartRemove,
   onCheckout,
+  autoStartCheckout = false,
   activeCheckout,
   checkoutBusy,
   checkoutError,
@@ -334,6 +335,7 @@ export function DiscoverChatMessageRow({
     sourceItem?: CartItem,
   ) => void
   onCheckout: (payload: CheckoutPayload) => Promise<void> | void
+  autoStartCheckout?: boolean
   activeCheckout: ActiveCheckoutSession | null
   checkoutBusy: boolean
   checkoutError: string | null
@@ -471,6 +473,7 @@ export function DiscoverChatMessageRow({
                     onCartRemove(message.id, index, id, merchant, nextCart, identity, sourceItem)
                   }
                   onCheckout={onCheckout}
+                  autoStartCheckout={autoStartCheckout}
                   activeCheckout={activeCheckout}
                   checkoutBusy={checkoutBusy}
                   checkoutError={checkoutError}

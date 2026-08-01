@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useRef, useState } from 'react'
+import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 
 import type { CheckoutAssistantMessage, CheckoutProfile } from '../../../../lib/apiClient'
 import { sanitizeBuyerVisibleText } from '../../agent/buyerVisibleText'
@@ -28,7 +28,10 @@ import { SavedCheckoutDetailsPrompt } from '../../cart/SavedCheckoutDetailsPromp
 import { savedCheckoutDetails } from '../../cart/savedCheckoutDetails'
 import { SparkMark } from '../../shared/ui'
 import type { CartItem, CheckoutPayload, Product } from '../../types'
-import { merchantCheckoutStartBlocked } from './checkoutActivationPolicy'
+import {
+  merchantCheckoutStartBlocked,
+  shouldAutoStartMerchantCheckout,
+} from './checkoutActivationPolicy'
 import {
   cartGroups,
   cartLines,
@@ -56,6 +59,7 @@ export function InlineCheckoutBlock({
   actionCart,
   actionProducts,
   onCheckout,
+  autoStartCheckout = false,
   activeCheckout,
   checkoutBusy,
   checkoutError,
@@ -71,6 +75,7 @@ export function InlineCheckoutBlock({
   actionCart?: readonly CartItem[]
   actionProducts?: readonly Product[]
   onCheckout: (payload: CheckoutPayload) => Promise<void> | void
+  autoStartCheckout?: boolean
   activeCheckout: ActiveCheckoutSession | null
   checkoutBusy: boolean
   checkoutError: string | null
@@ -94,6 +99,7 @@ export function InlineCheckoutBlock({
   >(new Map())
   const promptedPhaseRef = useRef<string | null>(null)
   const activeCartIdRef = useRef<string | null>(null)
+  const autoStartedCartIdRef = useRef<string | null>(null)
   const assistantLogRef = useRef<HTMLDivElement | null>(null)
   const lines = cartLines(cart, products)
   const groups = cartGroups(lines)
@@ -138,43 +144,84 @@ export function InlineCheckoutBlock({
     assistantLogRef.current?.scrollTo({ top: assistantLogRef.current.scrollHeight })
   }, [assistantMessages, assistantBusy])
 
-  const payGroup = async (displayGroup: CartGroup, actionGroup: CartGroup) => {
-    if (checkoutBusy) return
-    const groupCartId = actionGroup.items.find((item) => item.cartId)?.cartId
-    if (groupCartId) {
-      setReleasedCheckouts((current) => {
-        if (!current.has(groupCartId)) return current
-        const next = new Map(current)
-        next.delete(groupCartId)
-        return next
+  const payGroup = useCallback(
+    async (displayGroup: CartGroup, actionGroup: CartGroup) => {
+      if (checkoutBusy) return
+      const groupCartId = actionGroup.items.find((item) => item.cartId)?.cartId
+      if (groupCartId) {
+        setReleasedCheckouts((current) => {
+          if (!current.has(groupCartId)) return current
+          const next = new Map(current)
+          next.delete(groupCartId)
+          return next
+        })
+      }
+      setPayingMerchant(displayGroup.merchantKey)
+      setCheckoutStartError(null)
+      try {
+        const saved = Math.max(0, actionGroup.subtotal + actionGroup.delivery - actionGroup.total)
+        await onCheckout({
+          merchant: actionGroup.merchant,
+          merchantKey: actionGroup.merchantKey,
+          chatThreadId: threadId,
+          items: actionGroup.items,
+          saved,
+          savedNote: saved > 0 ? 'Merchant-applied savings' : 'Chat checkout',
+          checkoutUrl: firstUrl(...actionGroup.items.map((item) => item.checkoutUrl)),
+          continueUrl: firstUrl(...actionGroup.items.map((item) => item.continueUrl)),
+        })
+      } catch (error) {
+        setCheckoutStartError({
+          merchantKey: displayGroup.merchantKey,
+          message:
+            error instanceof Error && error.message.trim()
+              ? error.message
+              : 'Checkout failed. Please try again.',
+        })
+      } finally {
+        setPayingMerchant(null)
+      }
+    },
+    [checkoutBusy, onCheckout, threadId],
+  )
+
+  useEffect(() => {
+    const displayGroup = groups.length === 1 ? groups[0] : null
+    const actionGroup = displayGroup
+      ? actionCart
+        ? liveCheckoutGroupFor(displayGroup, liveGroups)
+        : displayGroup
+      : null
+    const targetCartId = actionGroup?.items.find((item) => item.cartId)?.cartId ?? null
+    const groupReady = Boolean(actionGroup?.items.every(cartItemReadyForCheckout))
+    if (
+      !displayGroup ||
+      !actionGroup ||
+      autoStartedCartIdRef.current === targetCartId ||
+      !shouldAutoStartMerchantCheckout({
+        enabled: autoStartCheckout,
+        merchantCount: groups.length,
+        groupReady,
+        checkoutBusy,
+        payingMerchant,
+        activeCartId: activeCheckout?.cartId ?? null,
+        targetCartId,
       })
+    ) {
+      return
     }
-    setPayingMerchant(displayGroup.merchantKey)
-    setCheckoutStartError(null)
-    try {
-      const saved = Math.max(0, actionGroup.subtotal + actionGroup.delivery - actionGroup.total)
-      await onCheckout({
-        merchant: actionGroup.merchant,
-        merchantKey: actionGroup.merchantKey,
-        chatThreadId: threadId,
-        items: actionGroup.items,
-        saved,
-        savedNote: saved > 0 ? 'Merchant-applied savings' : 'Chat checkout',
-        checkoutUrl: firstUrl(...actionGroup.items.map((item) => item.checkoutUrl)),
-        continueUrl: firstUrl(...actionGroup.items.map((item) => item.continueUrl)),
-      })
-    } catch (error) {
-      setCheckoutStartError({
-        merchantKey: displayGroup.merchantKey,
-        message:
-          error instanceof Error && error.message.trim()
-            ? error.message
-            : 'Checkout failed. Please try again.',
-      })
-    } finally {
-      setPayingMerchant(null)
-    }
-  }
+    autoStartedCartIdRef.current = targetCartId
+    void payGroup(displayGroup, actionGroup)
+  }, [
+    actionCart,
+    activeCheckout,
+    autoStartCheckout,
+    checkoutBusy,
+    groups,
+    liveGroups,
+    payGroup,
+    payingMerchant,
+  ])
 
   const releaseCheckout = (cartId: string, outcome: CheckoutReleaseOutcome) => {
     setReleasedCheckouts((current) => {
