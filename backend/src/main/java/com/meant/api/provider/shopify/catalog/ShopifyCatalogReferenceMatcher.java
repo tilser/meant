@@ -27,39 +27,105 @@ public class ShopifyCatalogReferenceMatcher {
     }
 
     public Match match(CatalogProductReference requested, List<ProductCandidate> candidates) {
-        List<Match> matches = candidates.stream()
-                .flatMap(candidate -> candidate.provenance().stream().map(provenance -> match(
-                        requested,
-                        candidate,
-                        provenance
-                )))
-                .filter(Objects::nonNull)
-                .distinct()
-                .toList();
-        return matches.size() == 1 ? matches.getFirst() : null;
+        return analyze(requested, candidates).match();
     }
 
-    private Match match(
-            CatalogProductReference requested,
-            ProductCandidate candidate,
-            ResultProvenance provenance
-    ) {
-        OfferIdentity offer = candidate.offer().identity();
+    MatchAnalysis analyze(CatalogProductReference requested, List<ProductCandidate> candidates) {
+        List<Observation> observations = candidates.stream()
+                .flatMap(candidate -> candidate.provenance().stream()
+                        .map(provenance -> new Observation(candidate, provenance)))
+                .toList();
+        if (observations.isEmpty()) {
+            return MatchAnalysis.failed(MismatchReason.NO_CANDIDATES, candidates.size(), 0);
+        }
+        List<Observation> remaining = observations.stream()
+                .filter(observation -> requested.discoverySource().equals(observation.provenance().discoverySource()))
+                .toList();
+        if (remaining.isEmpty()) {
+            return MatchAnalysis.failed(MismatchReason.DISCOVERY_SOURCE_MISMATCH,
+                    candidates.size(), observations.size());
+        }
+        remaining = remaining.stream()
+                .filter(observation -> requested.externalMerchantReference().equals(merchant(observation)))
+                .toList();
+        if (remaining.isEmpty()) {
+            return MatchAnalysis.failed(MismatchReason.MERCHANT_REFERENCE_MISMATCH,
+                    candidates.size(), observations.size());
+        }
+        remaining = remaining.stream()
+                .filter(observation -> domainMatches(
+                        requested.externalMerchantDomain(), observation.provenance().externalMerchantDomain()))
+                .toList();
+        if (remaining.isEmpty()) {
+            return MatchAnalysis.failed(MismatchReason.MERCHANT_DOMAIN_MISMATCH,
+                    candidates.size(), observations.size());
+        }
+        remaining = remaining.stream()
+                .filter(observation -> requested.externalProductReference()
+                        .equals(observation.provenance().externalProductReference()))
+                .toList();
+        if (remaining.isEmpty()) {
+            return MatchAnalysis.failed(MismatchReason.PRODUCT_REFERENCE_MISMATCH,
+                    candidates.size(), observations.size());
+        }
+        remaining = remaining.stream()
+                .filter(observation -> requested.externalVariantReference()
+                        .equals(observation.candidate().offer().identity().externalVariantIdentity()))
+                .toList();
+        if (remaining.isEmpty()) {
+            return MatchAnalysis.failed(MismatchReason.VARIANT_REFERENCE_MISMATCH,
+                    candidates.size(), observations.size());
+        }
+        remaining = remaining.stream()
+                .filter(observation -> optionsMatch(
+                        requested.selectedOptions(), observation.candidate().offer().identity().selectedOptions()))
+                .toList();
+        if (remaining.isEmpty()) {
+            return MatchAnalysis.failed(MismatchReason.SELECTED_OPTIONS_MISMATCH,
+                    candidates.size(), observations.size());
+        }
+        remaining = remaining.stream()
+                .filter(observation -> requested.components()
+                        .equals(observation.candidate().offer().identity().components()))
+                .toList();
+        if (remaining.isEmpty()) {
+            return MatchAnalysis.failed(MismatchReason.COMPONENTS_MISMATCH,
+                    candidates.size(), observations.size());
+        }
+        remaining = remaining.stream()
+                .filter(observation -> Objects.equals(
+                        requested.sellingPlanIdentity(),
+                        observation.candidate().offer().identity().sellingPlanIdentity()))
+                .toList();
+        if (remaining.isEmpty()) {
+            return MatchAnalysis.failed(MismatchReason.SELLING_PLAN_MISMATCH,
+                    candidates.size(), observations.size());
+        }
+        List<Match> matches = remaining.stream()
+                .map(observation -> resolvedMatch(requested, observation))
+                .distinct()
+                .toList();
+        return matches.size() == 1
+                ? new MatchAnalysis(matches.getFirst(), MismatchReason.MATCHED,
+                        candidates.size(), observations.size(), 1)
+                : new MatchAnalysis(null, MismatchReason.AMBIGUOUS_MATCH,
+                        candidates.size(), observations.size(), matches.size());
+    }
+
+    private ExternalIdentifier merchant(Observation observation) {
+        OfferIdentity offer = observation.candidate().offer().identity();
         ExternalIdentifier merchant = offer.merchantScope().externalMerchantIdentity();
         if (merchant == null) {
-            merchant = provenance.externalMerchantReference();
+            merchant = observation.provenance().externalMerchantReference();
         }
-        ExternalIdentifier variant = offer.externalVariantIdentity();
-        if (!requested.discoverySource().equals(provenance.discoverySource())
-                || !requested.externalMerchantReference().equals(merchant)
-                || !domainMatches(requested.externalMerchantDomain(), provenance.externalMerchantDomain())
-                || !requested.externalProductReference().equals(provenance.externalProductReference())
-                || !requested.externalVariantReference().equals(variant)
-                || !optionsMatch(requested.selectedOptions(), offer.selectedOptions())
-                || !requested.components().equals(offer.components())
-                || !Objects.equals(requested.sellingPlanIdentity(), offer.sellingPlanIdentity())) {
-            return null;
-        }
+        return merchant;
+    }
+
+    private Match resolvedMatch(CatalogProductReference requested, Observation observation) {
+        ProductCandidate candidate = observation.candidate();
+        ResultProvenance provenance = observation.provenance();
+        OfferIdentity offer = candidate.offer().identity();
+        ExternalIdentifier merchant = merchant(observation);
         CatalogProductReference resolved = new CatalogProductReference(
                 requested.interactionKey(),
                 provenance.discoverySource(),
@@ -68,7 +134,7 @@ public class ShopifyCatalogReferenceMatcher {
                 merchant,
                 provenance.externalMerchantDomain(),
                 provenance.externalProductReference(),
-                variant,
+                offer.externalVariantIdentity(),
                 offer.selectedOptions(),
                 offer.components(),
                 offer.sellingPlanIdentity()
@@ -89,5 +155,38 @@ public class ShopifyCatalogReferenceMatcher {
     }
 
     public record Match(CatalogProductReference reference, ProductCandidate candidate) {
+    }
+
+    record MatchAnalysis(
+            Match match,
+            MismatchReason reason,
+            int candidateCount,
+            int provenanceCount,
+            int exactMatchCount
+    ) {
+        private static MatchAnalysis failed(
+                MismatchReason reason,
+                int candidateCount,
+                int provenanceCount
+        ) {
+            return new MatchAnalysis(null, reason, candidateCount, provenanceCount, 0);
+        }
+    }
+
+    enum MismatchReason {
+        MATCHED,
+        NO_CANDIDATES,
+        DISCOVERY_SOURCE_MISMATCH,
+        MERCHANT_REFERENCE_MISMATCH,
+        MERCHANT_DOMAIN_MISMATCH,
+        PRODUCT_REFERENCE_MISMATCH,
+        VARIANT_REFERENCE_MISMATCH,
+        SELECTED_OPTIONS_MISMATCH,
+        COMPONENTS_MISMATCH,
+        SELLING_PLAN_MISMATCH,
+        AMBIGUOUS_MATCH
+    }
+
+    private record Observation(ProductCandidate candidate, ResultProvenance provenance) {
     }
 }

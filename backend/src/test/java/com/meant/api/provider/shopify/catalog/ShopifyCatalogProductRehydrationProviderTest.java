@@ -56,8 +56,12 @@ import java.time.ZoneOffset;
 import java.util.EnumSet;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 
+@ExtendWith(OutputCaptureExtension.class)
 class ShopifyCatalogProductRehydrationProviderTest {
     private static final Instant NOW = Instant.parse("2026-07-11T00:00:00Z");
     private static final ProviderIdentity SHOPIFY = new ProviderIdentity("SHOPIFY");
@@ -229,7 +233,7 @@ class ShopifyCatalogProductRehydrationProviderTest {
     }
 
     @Test
-    void replacesWrongCurrencyLookupPriceWithExactLocalizedGetProductPrice() {
+    void replacesWrongCurrencyLookupPriceWithExactLocalizedGetProductPrice(CapturedOutput output) {
         ShopifyGlobalCatalogProvider global = providerSource(50);
         ProductCandidate wrongCurrency = withCurrency(detailedCandidate(
                 "product-1", "variant-m", "seller-a", "seller.example", "M", 1299), "EUR");
@@ -265,6 +269,50 @@ class ShopifyCatalogProductRehydrationProviderTest {
         verify(global).getProductWithDetails(request.capture());
         assertThat(request.getValue().id()).isEqualTo("variant-m");
         assertThat(request.getValue().context().currency()).isEqualTo("USD");
+        assertThat(output).asString()
+                .contains("reason=CURRENCY_MISMATCH")
+                .contains("productReference=product-1")
+                .contains("variantReference=variant-m")
+                .contains("observedCurrency=EUR")
+                .contains("currency=USD");
+    }
+
+    @Test
+    void logsRequestedAndObservedIdentityWhenExactFallbackCannotMatch(CapturedOutput output) {
+        ShopifyGlobalCatalogProvider global = providerSource(50);
+        ProductCandidate wrongCurrency = withCurrency(detailedCandidate(
+                "product-1", "variant-m", "seller-missing", "missing.example", "M", 1299), "EUR");
+        CatalogSourceResult lookupResult = successful(List.of(wrongCurrency));
+        when(global.lookupCatalog(any())).thenReturn(lookupResult);
+        ShopifyGlobalCatalogProductResult exactResult = new ShopifyGlobalCatalogProductResult(
+                successful(List.of()), rawProduct(), List.of());
+        when(global.getProductWithDetails(any())).thenReturn(exactResult);
+        CatalogProductReference requested = new CatalogProductReference(
+                "identity-diagnostics",
+                SOURCE,
+                null,
+                null,
+                merchant("seller-missing"),
+                "missing.example",
+                product("product-1"),
+                variant("variant-m"),
+                List.of(new ProductAttribute("variant-option", "Size", "M"))
+        );
+
+        CatalogProductRehydrationResult result = rehydrator(global, 50).rehydrate(
+                List.of(requested),
+                new CatalogRehydrationContext("US", "en", "USD")
+        ).getFirst();
+
+        assertThat(result.status()).isEqualTo(CatalogRehydrationStatus.UNAVAILABLE);
+        assertThat(result.failure()).isEqualTo(CatalogRehydrationFailureKind.NOT_FOUND);
+        assertThat(output).asString()
+                .contains("Shopify exact get_product response did not match the requested offer")
+                .contains("reason=MERCHANT_REFERENCE_MISMATCH")
+                .contains("merchantReference=seller-missing")
+                .contains("merchantReferences=[seller-a, seller-b]")
+                .contains("variantReferences=[variant-m, variant-l]")
+                .contains("responseMessageCodes=[]");
     }
 
     @Test

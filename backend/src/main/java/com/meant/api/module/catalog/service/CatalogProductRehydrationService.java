@@ -5,6 +5,8 @@ import com.meant.api.module.catalog.service.dto.CatalogProductRehydrationResult;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationContext;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationFailureKind;
 import com.meant.api.module.catalog.service.dto.CatalogRehydrationStatus;
+import com.meant.api.module.catalog.service.dto.ExternalIdentifier;
+import com.meant.api.module.catalog.service.dto.ProductAttribute;
 import com.meant.api.module.catalog.service.port.CatalogProductRehydrationProvider;
 import com.meant.api.module.catalog.service.support.CatalogProductObservationCache;
 import java.util.ArrayList;
@@ -19,6 +21,9 @@ import org.springframework.stereotype.Service;
 @Service
 @Slf4j
 public class CatalogProductRehydrationService {
+    private static final int DIAGNOSTIC_OPTION_LIMIT = 5;
+    private static final int DIAGNOSTIC_VALUE_LIMIT = 160;
+
     private final List<CatalogProductRehydrationProvider> providers;
     private final CatalogProductRehydrationMetrics metrics;
     private final CatalogProductObservationCache observationCache;
@@ -74,7 +79,7 @@ public class CatalogProductRehydrationService {
                                 : CatalogRehydrationFailureKind.AMBIGUOUS_PROVIDER
                 );
                 results.put(reference, failure);
-                logFailure(failure, null);
+                logFailure(failure, context, null);
                 metrics.record(failure);
             } else {
                 batches.computeIfAbsent(matching.getFirst(), ignored -> new ArrayList<>()).add(reference);
@@ -89,7 +94,7 @@ public class CatalogProductRehydrationService {
                             results.put(result.reference(), result);
                             observationCache.rememberRehydration(result, context);
                             if (result.status() != CatalogRehydrationStatus.FRESH) {
-                                logFailure(result, null);
+                                logFailure(result, context, null);
                             }
                             metrics.record(result);
                         }
@@ -103,7 +108,7 @@ public class CatalogProductRehydrationService {
                             CatalogRehydrationFailureKind.UPSTREAM_UNAVAILABLE
                     );
                     results.put(reference, failure);
-                    logFailure(failure, exception);
+                    logFailure(failure, context, exception);
                     metrics.record(failure);
                 }
             }
@@ -114,7 +119,7 @@ public class CatalogProductRehydrationService {
                             CatalogRehydrationStatus.DEGRADED,
                             CatalogRehydrationFailureKind.INVALID_RESPONSE
                     );
-                    logFailure(missing, null);
+                    logFailure(missing, context, null);
                     metrics.record(missing);
                     return missing;
                 });
@@ -123,17 +128,61 @@ public class CatalogProductRehydrationService {
         return references.stream().map(results::get).toList();
     }
 
-    private void logFailure(CatalogProductRehydrationResult result, RuntimeException exception) {
+    private void logFailure(
+            CatalogProductRehydrationResult result,
+            CatalogRehydrationContext context,
+            RuntimeException exception
+    ) {
         CatalogProductReference reference = result.reference();
         log.warn(
-                "Catalog product rehydration failed; interactionKey={}, provider={}, sourceType={}, source={}, status={}, failure={}, exceptionType={}",
+                "Catalog product rehydration failed; interactionKey={}, provider={}, sourceType={}, source={}, "
+                        + "status={}, failure={}, merchantReference={}, merchantDomain={}, productReference={}, "
+                        + "variantReference={}, selectedOptions={}, componentCount={}, sellingPlanPresent={}, "
+                        + "requestedCountry={}, requestedLanguage={}, requestedCurrency={}, exceptionType={}",
                 reference.interactionKey(),
                 reference.discoverySource().provider().value(),
                 reference.discoverySource().type(),
                 reference.discoverySource().value(),
                 result.status(),
                 result.failure(),
+                value(reference.externalMerchantReference()),
+                diagnosticValue(reference.externalMerchantDomain()),
+                value(reference.externalProductReference()),
+                value(reference.externalVariantReference()),
+                diagnosticOptions(reference.selectedOptions()),
+                reference.components().size(),
+                reference.sellingPlanIdentity() != null,
+                context == null ? null : diagnosticValue(context.country()),
+                context == null ? null : diagnosticValue(context.language()),
+                context == null ? null : diagnosticValue(context.currency()),
                 exception == null ? null : exception.getClass().getName()
         );
+    }
+
+    private String value(ExternalIdentifier identifier) {
+        return identifier == null ? null : diagnosticValue(identifier.value());
+    }
+
+    private List<String> diagnosticOptions(List<ProductAttribute> options) {
+        return options.stream()
+                .limit(DIAGNOSTIC_OPTION_LIMIT)
+                .map(option -> diagnosticValue(option.name()) + "=" + diagnosticValue(option.value()))
+                .toList();
+    }
+
+    private String diagnosticValue(String value) {
+        if (value == null) {
+            return null;
+        }
+        int scanLimit = Math.min(value.length(), DIAGNOSTIC_VALUE_LIMIT + 1);
+        StringBuilder compact = new StringBuilder(scanLimit);
+        for (int index = 0; index < scanLimit; index++) {
+            char character = value.charAt(index);
+            compact.append(Character.isISOControl(character) ? ' ' : character);
+        }
+        String sanitized = compact.toString().trim();
+        return value.length() <= DIAGNOSTIC_VALUE_LIMIT && sanitized.length() <= DIAGNOSTIC_VALUE_LIMIT
+                ? sanitized
+                : sanitized.substring(0, Math.min(sanitized.length(), DIAGNOSTIC_VALUE_LIMIT)) + "...";
     }
 }

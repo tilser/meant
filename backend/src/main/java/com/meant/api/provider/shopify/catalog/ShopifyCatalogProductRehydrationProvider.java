@@ -13,6 +13,7 @@ import com.meant.api.module.catalog.service.dto.CommercialFactsFreshness;
 import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifier;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifierType;
+import com.meant.api.module.catalog.service.dto.Money;
 import com.meant.api.module.catalog.service.dto.OfferAvailabilityStatus;
 import com.meant.api.module.catalog.service.dto.OfferComponentIdentity;
 import com.meant.api.module.catalog.service.dto.ProductCandidate;
@@ -23,6 +24,7 @@ import com.meant.api.module.catalog.service.dto.ProductMediaType;
 import com.meant.api.module.catalog.service.dto.RehydratedCommercialFacts;
 import com.meant.api.module.catalog.service.dto.RehydratedProductDetails;
 import com.meant.api.module.catalog.service.dto.ResultFreshness;
+import com.meant.api.module.catalog.service.dto.ResultProvenance;
 import com.meant.api.module.catalog.service.dto.SellingPlanIdentity;
 import com.meant.api.module.catalog.service.dto.SellingPlanOption;
 import com.meant.api.module.catalog.service.port.CatalogProductDetailProvider;
@@ -47,6 +49,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Stream;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -56,6 +59,8 @@ import org.springframework.stereotype.Component;
 @Slf4j
 public class ShopifyCatalogProductRehydrationProvider
         implements CatalogProductRehydrationProvider, CatalogProductDetailProvider {
+    private static final int DIAGNOSTIC_SAMPLE_LIMIT = 5;
+    private static final int DIAGNOSTIC_VALUE_LIMIT = 160;
     private static final Comparator<ProductAttribute> OPTION_ORDER = Comparator
             .comparing((ProductAttribute option) -> option.group() == null ? "" : option.group())
             .thenComparing(ProductAttribute::name)
@@ -141,24 +146,38 @@ public class ShopifyCatalogProductRehydrationProvider
                     ), reference);
             CatalogSourceResult sourceResult = productResult.catalogResult();
             if (!sourceResult.successful()) {
+                logExactUpstreamFailure("DETAIL", reference, context, sourceResult, productResult.messages());
                 return CatalogProductDetailResult.failed(
                         reference,
                         CatalogRehydrationStatus.DEGRADED,
                         CatalogRehydrationFailureKind.UPSTREAM_UNAVAILABLE
                 );
             }
-            ShopifyCatalogReferenceMatcher.Match match = rawMatch(reference, productResult.product(), selection);
-            if (match == null) {
+            RawMatchAnalysis analysis = analyzeRawMatch(reference, productResult.product(), selection);
+            if (analysis.match() == null) {
+                logExactMatchFailure(
+                        "DETAIL", reference, context, productResult.product(), productResult.messages(), analysis);
                 return CatalogProductDetailResult.failed(
                         reference,
                         CatalogRehydrationStatus.UNAVAILABLE,
                         CatalogRehydrationFailureKind.NOT_FOUND
                 );
             }
+            ShopifyCatalogReferenceMatcher.Match match = analysis.match();
             CatalogProductRehydrationResult rehydrated = fresh(reference, match);
             RehydratedProductDetails details = details(
                     match.reference(), productResult.product(), productResult.messages(), selection);
             if (details == null) {
+                log.warn(
+                        "Shopify exact get_product response could not produce product details; interactionKey={}, "
+                                + "reason=DETAIL_ASSEMBLY_MISMATCH, requested={}, context={}, observed={}, "
+                                + "responseMessageCodes={}",
+                        reference.interactionKey(),
+                        referenceDiagnostics(reference),
+                        contextDiagnostics(context),
+                        rawObservationDiagnostics(productResult.product()),
+                        messageCodes(productResult.messages())
+                );
                 return CatalogProductDetailResult.failed(
                         reference,
                         CatalogRehydrationStatus.UNAVAILABLE,
@@ -171,8 +190,11 @@ public class ShopifyCatalogProductRehydrationProvider
             );
         } catch (RuntimeException exception) {
             log.warn(
-                    "Shopify product detail refresh failed; interactionKey={}, exceptionType={}",
+                    "Shopify product detail refresh failed; interactionKey={}, requested={}, context={}, "
+                            + "exceptionType={}",
                     reference.interactionKey(),
+                    referenceDiagnostics(reference),
+                    contextDiagnostics(context),
                     exception.getClass().getName()
             );
             return CatalogProductDetailResult.failed(
@@ -208,8 +230,12 @@ public class ShopifyCatalogProductRehydrationProvider
                 hydrateBatch(batch, context, results);
             } catch (RuntimeException exception) {
                 log.warn(
-                        "Shopify product rehydration batch failed; batchSize={}, exceptionType={}",
+                        "Shopify product rehydration batch failed; batchSize={}, interactionKeys={}, requested={}, "
+                                + "context={}, exceptionType={}",
                         batch.size(),
+                        diagnosticSample(batch.stream().map(CatalogProductReference::interactionKey)),
+                        batch.stream().limit(DIAGNOSTIC_SAMPLE_LIMIT).map(this::referenceDiagnostics).toList(),
+                        contextDiagnostics(context),
                         exception.getClass().getName()
                 );
                 batch.forEach(reference -> results.put(reference, failure(
@@ -233,29 +259,47 @@ public class ShopifyCatalogProductRehydrationProvider
                 null
         ));
         if (!sourceResult.successful()) {
+            var failure = sourceResult.failure();
             log.warn(
-                    "Shopify catalog lookup failed; batchSize={}, failure={}; falling back to exact get_product",
+                    "Shopify catalog lookup failed; batchSize={}, failure={}, upstreamStatus={}, retryAfterMs={}, "
+                            + "context={}; falling back to exact get_product",
                     batch.size(),
-                    sourceResult.failure() == null ? "unknown" : sourceResult.failure().kind()
+                    failure == null ? "unknown" : failure.kind(),
+                    failure == null ? null : failure.upstreamStatus(),
+                    failure == null || failure.retryAfter() == null ? null : failure.retryAfter().toMillis(),
+                    contextDiagnostics(context)
             );
             batch.forEach(reference -> results.put(reference, rehydrateExact(reference, context)));
             return;
         }
         List<ProductCandidate> candidates = sourceResult.candidates() == null ? List.of() : sourceResult.candidates();
         for (CatalogProductReference reference : batch) {
-            ShopifyCatalogReferenceMatcher.Match match = matcher.match(reference, candidates);
+            ShopifyCatalogReferenceMatcher.MatchAnalysis analysis = matcher.analyze(reference, candidates);
+            ShopifyCatalogReferenceMatcher.Match match = analysis.match();
             if (match != null && priceMatchesContext(match, context)) {
                 results.put(reference, fresh(reference, match));
             } else if (match != null || sourceResult.truncated()) {
                 if (match != null) {
+                    Money observedPrice = match.candidate().offer().price();
                     log.warn(
-                            "Shopify catalog lookup returned unusable localized pricing; interactionKey={}, requestedCurrency={}; falling back to exact get_product",
+                            "Shopify catalog lookup returned unusable localized pricing; interactionKey={}, reason={}, "
+                                    + "requested={}, context={}, observedPriceMinorUnits={}, observedCurrency={}, "
+                                    + "candidateCount={}, truncated={}; falling back to exact get_product",
                             reference.interactionKey(),
-                            context == null ? null : context.currency()
+                            priceMismatchReason(observedPrice, context),
+                            referenceDiagnostics(reference),
+                            contextDiagnostics(context),
+                            observedPrice == null ? null : observedPrice.minorUnits(),
+                            observedPrice == null ? null : observedPrice.currency(),
+                            candidates.size(),
+                            sourceResult.truncated()
                     );
+                } else {
+                    logLookupMatchFailure(reference, context, candidates, analysis, true);
                 }
                 results.put(reference, rehydrateExact(reference, context));
             } else {
+                logLookupMatchFailure(reference, context, candidates, analysis, false);
                 results.put(reference, failure(
                         reference,
                         CatalogRehydrationStatus.UNAVAILABLE,
@@ -281,20 +325,32 @@ public class ShopifyCatalogProductRehydrationProvider
                             detailFilters(reference)
                     ), reference);
             if (!productResult.catalogResult().successful()) {
+                logExactUpstreamFailure(
+                        "REHYDRATE", reference, context, productResult.catalogResult(), productResult.messages());
                 return failure(
                         reference,
                         CatalogRehydrationStatus.DEGRADED,
                         CatalogRehydrationFailureKind.UPSTREAM_UNAVAILABLE
                 );
             }
-            ShopifyCatalogReferenceMatcher.Match match = rawMatch(reference, productResult.product());
-            return match == null
-                    ? failure(reference, CatalogRehydrationStatus.UNAVAILABLE, CatalogRehydrationFailureKind.NOT_FOUND)
-                    : fresh(reference, match);
+            RawMatchAnalysis analysis = analyzeRawMatch(reference, productResult.product(), null);
+            if (analysis.match() == null) {
+                logExactMatchFailure(
+                        "REHYDRATE", reference, context, productResult.product(), productResult.messages(), analysis);
+                return failure(
+                        reference,
+                        CatalogRehydrationStatus.UNAVAILABLE,
+                        CatalogRehydrationFailureKind.NOT_FOUND
+                );
+            }
+            return fresh(reference, analysis.match());
         } catch (RuntimeException exception) {
             log.warn(
-                    "Shopify exact product rehydration failed; interactionKey={}, exceptionType={}",
+                    "Shopify exact product rehydration failed; interactionKey={}, requested={}, context={}, "
+                            + "exceptionType={}",
                     reference.interactionKey(),
+                    referenceDiagnostics(reference),
+                    contextDiagnostics(context),
                     exception.getClass().getName()
             );
             return failure(
@@ -314,9 +370,15 @@ public class ShopifyCatalogProductRehydrationProvider
             return result;
         }
         log.warn(
-                "Shopify get_product transient failure; interactionKey={}, failure={}; retrying once",
+                "Shopify get_product transient failure; interactionKey={}, requested={}, requestId={}, failure={}, "
+                        + "upstreamStatus={}, retryAfterMs={}; retrying once",
                 reference.interactionKey(),
-                result.catalogResult().failure().kind()
+                referenceDiagnostics(reference),
+                diagnosticValue(request.id()),
+                result.catalogResult().failure().kind(),
+                result.catalogResult().failure().upstreamStatus(),
+                result.catalogResult().failure().retryAfter() == null
+                        ? null : result.catalogResult().failure().retryAfter().toMillis()
         );
         return provider.getProductWithDetails(request);
     }
@@ -351,20 +413,222 @@ public class ShopifyCatalogProductRehydrationProvider
                 : currency.trim().toUpperCase(Locale.ROOT);
     }
 
-    private ShopifyCatalogReferenceMatcher.Match rawMatch(
-            CatalogProductReference reference,
-            ShopifyGlobalCatalogResponse.Product product
-    ) {
-        return rawMatch(reference, product, null);
+    private String priceMismatchReason(Money observedPrice, CatalogRehydrationContext context) {
+        if (observedPrice == null) {
+            return "MISSING_PRICE";
+        }
+        if (normalizedCurrency(observedPrice.currency()) == null) {
+            return "MISSING_CURRENCY";
+        }
+        String requestedCurrency = context == null ? null : normalizedCurrency(context.currency());
+        return requestedCurrency == null ? "UNKNOWN" : "CURRENCY_MISMATCH";
     }
 
-    private ShopifyCatalogReferenceMatcher.Match rawMatch(
+    private void logLookupMatchFailure(
+            CatalogProductReference reference,
+            CatalogRehydrationContext context,
+            List<ProductCandidate> candidates,
+            ShopifyCatalogReferenceMatcher.MatchAnalysis analysis,
+            boolean truncated
+    ) {
+        log.warn(
+                "Shopify catalog lookup did not yield the exact requested offer; interactionKey={}, reason={}, "
+                        + "requested={}, context={}, candidateCount={}, provenanceCount={}, exactMatchCount={}, "
+                        + "truncated={}, observed={}, action={}",
+                reference.interactionKey(),
+                analysis.reason(),
+                referenceDiagnostics(reference),
+                contextDiagnostics(context),
+                analysis.candidateCount(),
+                analysis.provenanceCount(),
+                analysis.exactMatchCount(),
+                truncated,
+                lookupObservationDiagnostics(candidates),
+                truncated ? "FALLBACK_TO_GET_PRODUCT" : "RETURN_NOT_FOUND"
+        );
+    }
+
+    private void logExactUpstreamFailure(
+            String operation,
+            CatalogProductReference reference,
+            CatalogRehydrationContext context,
+            CatalogSourceResult sourceResult,
+            List<ShopifyGlobalCatalogResponse.Message> messages
+    ) {
+        var failure = sourceResult.failure();
+        log.warn(
+                "Shopify exact get_product failed; operation={}, interactionKey={}, requested={}, context={}, "
+                        + "failure={}, upstreamStatus={}, retryAfterMs={}, responseMessageCodes={}",
+                operation,
+                reference.interactionKey(),
+                referenceDiagnostics(reference),
+                contextDiagnostics(context),
+                failure == null ? "unknown" : failure.kind(),
+                failure == null ? null : failure.upstreamStatus(),
+                failure == null || failure.retryAfter() == null ? null : failure.retryAfter().toMillis(),
+                messageCodes(messages)
+        );
+    }
+
+    private void logExactMatchFailure(
+            String operation,
+            CatalogProductReference reference,
+            CatalogRehydrationContext context,
+            ShopifyGlobalCatalogResponse.Product product,
+            List<ShopifyGlobalCatalogResponse.Message> messages,
+            RawMatchAnalysis analysis
+    ) {
+        log.warn(
+                "Shopify exact get_product response did not match the requested offer; operation={}, "
+                        + "interactionKey={}, reason={}, requested={}, context={}, responseVariantCount={}, "
+                        + "exactMatchCount={}, observed={}, responseMessageCodes={}",
+                operation,
+                reference.interactionKey(),
+                analysis.reason(),
+                referenceDiagnostics(reference),
+                contextDiagnostics(context),
+                analysis.responseVariantCount(),
+                analysis.exactMatchCount(),
+                rawObservationDiagnostics(product),
+                messageCodes(messages)
+        );
+    }
+
+    private ReferenceDiagnostics referenceDiagnostics(CatalogProductReference reference) {
+        return new ReferenceDiagnostics(
+                diagnosticIdentifier(reference.externalMerchantReference()),
+                diagnosticValue(reference.externalMerchantDomain()),
+                diagnosticIdentifier(reference.externalProductReference()),
+                diagnosticIdentifier(reference.externalVariantReference()),
+                diagnosticOptions(reference.selectedOptions()),
+                reference.components().size(),
+                reference.sellingPlanIdentity() != null
+        );
+    }
+
+    private ContextDiagnostics contextDiagnostics(CatalogRehydrationContext context) {
+        return new ContextDiagnostics(
+                context == null ? null : diagnosticValue(context.country()),
+                context == null ? null : diagnosticValue(context.language()),
+                context == null ? null : diagnosticValue(context.currency())
+        );
+    }
+
+    private LookupObservationDiagnostics lookupObservationDiagnostics(List<ProductCandidate> candidates) {
+        Stream<ResultProvenance> provenance = candidates.stream()
+                .flatMap(candidate -> candidate.provenance().stream());
+        List<ResultProvenance> observations = provenance.toList();
+        return new LookupObservationDiagnostics(
+                diagnosticSample(observations.stream()
+                        .map(value -> value.externalMerchantReference() == null
+                                ? null : value.externalMerchantReference().value())),
+                diagnosticSample(observations.stream()
+                        .map(ResultProvenance::externalMerchantDomain)),
+                diagnosticSample(observations.stream()
+                        .map(value -> value.externalProductReference().value())),
+                diagnosticSample(candidates.stream()
+                        .map(candidate -> candidate.offer().identity().externalVariantIdentity())
+                        .map(value -> value == null ? null : value.value())),
+                diagnosticSample(candidates.stream()
+                        .map(candidate -> candidate.offer().price())
+                        .map(value -> value == null ? null : value.currency())),
+                diagnosticSample(candidates.stream()
+                        .map(candidate -> diagnosticOptions(candidate.offer().selectedOptions())))
+        );
+    }
+
+    private RawObservationDiagnostics rawObservationDiagnostics(ShopifyGlobalCatalogResponse.Product product) {
+        if (product == null) {
+            return new RawObservationDiagnostics(null, 0, List.of(), List.of(), List.of(), List.of(), List.of(),
+                    List.of());
+        }
+        List<ShopifyGlobalCatalogResponse.Variant> variants = safe(product.variants()).stream()
+                .filter(Objects::nonNull)
+                .toList();
+        return new RawObservationDiagnostics(
+                diagnosticValue(product.id()),
+                variants.size(),
+                diagnosticSample(variants.stream().map(ShopifyGlobalCatalogResponse.Variant::id)),
+                diagnosticSample(variants.stream().map(variant -> firstText(variant.productId(), product.id()))),
+                diagnosticSample(variants.stream()
+                        .map(ShopifyGlobalCatalogResponse.Variant::seller)
+                        .map(seller -> seller == null ? null : seller.id())),
+                diagnosticSample(variants.stream()
+                        .map(ShopifyGlobalCatalogResponse.Variant::seller)
+                        .map(seller -> seller == null ? null : normalizedDomain(seller.domain()))),
+                diagnosticSample(variants.stream()
+                        .map(ShopifyGlobalCatalogResponse.Variant::price)
+                        .map(price -> price == null ? null : price.currency())),
+                diagnosticSample(variants.stream()
+                        .map(variant -> diagnosticRawOptions(rawSelectedOptions(product, variant))))
+        );
+    }
+
+    private List<String> messageCodes(List<ShopifyGlobalCatalogResponse.Message> messages) {
+        return diagnosticSample(safe(messages).stream()
+                .filter(Objects::nonNull)
+                .map(message -> firstText(message.severity(), "unknown") + ":"
+                        + firstText(message.code(), message.type())));
+    }
+
+    private List<String> diagnosticSample(Stream<String> values) {
+        return values
+                .filter(this::hasText)
+                .map(this::diagnosticValue)
+                .distinct()
+                .limit(DIAGNOSTIC_SAMPLE_LIMIT)
+                .toList();
+    }
+
+    private String diagnosticIdentifier(ExternalIdentifier identifier) {
+        return identifier == null ? null : diagnosticValue(identifier.value());
+    }
+
+    private String diagnosticOptions(List<ProductAttribute> options) {
+        return safe(options).stream()
+                .filter(Objects::nonNull)
+                .limit(DIAGNOSTIC_SAMPLE_LIMIT)
+                .map(option -> diagnosticValue(option.name()) + "=" + diagnosticValue(option.value()))
+                .toList()
+                .toString();
+    }
+
+    private String diagnosticRawOptions(List<ShopifyGlobalCatalogResponse.SelectedOption> options) {
+        return safe(options).stream()
+                .filter(Objects::nonNull)
+                .limit(DIAGNOSTIC_SAMPLE_LIMIT)
+                .map(option -> diagnosticValue(option.name()) + "=" + diagnosticValue(option.label()))
+                .toList()
+                .toString();
+    }
+
+    private String diagnosticValue(String value) {
+        if (value == null) {
+            return null;
+        }
+        int scanLimit = Math.min(value.length(), DIAGNOSTIC_VALUE_LIMIT + 1);
+        StringBuilder compact = new StringBuilder(scanLimit);
+        for (int index = 0; index < scanLimit; index++) {
+            char character = value.charAt(index);
+            compact.append(Character.isISOControl(character) ? ' ' : character);
+        }
+        String sanitized = compact.toString().trim();
+        return value.length() <= DIAGNOSTIC_VALUE_LIMIT && sanitized.length() <= DIAGNOSTIC_VALUE_LIMIT
+                ? sanitized
+                : sanitized.substring(0, Math.min(sanitized.length(), DIAGNOSTIC_VALUE_LIMIT)) + "...";
+    }
+
+    private RawMatchAnalysis analyzeRawMatch(
             CatalogProductReference reference,
             ShopifyGlobalCatalogResponse.Product product,
             CatalogProductDetailSelection selection
     ) {
-        if (product == null || !reference.discoverySource().equals(provider.discoverySourceIdentity())) {
-            return null;
+        if (product == null) {
+            return RawMatchAnalysis.failed(RawMismatchReason.MISSING_PRODUCT, 0);
+        }
+        if (!reference.discoverySource().equals(provider.discoverySourceIdentity())) {
+            return RawMatchAnalysis.failed(
+                    RawMismatchReason.DISCOVERY_SOURCE_MISMATCH, safe(product.variants()).size());
         }
         List<ProductAttribute> requestedOptions = selection == null
                 ? reference.selectedOptions()
@@ -372,22 +636,74 @@ public class ShopifyCatalogProductRehydrationProvider
         String anchorVariantId = reference.externalVariantReference() == null
                 ? null
                 : reference.externalVariantReference().value();
-        List<ShopifyGlobalCatalogResponse.Variant> matches = safe(product.variants()).stream()
+        List<ShopifyGlobalCatalogResponse.Variant> variants = safe(product.variants()).stream()
                 .filter(Objects::nonNull)
-                .filter(variant -> rawMerchantMatches(reference, product, variant))
+                .toList();
+        if (variants.isEmpty()) {
+            return RawMatchAnalysis.failed(RawMismatchReason.NO_VARIANTS, 0);
+        }
+        List<ShopifyGlobalCatalogResponse.Variant> remaining = variants.stream()
+                .filter(variant -> variant.seller() != null)
+                .toList();
+        if (remaining.isEmpty()) {
+            return RawMatchAnalysis.failed(RawMismatchReason.MISSING_SELLER, variants.size());
+        }
+        remaining = remaining.stream()
+                .filter(variant -> reference.externalMerchantReference().value().equals(variant.seller().id()))
+                .toList();
+        if (remaining.isEmpty()) {
+            return RawMatchAnalysis.failed(RawMismatchReason.MERCHANT_REFERENCE_MISMATCH, variants.size());
+        }
+        remaining = remaining.stream()
+                .filter(variant -> reference.externalMerchantDomain() == null
+                        || Objects.equals(
+                                reference.externalMerchantDomain(), normalizedDomain(variant.seller().domain())))
+                .toList();
+        if (remaining.isEmpty()) {
+            return RawMatchAnalysis.failed(RawMismatchReason.MERCHANT_DOMAIN_MISMATCH, variants.size());
+        }
+        remaining = remaining.stream()
+                .filter(variant -> reference.externalProductReference().value()
+                        .equals(firstText(variant.productId(), product.id())))
+                .toList();
+        if (remaining.isEmpty()) {
+            return RawMatchAnalysis.failed(RawMismatchReason.PRODUCT_REFERENCE_MISMATCH, variants.size());
+        }
+        remaining = remaining.stream()
                 .filter(variant -> selection != null
                         || Objects.equals(anchorVariantId, variant.id()))
+                .toList();
+        if (remaining.isEmpty()) {
+            return RawMatchAnalysis.failed(RawMismatchReason.VARIANT_REFERENCE_MISMATCH, variants.size());
+        }
+        remaining = remaining.stream()
                 .filter(variant -> selection == null
                         ? rawOptionsMatch(requestedOptions, rawSelectedOptions(product, variant))
                         : rawOptionsContain(requestedOptions, rawSelectedOptions(product, variant)))
-                .filter(variant -> rawConfigurationMatches(reference, variant))
                 .toList();
-        if (matches.isEmpty() || selection == null && matches.size() != 1) {
-            return null;
+        if (remaining.isEmpty()) {
+            return RawMatchAnalysis.failed(RawMismatchReason.SELECTED_OPTIONS_MISMATCH, variants.size());
+        }
+        remaining = remaining.stream()
+                .filter(variant -> reference.components().equals(rawComponents(variant.components())))
+                .toList();
+        if (remaining.isEmpty()) {
+            return RawMatchAnalysis.failed(RawMismatchReason.COMPONENTS_MISMATCH, variants.size());
+        }
+        remaining = remaining.stream()
+                .filter(variant -> Objects.equals(
+                        reference.sellingPlanIdentity(), rawSellingPlan(variant.sellingPlan())))
+                .toList();
+        if (remaining.isEmpty()) {
+            return RawMatchAnalysis.failed(RawMismatchReason.SELLING_PLAN_MISMATCH, variants.size());
+        }
+        if (selection == null && remaining.size() != 1) {
+            return new RawMatchAnalysis(
+                    null, RawMismatchReason.AMBIGUOUS_MATCH, variants.size(), remaining.size());
         }
         ShopifyGlobalCatalogResponse.Variant variant = selection == null
-                ? matches.getFirst()
-                : matches.stream()
+                ? remaining.getFirst()
+                : remaining.stream()
                         .sorted(Comparator
                                 .comparing((ShopifyGlobalCatalogResponse.Variant candidate) ->
                                         anchorVariantId == null || !anchorVariantId.equals(candidate.id()))
@@ -414,9 +730,14 @@ public class ShopifyCatalogProductRehydrationProvider
                 rawComponents(variant.components()),
                 rawSellingPlan(variant.sellingPlan())
         );
-        return new ShopifyCatalogReferenceMatcher.Match(
-                resolved,
-                normalizer.normalizeExact(product, variant)
+        return new RawMatchAnalysis(
+                new ShopifyCatalogReferenceMatcher.Match(
+                        resolved,
+                        normalizer.normalizeExact(product, variant)
+                ),
+                RawMismatchReason.MATCHED,
+                variants.size(),
+                remaining.size()
         );
     }
 
@@ -1069,5 +1390,68 @@ public class ShopifyCatalogProductRehydrationProvider
 
     private static <T> List<T> safe(List<T> values) {
         return values == null ? List.of() : values;
+    }
+
+    private record RawMatchAnalysis(
+            ShopifyCatalogReferenceMatcher.Match match,
+            RawMismatchReason reason,
+            int responseVariantCount,
+            int exactMatchCount
+    ) {
+        private static RawMatchAnalysis failed(RawMismatchReason reason, int responseVariantCount) {
+            return new RawMatchAnalysis(null, reason, responseVariantCount, 0);
+        }
+    }
+
+    private enum RawMismatchReason {
+        MATCHED,
+        MISSING_PRODUCT,
+        DISCOVERY_SOURCE_MISMATCH,
+        NO_VARIANTS,
+        MISSING_SELLER,
+        MERCHANT_REFERENCE_MISMATCH,
+        MERCHANT_DOMAIN_MISMATCH,
+        PRODUCT_REFERENCE_MISMATCH,
+        VARIANT_REFERENCE_MISMATCH,
+        SELECTED_OPTIONS_MISMATCH,
+        COMPONENTS_MISMATCH,
+        SELLING_PLAN_MISMATCH,
+        AMBIGUOUS_MATCH
+    }
+
+    private record ReferenceDiagnostics(
+            String merchantReference,
+            String merchantDomain,
+            String productReference,
+            String variantReference,
+            String selectedOptions,
+            int componentCount,
+            boolean sellingPlanPresent
+    ) {
+    }
+
+    private record ContextDiagnostics(String country, String language, String currency) {
+    }
+
+    private record LookupObservationDiagnostics(
+            List<String> merchantReferences,
+            List<String> merchantDomains,
+            List<String> productReferences,
+            List<String> variantReferences,
+            List<String> currencies,
+            List<String> selectedOptions
+    ) {
+    }
+
+    private record RawObservationDiagnostics(
+            String responseProductReference,
+            int variantCount,
+            List<String> variantReferences,
+            List<String> productReferences,
+            List<String> merchantReferences,
+            List<String> merchantDomains,
+            List<String> currencies,
+            List<String> selectedOptions
+    ) {
     }
 }

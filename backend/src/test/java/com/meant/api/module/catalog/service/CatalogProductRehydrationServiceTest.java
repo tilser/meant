@@ -27,7 +27,11 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 
+@ExtendWith(OutputCaptureExtension.class)
 class CatalogProductRehydrationServiceTest {
 
     private static final Instant NOW = Instant.parse("2026-07-11T00:00:00Z");
@@ -150,7 +154,7 @@ class CatalogProductRehydrationServiceTest {
     }
 
     @Test
-    void doesNotCacheProviderFailures() {
+    void doesNotCacheProviderFailures(CapturedOutput output) {
         AtomicInteger calls = new AtomicInteger();
         CatalogProductRehydrationService service = service(
                 List.of(provider(calls, true)),
@@ -162,6 +166,15 @@ class CatalogProductRehydrationServiceTest {
         service.rehydrate(reference, new CatalogRehydrationContext("CZ", "en"));
 
         assertThat(calls).hasValue(2);
+        assertThat(output).asString()
+                .contains("merchantReference=merchant-1")
+                .contains("productReference=product-1")
+                .contains("variantReference=variant-1")
+                .contains("requestedCountry=CZ")
+                .contains("requestedLanguage=en")
+                .contains("requestedCurrency=null")
+                .contains("exceptionType=java.lang.IllegalStateException")
+                .doesNotContain("controlled fake failure");
     }
 
     private CatalogProductRehydrationService service(List<CatalogProductRehydrationProvider> providers) {
