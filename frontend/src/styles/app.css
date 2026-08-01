@@ -3092,6 +3092,21 @@ button:disabled {
   color: var(--muted);
 }
 
+.mt-profile-more {
+  cursor: pointer;
+  border-color: var(--accent-line);
+  background: var(--accent-tint);
+  color: var(--ink);
+}
+
+.mt-profile-more:hover {
+  border-color: var(--accent);
+}
+
+.mt-profile-more:active {
+  transform: scale(0.97);
+}
+
 .mt-profile-edit {
   border: 0;
   background: transparent;

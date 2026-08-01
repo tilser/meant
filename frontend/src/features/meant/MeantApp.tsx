@@ -63,7 +63,8 @@ import {
   updateInventoryItemWithPhoto,
 } from './inventory/inventoryMutations'
 import { PreferencesView } from './preferences/PreferencesView'
-import { DEFAULT_BUDGET, clothingFitLabel } from './preferences/preferencesUtils'
+import { DEFAULT_BUDGET } from './preferences/preferencesUtils'
+import { ProfileBar } from './ProfileBar'
 import {
   type UserInventoryItemDraftInput,
   upsertInventorySnapshot,
@@ -85,7 +86,6 @@ import { orderFromProfile } from './orders/orderMapping'
 import type { DiscoverFindRequest, ProductDetailChatRequest } from './chat/types'
 import type { ProductOpenProps, ProductSaveProps } from './product/types'
 import { productWithCuratedFields } from './product/productCuration'
-import { deliveryLocationSummary } from './shared/locations'
 import {
   beginAccountOwnedOperation,
   endAccountOwnedOperation,
@@ -309,51 +309,6 @@ function applySettingsPayload(
 
 const nextShelfUid = () =>
   `shelf-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
-
-function ProfileBar({
-  preferences,
-  deliveryLocations,
-  clothingFit,
-  onEdit,
-}: Readonly<{
-  preferences: readonly Preference[]
-  deliveryLocations: readonly UserLocation[]
-  clothingFit: ClothingFit
-  onEdit: () => void
-}>) {
-  return (
-    <div className="mt-profile">
-      <span className="mt-mono mt-profile-key">Your profile</span>
-      <button
-        className={`mt-loc-chip ${deliveryLocations.length > 0 ? '' : 'empty'}`}
-        type="button"
-        onClick={onEdit}
-      >
-        <span aria-hidden>⌖</span>
-        {deliveryLocationSummary(deliveryLocations)}
-      </button>
-      {clothingFit !== 'none' ? (
-        <button className="mt-loc-chip" type="button" onClick={onEdit}>
-          {clothingFitLabel(clothingFit)}
-        </button>
-      ) : null}
-      <div className="mt-profile-chips">
-        {preferences.length === 0 ? (
-          <span className="mt-profile-empty mt-mono">No active preferences</span>
-        ) : (
-          preferences.slice(0, 6).map((preference) => (
-            <span className="mt-pref-pill" key={preference.id}>
-              {preference.label}
-            </span>
-          ))
-        )}
-      </div>
-      <button className="mt-profile-edit mt-mono" type="button" onClick={onEdit}>
-        Edit
-      </button>
-    </div>
-  )
-}
 
 function TopBar({
   view,
