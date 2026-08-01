@@ -2850,6 +2850,10 @@ button:disabled {
   height: 27px;
 }
 
+[data-theme='dark'] .mt-brand-logo {
+  filter: brightness(0) invert(1);
+}
+
 .mt-nav {
   display: flex;
   gap: 4px;
@@ -5194,13 +5198,61 @@ button:disabled {
   line-height: 1.4;
 }
 
-.mt-file {
-  width: 100%;
+.mt-file-control {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.mt-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.mt-file-trigger {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  flex-shrink: 0;
   border: 1px dashed var(--line);
   border-radius: 11px;
   background: var(--bg);
   color: var(--ink-soft);
-  padding: 11px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 650;
+  padding: 9px 12px;
+  transition:
+    border-color var(--motion-quick) var(--ease-out),
+    background var(--motion-quick) var(--ease-out),
+    color var(--motion-quick) var(--ease-out);
+}
+
+.mt-file-trigger:hover {
+  border-color: var(--accent-line);
+  background: var(--accent-tint);
+  color: var(--accent);
+}
+
+.mt-file-input:focus-visible + .mt-file-trigger {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.mt-file-status {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mt-inv-photo-preview,
@@ -5230,7 +5282,7 @@ button:disabled {
 
 .mt-inv-file-help {
   display: block;
-  margin: -7px 0 12px;
+  margin: 7px 0 12px;
   color: var(--faint);
   font-size: 11px;
 }

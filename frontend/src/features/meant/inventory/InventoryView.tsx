@@ -20,6 +20,7 @@ import { merchantAdjacentDisplayLabel } from '../cart/merchantOrigin'
 import { ProductSearchLoading } from '../chat/ProductSearchLoading'
 import { PrefChip } from '../shared/icons'
 import { EmptyState, Placeholder, SparkMark, ViewHead } from '../shared/ui'
+import { InventoryPhotoUpload } from './InventoryPhotoUpload'
 import {
   type InventoryFormState,
   INVENTORY_CATEGORIES,
@@ -35,8 +36,6 @@ import {
   safeInventoryProductUrl,
   type UserInventoryItemDraftInput,
 } from './inventoryUtils'
-
-const INVENTORY_PHOTO_ACCEPT = 'image/jpeg,image/png,image/webp'
 
 export function InventoryView({
   userId,
@@ -197,17 +196,16 @@ export function InventoryView({
 
           <div className="mt-inv-create-core">
             <div>
-              <label className="mt-field">
-                <span className="mt-field-label mt-mono">Photo *</span>
-                <input
-                  ref={photoInputRef}
-                  className="mt-file"
-                  type="file"
-                  accept={INVENTORY_PHOTO_ACCEPT}
-                  required
-                  onChange={selectPhoto}
-                />
-              </label>
+              <InventoryPhotoUpload
+                id="inventory-add-photo"
+                label="Photo *"
+                actionLabel="Choose photo"
+                emptyStatus="No photo selected"
+                file={photoFile}
+                required
+                inputRef={photoInputRef}
+                onChange={selectPhoto}
+              />
               {photoPreviewUrl ? (
                 <div className="mt-inv-photo-preview">
                   <img src={photoPreviewUrl} alt="Selected inventory item" />
@@ -215,7 +213,6 @@ export function InventoryView({
               ) : (
                 <div className="mt-inv-photo-empty mt-mono">No photo selected</div>
               )}
-              <p className="mt-inv-file-help">JPEG, PNG, or WebP · 5 MB maximum</p>
             </div>
             <div>
               <div className="mt-inv-form-grid">
@@ -460,16 +457,14 @@ function InventoryItemCard({
                   <Placeholder label={inventoryCategoryLabel(item.category)} tone="#e7ebef" />
                 )}
               </div>
-              <label className="mt-field">
-                <span className="mt-field-label mt-mono">Replace photo</span>
-                <input
-                  className="mt-file"
-                  type="file"
-                  accept={INVENTORY_PHOTO_ACCEPT}
-                  onChange={selectReplacementPhoto}
-                />
-                <span className="mt-inv-file-help">JPEG, PNG, or WebP · 5 MB maximum</span>
-              </label>
+              <InventoryPhotoUpload
+                id={`inventory-${item.id}-replacement-photo`}
+                label="Replace photo"
+                actionLabel="Choose replacement"
+                emptyStatus="Current photo retained"
+                file={replacementPhoto}
+                onChange={selectReplacementPhoto}
+              />
             </div>
             <div className="mt-inv-form-grid">
               <InventoryTextField

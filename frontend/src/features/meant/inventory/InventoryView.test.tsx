@@ -71,6 +71,18 @@ describe('InventoryView commerce identity', () => {
     expect(markup).toContain('Add item')
     expect(markup).toContain('Photo *')
     expect(markup).toContain('accept="image/jpeg,image/png,image/webp"')
+    expect(markup).toContain('class="mt-file-input"')
+    expect(markup).toContain(
+      'class="mt-file-trigger" for="inventory-add-photo">Choose photo</label>',
+    )
+    expect(markup).toContain('role="status">No photo selected</span>')
+    expect(markup).toContain(
+      'aria-labelledby="inventory-add-photo-label inventory-add-photo-action"',
+    )
+    expect(markup).toContain(
+      'aria-describedby="inventory-add-photo-status inventory-add-photo-help"',
+    )
+    expect(markup).not.toContain('class="mt-file"')
     expect(markup).toContain('Name *')
     expect(markup).toContain('Category *')
     expect(markup).toContain('More details')
