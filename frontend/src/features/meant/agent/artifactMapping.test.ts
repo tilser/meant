@@ -1216,6 +1216,68 @@ describe('agent artifact mapping', () => {
     expect(blocks.map((block) => block.type)).toEqual(['cart'])
   })
 
+  test('reconstructs a cart replacement from the variant title when product metadata is absent', () => {
+    const cart = artifact({
+      type: 'CART',
+      stableKey: 'cart:variant-title-fallback',
+      messageId: 'message-variant-title-fallback',
+      cartId: 'cart-variant-title-fallback',
+      payloadJson: JSON.stringify({
+        cartId: 'cart-variant-title-fallback',
+        merchantOrigin: 'solefly.com',
+        provider: 'SHOPIFY',
+        routingScopeKey: 'shopify:external:solefly',
+        totalAmount: '4792.00',
+        subtotalAmount: '4792.00',
+        currency: 'CZK',
+      }),
+    })
+    const line = artifact({
+      type: 'CART_LINE',
+      stableKey: 'cart-line:variant-title-fallback',
+      messageId: cart.messageId,
+      cartId: cart.cartId,
+      cartLineId: 'line-variant-title-fallback',
+      canonicalProductKey: 'product-salomon',
+      offerKey: 'offer-salomon-size-12',
+      label: null,
+      ordinal: 2,
+      payloadJson: JSON.stringify({
+        cartLineId: 'line-variant-title-fallback',
+        productId: null,
+        productTitle: null,
+        productVariantId: 'variant-12',
+        variantTitle: 'Salomon XT-6 GTX Gore-Tex Antelope - 12',
+        quantity: 1,
+        offerKey: 'offer-salomon-size-12',
+        canonicalProductKey: 'product-salomon',
+        totalAmount: '4792.00',
+        subtotalAmount: '4792.00',
+        currency: 'CZK',
+      }),
+    })
+
+    expect(productsFromAgentArtifacts([cart, line])).toMatchObject([
+      {
+        id: 'product-salomon',
+        name: 'Salomon XT-6 GTX Gore-Tex Antelope - 12',
+        offers: [{ offerKey: 'offer-salomon-size-12' }],
+      },
+    ])
+    expect(cartStateReplacementsFromAgentArtifacts([cart, line], [])).toMatchObject([
+      {
+        snapshot: { cartId: 'cart-variant-title-fallback' },
+        lines: [
+          {
+            id: 'product-salomon',
+            offerKey: 'offer-salomon-size-12',
+            productTitle: 'Salomon XT-6 GTX Gore-Tex Antelope - 12',
+          },
+        ],
+      },
+    ])
+  })
+
   test('fails closed instead of replacing a cart from an incomplete line projection', () => {
     const cart = artifact({
       type: 'CART',

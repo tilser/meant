@@ -44,11 +44,17 @@ public record CartLineResult(
         return new CartLineResult(
                 line.getId(),
                 line.getRemoteCartLineId(),
-                currentLine == null ? line.getProductId() : product == null ? null : product.id(),
-                currentLine == null ? line.getProductTitle() : product == null ? null : product.title(),
+                currentLine == null
+                        ? line.getProductId()
+                        : preferCurrent(product == null ? null : product.id(), line.getProductId()),
+                currentLine == null
+                        ? line.getProductTitle()
+                        : preferCurrent(product == null ? null : product.title(), line.getProductTitle()),
                 line.getProductBrand(),
                 line.getProductVariantId(),
-                currentLine == null ? line.getVariantTitle() : merchandise == null ? null : merchandise.title(),
+                currentLine == null
+                        ? line.getVariantTitle()
+                        : preferCurrent(merchandise == null ? null : merchandise.title(), line.getVariantTitle()),
                 currentLine == null || currentLine.quantity() == null ? line.getQuantity() : currentLine.quantity(),
                 currentLine == null ? line.getTotalAmount() : UcpCartMoney.displayAmount(total),
                 currentLine == null ? line.getSubtotalAmount() : UcpCartMoney.displayAmount(subtotal),
@@ -64,5 +70,9 @@ public record CartLineResult(
                 line.getCreatedAt(),
                 line.getUpdatedAt()
         );
+    }
+
+    private static String preferCurrent(String current, String persisted) {
+        return current == null || current.isBlank() ? persisted : current;
     }
 }

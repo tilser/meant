@@ -132,6 +132,59 @@ class CartResultMapperTest {
     }
 
     @Test
+    void preservesPersistedProductMetadataWhenCurrentLineOmitsNestedProduct() throws Exception {
+        Instant now = Instant.parse("2026-08-01T11:37:56Z");
+        CartLine line = CartLine.builder()
+                .remoteCartLineId("line-1")
+                .productId("product-1")
+                .productTitle("Salomon XT-6 GTX Gore-Tex Antelope")
+                .productVariantId("variant-12")
+                .variantTitle("Stored variant title")
+                .quantity(1)
+                .rawLineResponse("{}")
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+        Cart cart = Cart.builder()
+                .id(UUID.randomUUID())
+                .merchantDomain(MERCHANT_DOMAIN)
+                .routingDomain(ROUTING_DOMAIN)
+                .endpoint(MCP_ENDPOINT)
+                .remoteCartId("gid://shopify/Cart/1")
+                .remoteCartIdHash("hash")
+                .rawCartResponse("{}")
+                .totalQuantity(1)
+                .lines(List.of(line))
+                .build();
+        UcpCartResponse response = objectMapper.readValue("""
+                {
+                  "cart": {
+                    "id": "gid://shopify/Cart/1",
+                    "lines": [
+                      {
+                        "id": "line-1",
+                        "quantity": 1,
+                        "item": {
+                          "id": "variant-12",
+                          "title": "Salomon XT-6 GTX Gore-Tex Antelope - 12"
+                        }
+                      }
+                    ],
+                    "total_quantity": 1
+                  }
+                }
+                """, UcpCartResponse.class);
+
+        CartResult result = mapper.from(cart, response, provider());
+
+        assertThat(result.lines()).singleElement().satisfies(cartLine -> {
+            assertThat(cartLine.productId()).isEqualTo("product-1");
+            assertThat(cartLine.productTitle()).isEqualTo("Salomon XT-6 GTX Gore-Tex Antelope");
+            assertThat(cartLine.variantTitle()).isEqualTo("Salomon XT-6 GTX Gore-Tex Antelope - 12");
+        });
+    }
+
+    @Test
     void sanitizesTransportCoordinatesAcrossAllBuyerVisibleCartText() throws Exception {
         Instant now = Instant.parse("2026-07-23T18:30:00Z");
         CartLine line = CartLine.builder()

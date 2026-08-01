@@ -1018,7 +1018,10 @@ function cartLineProductFromArtifact(
   if (artifact.type !== 'CART_LINE' || !artifact.cartId) return null
   const line = parseRecord(artifact.payloadJson)
   const offerKey = stringValue(line?.offerKey) ?? artifact.offerKey
-  const name = stringValue(line?.productTitle) ?? stringValue(artifact.label)
+  const name =
+    stringValue(line?.productTitle) ??
+    stringValue(artifact.label) ??
+    stringValue(line?.variantTitle)
   if (!line || !offerKey || !name) return null
 
   const cartArtifacts = artifacts.filter(
