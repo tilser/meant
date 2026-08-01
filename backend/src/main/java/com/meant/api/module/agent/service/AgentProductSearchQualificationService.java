@@ -60,8 +60,8 @@ public class AgentProductSearchQualificationService {
                 null,
                 currentTurn,
                 command.merchantId(),
-                conversation(command.conversationId(), command.triggeringMessageId()),
-                command.triggeringMessageId(),
+                conversation(command.conversationId(), command.contextMessageId()),
+                command.requestId(),
                 null,
                 command.trustedReferenceProductText()
         ));

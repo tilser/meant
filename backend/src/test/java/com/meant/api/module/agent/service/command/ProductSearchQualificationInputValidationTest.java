@@ -27,6 +27,7 @@ class ProductSearchQualificationInputValidationTest {
                     profile,
                     conversationId,
                     null,
+                    null,
                     requestId,
                     maximumTurn,
                     null
@@ -64,6 +65,7 @@ class ProductSearchQualificationInputValidationTest {
             assertThat(validator.validate(new QualifyAgentProductSearchCommand(
                     profile,
                     conversationId,
+                    null,
                     null,
                     requestId,
                     oversizedTurn,

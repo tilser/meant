@@ -129,6 +129,19 @@ public record AgentToolExecutionContext(
                 triggeringUserText);
     }
 
+    /**
+     * Returns the durable buyer message that bounds qualification history. Direct UI actions do
+     * not have a ledger message until after their tool completes, so their history has no cutoff.
+     */
+    public UUID qualificationContextMessageId() {
+        return runId == null ? null : triggeringMessageId;
+    }
+
+    /** Stable server-issued identity shared by model turns and direct UI actions. */
+    public UUID qualificationRequestId() {
+        return runId == null ? idempotencyKey : triggeringMessageId;
+    }
+
     private AgentToolExecutionContext copy(
             UUID nextIdempotencyKey,
             UUID nextExecutionOwner,

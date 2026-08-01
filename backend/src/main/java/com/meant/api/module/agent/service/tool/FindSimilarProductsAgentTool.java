@@ -80,7 +80,8 @@ public class FindSimilarProductsAgentTool implements AgentTool {
                 profile,
                 context.conversationId(),
                 context.merchantId(),
-                context.triggeringMessageId(),
+                context.qualificationContextMessageId(),
+                context.qualificationRequestId(),
                 authoritativeUserText,
                 bounded(similarityAnchor.label(), 500)
         );

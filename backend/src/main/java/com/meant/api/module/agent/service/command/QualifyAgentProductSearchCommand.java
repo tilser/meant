@@ -13,7 +13,8 @@ public record QualifyAgentProductSearchCommand(
         @NotNull @Valid EnsureUserProfileCommand profile,
         @NotNull UUID conversationId,
         UUID merchantId,
-        UUID triggeringMessageId,
+        UUID contextMessageId,
+        UUID requestId,
         @NotBlank @Size(max = 8000) String authoritativeUserText,
         @Size(max = 500) String trustedReferenceProductText
 ) {
@@ -30,7 +31,7 @@ public record QualifyAgentProductSearchCommand(
                 profile.id(),
                 conversationId,
                 merchantId,
-                triggeringMessageId
+                requestId
         );
     }
 }

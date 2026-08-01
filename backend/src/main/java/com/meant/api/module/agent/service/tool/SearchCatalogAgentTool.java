@@ -121,7 +121,8 @@ public class SearchCatalogAgentTool implements AgentTool {
                 profile,
                 context.conversationId(),
                 context.merchantId(),
-                context.triggeringMessageId(),
+                context.qualificationContextMessageId(),
+                context.qualificationRequestId(),
                 authoritativeUserText,
                 null
         );
@@ -131,7 +132,8 @@ public class SearchCatalogAgentTool implements AgentTool {
                 profile,
                 context.conversationId(),
                 context.merchantId(),
-                context.triggeringMessageId(),
+                context.qualificationContextMessageId(),
+                context.qualificationRequestId(),
                 authoritativeUserText,
                 preboundSimilarityContext
                         .map(value -> bounded(value.anchorLabel(), 500))
