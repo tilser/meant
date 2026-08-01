@@ -12,6 +12,7 @@ import com.meant.api.module.catalog.service.dto.CatalogSourceResult;
 import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifier;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifierType;
+import com.meant.api.module.catalog.service.dto.OfferAvailabilityStatus;
 import com.meant.api.module.catalog.service.dto.ProductCandidate;
 import com.meant.api.module.catalog.service.dto.ResultProvenance;
 import com.meant.api.module.catalog.service.port.CatalogDiscoverySource;
@@ -173,6 +174,9 @@ public class ShopifyGlobalCatalogDiscoverySource implements CatalogDiscoverySour
 
             boolean omittedUniqueCandidate = false;
             for (ProductCandidate candidate : page.candidates()) {
+                if (Boolean.TRUE.equals(filters.available()) && !saleReady(candidate)) {
+                    continue;
+                }
                 String key = candidate.offer().key();
                 if (candidates.containsKey(key)) {
                     continue;
@@ -351,9 +355,6 @@ public class ShopifyGlobalCatalogDiscoverySource implements CatalogDiscoverySour
             CatalogDiscoveryFilters discoveryFilters,
             String scopedShopId
     ) {
-        if (baseFilters == null && discoveryFilters == null && scopedShopId == null) {
-            return null;
-        }
         List<String> baseCategories = baseFilters == null || baseFilters.categories() == null
                 ? List.of()
                 : baseFilters.categories().stream()
@@ -376,7 +377,9 @@ public class ShopifyGlobalCatalogDiscoverySource implements CatalogDiscoverySour
             shopIds.addAll(discoveryFilters.shopIds());
         }
         return new ShopifyCatalogFilters(
-                discoveryFilters == null ? null : discoveryFilters.available(),
+                discoveryFilters == null || discoveryFilters.available() == null
+                        ? true
+                        : discoveryFilters.available(),
                 discoveryFilters == null
                         ? List.of()
                         : discoveryFilters.conditions().stream()
@@ -406,6 +409,16 @@ public class ShopifyGlobalCatalogDiscoverySource implements CatalogDiscoverySour
                                 .map(tier -> tier.name().toLowerCase(java.util.Locale.ROOT))
                                 .toList()
         );
+    }
+
+    private boolean saleReady(ProductCandidate candidate) {
+        if (candidate == null || candidate.offer() == null || candidate.offer().availability() == null) {
+            return false;
+        }
+        OfferAvailabilityStatus status = candidate.offer().availability().status();
+        return status == OfferAvailabilityStatus.IN_STOCK
+                || status == OfferAvailabilityStatus.PREORDER
+                || status == OfferAvailabilityStatus.BACKORDER;
     }
 
     private Optional<String> scopedShopId(CatalogDiscoveryRequest request) {

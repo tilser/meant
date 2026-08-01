@@ -483,7 +483,7 @@ class UserProductSearchCatalogInputBuilderTest {
     }
 
     @Test
-    void qualifiedSearchDoesNotRestoreSavedDestinationAfterExplicitOmission() {
+    void qualifiedSearchRetainsSavedBuyerLocationWithoutAddingAShipsToFilter() {
         CatalogDiscoveryFilters qualifiedFilters = new CatalogDiscoveryFilters(
                 true,
                 List.of(),
@@ -506,12 +506,11 @@ class UserProductSearchCatalogInputBuilderTest {
                 qualifiedFilters
         );
 
-        assertThat(input.context().addressCountry()).isNull();
-        assertThat(input.context().addressRegion()).isNull();
-        assertThat(input.context().postalCode()).isNull();
+        assertThat(input.context().addressCountry()).isEqualTo("CZ");
         assertThat(input.context().language()).isNull();
         assertThat(input.context().currency()).isEqualTo("USD");
         assertThat(input.discoveryFilters()).isSameAs(qualifiedFilters);
+        assertThat(input.discoveryFilters().shipsTo()).isNull();
     }
 
     @Test

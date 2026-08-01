@@ -161,9 +161,10 @@ public class UserProductSearchCatalogInputBuilder {
                 ? parsedPrice
                 : parsedPrice(qualifiedFilters, preferredCurrency);
         String searchQuery = searchQuery(queryIntent.searchQuery(), parsedPrice);
-        CatalogDiscoveryLocation contextLocation = qualifiedFilters == null
-                ? catalogLocation(settings.location())
-                : qualifiedFilters.shipsTo();
+        CatalogDiscoveryLocation contextLocation = qualifiedFilters != null
+                && qualifiedFilters.shipsTo() != null
+                ? qualifiedFilters.shipsTo()
+                : catalogLocation(settings.location());
         String country = contextLocation == null ? null : contextLocation.country();
         String currency = preferredCurrency;
         CatalogSearchContext context = context(

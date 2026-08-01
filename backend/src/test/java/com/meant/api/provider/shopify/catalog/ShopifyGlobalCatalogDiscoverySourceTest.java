@@ -24,6 +24,8 @@ import com.meant.api.module.catalog.service.dto.DiscoverySourceIdentity;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifier;
 import com.meant.api.module.catalog.service.dto.ExternalIdentifierType;
 import com.meant.api.module.catalog.service.dto.Offer;
+import com.meant.api.module.catalog.service.dto.OfferAvailability;
+import com.meant.api.module.catalog.service.dto.OfferAvailabilityStatus;
 import com.meant.api.module.catalog.service.dto.OfferIdentity;
 import com.meant.api.module.catalog.service.dto.OfferMerchantScope;
 import com.meant.api.module.catalog.service.dto.ProductCandidate;
@@ -97,6 +99,7 @@ class ShopifyGlobalCatalogDiscoverySourceTest {
         assertThat(provider.request.signals().buyerIp()).isEqualTo("203.0.113.4");
         assertThat(provider.request.signals().userAgent()).isEqualTo("Meant Test");
         assertThat(provider.request.filters().price().min()).isEqualTo(1000L);
+        assertThat(provider.request.filters().available()).isTrue();
         assertThat(provider.request.filters().categories())
                 .containsExactly("gid://shopify/TaxonomyCategory/aa-8-1");
     }
@@ -306,6 +309,61 @@ class ShopifyGlobalCatalogDiscoverySourceTest {
         assertThat(provider.requests)
                 .extracting(ShopifyGlobalCatalogSearchRequest::cursor)
                 .containsExactly(null, "cursor-1", "cursor-2");
+    }
+
+    @Test
+    void discardsNonSaleReadyCandidatesAndContinuesToTheNextPage() {
+        ShopifyGlobalCatalogProperties properties = properties();
+        DiscoverySourceIdentity source = source(properties);
+        ProductCandidate inStock = candidate("offer-in-stock", OfferAvailabilityStatus.IN_STOCK);
+        ProductCandidate preorder = candidate("offer-preorder", OfferAvailabilityStatus.PREORDER);
+        FakeProvider provider = FakeProvider.pages(
+                properties,
+                source,
+                successfulPage(source, List.of(
+                        candidate("offer-out-of-stock", OfferAvailabilityStatus.OUT_OF_STOCK),
+                        candidate("offer-unknown", OfferAvailabilityStatus.UNKNOWN)
+                ), "cursor-1", true, false),
+                successfulPage(source, List.of(inStock, preorder), "cursor-end", false, false)
+        );
+        ShopifyGlobalCatalogDiscoverySource adapter = new ShopifyGlobalCatalogDiscoverySource(
+                provider, properties, authProperties(true));
+
+        CatalogSourceResult result = adapter.search(
+                new CatalogDiscoveryRequest("shoes", null, 2, null, null, null),
+                ignored -> { }
+        );
+
+        assertThat(result.successful()).isTrue();
+        assertThat(result.candidates()).containsExactly(inStock, preorder);
+        assertThat(provider.requests)
+                .extracting(ShopifyGlobalCatalogSearchRequest::cursor)
+                .containsExactly(null, "cursor-1");
+        assertThat(provider.requests)
+                .allSatisfy(request -> assertThat(request.filters().available()).isTrue());
+    }
+
+    @Test
+    void explicitUnavailableSearchKeepsUnavailableCandidates() {
+        ShopifyGlobalCatalogProperties properties = properties();
+        DiscoverySourceIdentity source = source(properties);
+        ProductCandidate unavailable = candidate(
+                "offer-out-of-stock", OfferAvailabilityStatus.OUT_OF_STOCK);
+        FakeProvider provider = FakeProvider.pages(
+                properties,
+                source,
+                successfulPage(source, List.of(unavailable), "cursor-end", false, false)
+        );
+        ShopifyGlobalCatalogDiscoverySource adapter = new ShopifyGlobalCatalogDiscoverySource(
+                provider, properties, authProperties(true));
+        CatalogDiscoveryFilters filters = new CatalogDiscoveryFilters(
+                false, List.of(), null, List.of(), null, List.of(), List.of(), List.of(), null, List.of());
+
+        CatalogSourceResult result = adapter.search(new CatalogDiscoveryRequest(
+                "shoes", null, 10, null, null, null, filters), ignored -> { });
+
+        assertThat(result.candidates()).containsExactly(unavailable);
+        assertThat(provider.request.filters().available()).isFalse();
     }
 
     @Test
@@ -953,11 +1011,16 @@ class ShopifyGlobalCatalogDiscoverySourceTest {
     }
 
     private ProductCandidate candidate(String offerKey) {
+        return candidate(offerKey, OfferAvailabilityStatus.IN_STOCK);
+    }
+
+    private ProductCandidate candidate(String offerKey, OfferAvailabilityStatus availability) {
         return scopedCandidate(
                 offerKey,
                 VERIFIED_SHOP_ID,
                 List.of(VERIFIED_SHOP_ID),
-                List.of(VERIFIED_SHOP_ID)
+                List.of(VERIFIED_SHOP_ID),
+                availability
         );
     }
 
@@ -967,11 +1030,28 @@ class ShopifyGlobalCatalogDiscoverySourceTest {
             List<String> candidateProvenanceShopIds,
             List<String> offerProvenanceShopIds
     ) {
+        return scopedCandidate(
+                offerKey,
+                identityShopId,
+                candidateProvenanceShopIds,
+                offerProvenanceShopIds,
+                OfferAvailabilityStatus.IN_STOCK
+        );
+    }
+
+    private ProductCandidate scopedCandidate(
+            String offerKey,
+            String identityShopId,
+            List<String> candidateProvenanceShopIds,
+            List<String> offerProvenanceShopIds,
+            OfferAvailabilityStatus availability
+    ) {
         ProductCandidate candidate = mock(ProductCandidate.class);
         Offer offer = mock(Offer.class);
         OfferIdentity identity = mock(OfferIdentity.class);
         when(candidate.offer()).thenReturn(offer);
         when(offer.key()).thenReturn(offerKey);
+        when(offer.availability()).thenReturn(new OfferAvailability(availability, null, null));
         when(offer.identity()).thenReturn(identity);
         when(identity.merchantScope()).thenReturn(identityShopId == null
                 ? OfferMerchantScope.localIntegrationFallback(UUID.randomUUID())
