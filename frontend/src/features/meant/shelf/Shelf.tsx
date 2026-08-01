@@ -116,17 +116,17 @@ function ShelfCard({
   if (item.kind === 'product') {
     const snapshot = item.snapshot
     const title = product?.name ?? snapshot.name
-    const authoritative = product?.commercialFactsAuthoritative !== false
+    const authoritative = product != null && product.commercialFactsAuthoritative !== false
     const thumbUrl =
       (product ? productImageUrl(product) : null) ?? snapshot.imageUrl?.trim() ?? null
     const tone = product?.tone ?? snapshot.tone
-    const price = product ? (authoritative ? product.priceFrom : null) : snapshot.priceFrom
-    const priceCurrency = product ? product.priceCurrency : snapshot.priceCurrency
-    const merchantSummary = product
-      ? authoritative
-        ? `from ${product.merchants} stores`
+    const price = authoritative ? product.priceFrom : snapshot.priceFrom
+    const priceCurrency = authoritative ? product.priceCurrency : snapshot.priceCurrency
+    const merchants = authoritative ? product.merchants : snapshot.merchants
+    const merchantSummary =
+      authoritative || merchants > 0
+        ? `from ${merchants} ${merchants === 1 ? 'store' : 'stores'}`
         : 'current store count unavailable'
-      : `from ${snapshot.merchants} stores`
     return (
       <DustingContainer dusting={dusting} onGone={() => onRemove(item.uid)}>
         <div className="mt-shelf-card product">
@@ -167,7 +167,11 @@ function ShelfCard({
                   <span className="mt-shelf-prod-name">{title}</span>
                   <span className="mt-shelf-prod-price">
                     {money(price, priceCurrency)}
-                    <span className="mt-shelf-prod-from"> {merchantSummary}</span>
+                    <span className="mt-shelf-prod-from">
+                      {' '}
+                      {merchantSummary}
+                      {authoritative ? null : ' · Last checked'}
+                    </span>
                   </span>
                 </span>
               </button>
