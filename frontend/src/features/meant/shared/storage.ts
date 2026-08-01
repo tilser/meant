@@ -67,11 +67,15 @@ function useBrowserStoredState<T>(
     fallbackRef.current = fallback
   }
 
-  const [stored, setStored] = useState<StoredValue<T>>(() => ({
-    hydrated: false,
-    key,
-    value: initialFallback,
-  }))
+  const [stored, setStored] = useState<StoredValue<T>>(() => {
+    // Session-backed account state must be available before consumers can update the fallback.
+    const hydrated = kind === 'session' && typeof window !== 'undefined'
+    return {
+      hydrated,
+      key,
+      value: hydrated ? readBrowserStorage(kind, key, initialFallback) : initialFallback,
+    }
+  })
 
   let current = stored
   if (stored.key !== key) {
@@ -88,7 +92,7 @@ function useBrowserStoredState<T>(
       setStored((previous) => {
         const currentKey = keyRef.current
         const previousValue =
-          previous.key === currentKey
+          previous.key === currentKey && previous.hydrated
             ? previous.value
             : readBrowserStorage(kind, currentKey, fallbackRef.current)
 
