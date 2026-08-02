@@ -9901,15 +9901,67 @@ button:disabled {
   gap: 16px;
 }
 
-.mt-acct-currency-control {
-  display: grid;
-  grid-template-columns: minmax(220px, 1fr) auto;
-  align-items: end;
-  gap: 14px;
+.mt-acct-currency-note {
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  font-style: italic;
+  line-height: 1.5;
 }
 
-.mt-acct-currency-control .mt-acct-save {
-  min-height: 43px;
+.mt-acct-currency-control {
+  display: grid;
+  width: calc((100% - 16px) / 2);
+}
+
+.mt-acct-currency-field {
+  position: relative;
+  margin-bottom: 0;
+}
+
+.mt-acct-currency-field::after {
+  position: absolute;
+  right: 18px;
+  bottom: 19px;
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid var(--muted);
+  border-bottom: 1.5px solid var(--muted);
+  content: '';
+  pointer-events: none;
+  transform: rotate(45deg);
+  transform-origin: 65% 65%;
+  transition: border-color var(--motion-quick) var(--ease-out);
+}
+
+.mt-acct-currency-field:focus-within::after {
+  border-color: var(--accent);
+}
+
+.mt-acct-currency-field .mt-select {
+  width: 100%;
+  height: 48px;
+  appearance: none;
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--surface) 96%, var(--accent) 4%);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 7%, transparent);
+  cursor: pointer;
+  font-size: 14.5px;
+  font-weight: 600;
+  padding-inline: 16px 48px;
+}
+
+.mt-acct-currency-field .mt-select:hover:not(:disabled) {
+  border-color: var(--faint);
+}
+
+.mt-acct-currency-field .mt-select:disabled {
+  cursor: default;
+  opacity: 0.62;
+}
+
+.mt-acct-currency-actions {
+  margin-top: 14px;
 }
 
 .mt-acct-switch-row {
@@ -11283,6 +11335,10 @@ button:disabled {
   .mt-procon,
   .mt-inv-form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .mt-acct-currency-control {
+    width: 100%;
   }
 
   .mt-inv-stats {

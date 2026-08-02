@@ -11,7 +11,7 @@ mock.module('../../../lib/apiClient', () => ({
 
 const { AccountView } = await import('./AccountView')
 
-test('renders the persisted price currency in Account settings with USD as an option', () => {
+test('renders the persisted preferred display currency and explains merchant currency fallback', () => {
   const markup = renderToStaticMarkup(
     <AccountView
       user={{
@@ -39,8 +39,18 @@ test('renders the persisted price currency in Account settings with USD as an op
     />,
   )
 
-  expect(markup).toContain('Price currency')
-  expect(markup).toContain('USD is used by default')
+  expect(markup).toContain('Preferred display currency when available')
+  expect(markup).toContain(
+    'Meant always asks merchants for catalog prices in the currency you select.',
+  )
+  expect(markup).toContain('We cannot enforce this preference.')
+  expect(markup).toContain(
+    'If a merchant returns a price in a different currency, Meant shows the currency the merchant provides. Merchants usually choose that currency based on your shipping location.',
+  )
+  expect(markup).toContain('class="mt-acct-currency-note"')
+  expect(markup).toContain('Preferred currency')
+  expect(markup).toContain('class="mt-field mt-acct-currency-field"')
+  expect(markup).toContain('class="mt-acct-save-row mt-acct-currency-actions"')
   expect(markup).toContain('<option value="USD">USD — US Dollar</option>')
   expect(markup).toContain('<option value="EUR" selected="">EUR — Euro</option>')
 })

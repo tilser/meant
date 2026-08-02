@@ -383,14 +383,19 @@ export function AccountView({
       </div>
       <section className="mt-acct-card mt-acct-currency">
         <div>
-          <div className="mt-acct-link-t">Price currency</div>
+          <div className="mt-acct-link-t">Preferred display currency when available</div>
           <div className="mt-acct-link-s">
-            Meant requests and compares catalog prices in this currency. USD is used by default.
+            Meant always asks merchants for catalog prices in the currency you select.
+          </div>
+          <div className="mt-acct-currency-note">
+            We cannot enforce this preference. If a merchant returns a price in a different
+            currency, Meant shows the currency the merchant provides. Merchants usually choose that
+            currency based on your shipping location.
           </div>
         </div>
         <div className="mt-acct-currency-control">
-          <label className="mt-field">
-            <span className="mt-field-label mt-mono">Currency</span>
+          <label className="mt-field mt-acct-currency-field">
+            <span className="mt-field-label mt-mono">Preferred currency</span>
             <select
               className="mt-select"
               value={selectedCurrency}
@@ -411,18 +416,18 @@ export function AccountView({
               ))}
             </select>
           </label>
-          <button
-            className="mt-acct-save"
-            type="button"
-            disabled={selectedCurrency === currency || currencySaving}
-            onClick={() => void saveCurrency()}
-          >
-            {currencySaving ? 'Saving…' : 'Save currency'}
-          </button>
-        </div>
-        <div className="mt-acct-newsletter-state">
-          {currencySaved ? <span className="mt-acct-saved-note">Saved</span> : null}
-          {currencyError ? <span className="mt-acct-save-error">{currencyError}</span> : null}
+          <div className="mt-acct-save-row mt-acct-currency-actions">
+            <button
+              className="mt-acct-save"
+              type="button"
+              disabled={selectedCurrency === currency || currencySaving}
+              onClick={() => void saveCurrency()}
+            >
+              {currencySaving ? 'Saving…' : 'Save currency'}
+            </button>
+            {currencySaved ? <span className="mt-acct-saved-note">Saved</span> : null}
+            {currencyError ? <span className="mt-acct-save-error">{currencyError}</span> : null}
+          </div>
         </div>
       </section>
       <button className="mt-acct-link" type="button" onClick={onEditPrefs}>
