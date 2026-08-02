@@ -24,6 +24,28 @@ Want me to narrow these by *size* or price?`}
     expect(markup.match(/<p>/g)).toHaveLength(1)
   })
 
+  test('renders GFM comparison tables as accessible scrollable tables', () => {
+    const markup = renderToStaticMarkup(
+      <AgentMarkdown
+        text={`| Shirt | Price | Best for |
+| --- | ---: | --- |
+| **Superman 2025 T-Shirt** | $27 | Best overall |
+| Batman & Superman T-Shirt | $17 | Budget pick |`}
+      />,
+    )
+
+    expect(markup).toContain(
+      '<div class="mt-agent-markdown-table" role="region" aria-label="Scrollable table" tabindex="0">',
+    )
+    expect(markup).toContain('<table>')
+    expect(markup).toContain('<thead>')
+    expect(markup).toContain('<th>Shirt</th>')
+    expect(markup).toContain('<th style="text-align:right">Price</th>')
+    expect(markup).toContain('<tbody>')
+    expect(markup).toContain('<strong>Superman 2025 T-Shirt</strong>')
+    expect(markup).not.toContain('| --- |')
+  })
+
   test('does not execute agent-authored HTML or unsafe media and links', () => {
     const markup = renderToStaticMarkup(
       <AgentMarkdown

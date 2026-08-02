@@ -1,5 +1,6 @@
 import { Fragment, type ReactNode, useId, useState } from 'react'
 import Markdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 import type { Product } from '../types'
 import { ChevronIcon } from '../shared/icons'
@@ -132,6 +133,7 @@ export function AgentMarkdown({
         <Markdown
           skipHtml
           disallowedElements={['img']}
+          remarkPlugins={[remarkGfm]}
           components={{
             a: ({ children, href }) => {
               const product = groundedProduct(children)
@@ -155,6 +157,16 @@ export function AgentMarkdown({
                 </strong>
               )
             },
+            table: ({ children }) => (
+              <div
+                className="mt-agent-markdown-table"
+                role="region"
+                aria-label="Scrollable table"
+                tabIndex={0}
+              >
+                <table>{children}</table>
+              </div>
+            ),
           }}
         >
           {renderedText}

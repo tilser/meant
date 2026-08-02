@@ -156,7 +156,9 @@ class AgentContextAssemblerTest {
                 .contains("Checkout tools cannot submit payment")
                 .contains("Buyer-visible prose supports concise Markdown")
                 .contains("put every list item on its own line")
-                .contains("Never emit raw HTML, images, or tables")
+                .contains("you may use a compact GitHub-Flavored Markdown table")
+                .contains("put every table row on its own line")
+                .contains("Never emit raw HTML or images")
                 .doesNotContain("WAITING_FOR_USER");
 
         String grounding = context.messages().get(1).text();
