@@ -28,6 +28,7 @@ import {
   copyTextToClipboard,
   discoverChatMessageCopyText,
   discoverProductResearchQuery,
+  openProductFromDiscoverMessage,
   productsInDiscoverMessage,
 } from './utils'
 
@@ -365,12 +366,8 @@ export function DiscoverChatMessageRow({
   const containsCheckoutBlock = message.blocks?.some((block) => block.type === 'checkout') ?? false
   const containsProductBlock = message.blocks?.some((block) => block.type === 'products') ?? false
   const messageProducts = productsInDiscoverMessage(message)
-  const messageProductResearchQuery =
-    message.blocks?.flatMap((block) =>
-      (block.type === 'products' || block.type === 'similar') && block.query?.trim()
-        ? [block.query]
-        : [],
-    )[0] ?? message.query
+  const openMessageProduct = (product: Product) =>
+    openProductFromDiscoverMessage(message, product, onOpen)
   const settling = message.settling === true
   const messageDraggable = !containsCheckoutBlock && !settling
 
@@ -439,7 +436,7 @@ export function DiscoverChatMessageRow({
                   key={`${message.id}-${index}`}
                   threadId={threadId}
                   block={block}
-                  researchQuery={discoverProductResearchQuery(block, messageProductResearchQuery)}
+                  researchQuery={discoverProductResearchQuery(block, message.query)}
                   deliveryLocations={deliveryLocations}
                   preferences={preferences}
                   cart={cart}
@@ -501,6 +498,7 @@ export function DiscoverChatMessageRow({
                   agentActionsDisabled={agentActionsDisabled}
                   compactText={containsProductBlock && block.type === 'text'}
                   messageProducts={messageProducts}
+                  onOpenMessageProduct={openMessageProduct}
                 />
               ))}
             </div>

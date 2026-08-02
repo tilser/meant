@@ -10,6 +10,7 @@ import {
   discoverProductResearchQuery,
   discoverThreadPreview,
   latestCartBlockMessageId,
+  openProductFromDiscoverMessage,
   productOpenWithResearchQuery,
   visibleLatestCartBlockMessageId,
 } from './utils'
@@ -188,6 +189,27 @@ describe('historical product context', () => {
     productOpenWithResearchQuery(onOpen, '  original search  ')(product, products)
 
     expect(onOpen).toHaveBeenCalledWith(product, products, 'original search')
+  })
+
+  test('reuses the exact product-card snapshot, batch, and query for an inline product title', () => {
+    const first = historyProduct({ id: 'product-1', name: 'Organic cotton tee' })
+    const second = historyProduct({ id: 'product-2', name: 'Merino tee' })
+    const products = [first, second]
+    const message: DiscoverChatMessage = {
+      id: 'message-1',
+      role: 'ai',
+      query: 'message fallback',
+      blocks: [
+        { type: 'text', text: 'Try **Organic cotton tee**.' },
+        { type: 'products', products, query: '  natural-material T-shirt  ' },
+      ],
+    }
+
+    const onOpen = mock(() => undefined)
+
+    openProductFromDiscoverMessage(message, first, onOpen)
+
+    expect(onOpen).toHaveBeenCalledWith(first, products, 'natural-material T-shirt')
   })
 })
 

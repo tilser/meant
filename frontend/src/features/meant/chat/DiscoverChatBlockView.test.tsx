@@ -135,7 +135,7 @@ describe('DiscoverChatBlockView merchant display identity', () => {
     } as Product
     const block: DiscoverChatBlock = {
       type: 'text',
-      text: '[Grounded trail shoe](meant:product:product_v3_grounded)',
+      text: '**1. Grounded trail shoe** — $119',
     }
 
     const markup = renderToStaticMarkup(
@@ -143,7 +143,7 @@ describe('DiscoverChatBlockView merchant display identity', () => {
     )
 
     expect(markup).toContain('class="mt-agent-product-link"')
-    expect(markup).toContain('data-product-key="product_v3_grounded"')
+    expect(markup).toContain('data-product-id="trail-shoe"')
     expect(markup).not.toContain('href=')
   })
 })

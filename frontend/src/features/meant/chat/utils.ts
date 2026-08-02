@@ -187,27 +187,73 @@ export function visibleLatestCartBlockMessageId(
 export function productsInDiscoverMessage(message: DiscoverChatMessage): readonly Product[] {
   const products: Product[] = []
   for (const block of message.blocks ?? []) {
-    if (block.type === 'products' || block.type === 'saved' || block.type === 'minicompare') {
-      products.push(...block.products)
-    } else if (block.type === 'similar') {
-      if (block.product) products.push(block.product)
-      products.push(...block.products)
-    } else if (
-      block.type === 'reviews' ||
-      block.type === 'code' ||
-      block.type === 'watch' ||
-      block.type === 'friendvote' ||
-      block.type === 'added'
-    ) {
-      products.push(block.product)
-    } else if (block.type === 'decision') {
-      products.push(block.product)
-      if (block.runnerUp) products.push(block.runnerUp)
-    } else if (block.type === 'cart' && block.products) {
-      products.push(...block.products)
-    }
+    products.push(...productsInDiscoverBlock(block))
   }
   return [...new Map(products.map((product) => [product.id, product])).values()]
+}
+
+function productsInDiscoverBlock(block: DiscoverChatBlock): readonly Product[] {
+  if (block.type === 'products' || block.type === 'saved' || block.type === 'minicompare') {
+    return block.products
+  }
+  if (block.type === 'similar') {
+    return [...(block.product ? [block.product] : []), ...block.products]
+  }
+  if (
+    block.type === 'reviews' ||
+    block.type === 'code' ||
+    block.type === 'watch' ||
+    block.type === 'friendvote' ||
+    block.type === 'added'
+  ) {
+    return [block.product]
+  }
+  if (block.type === 'decision') {
+    return [block.product, ...(block.runnerUp ? [block.runnerUp] : [])]
+  }
+  if (block.type === 'cart' && block.products) {
+    return block.products
+  }
+  return []
+}
+
+function discoverMessageProductOpenContext(
+  message: DiscoverChatMessage,
+  selectedProduct: Product,
+): {
+  product: Product
+  products: readonly Product[]
+  researchQuery: string | null
+} | null {
+  for (const exactSnapshot of [true, false]) {
+    for (const block of message.blocks ?? []) {
+      const products = productsInDiscoverBlock(block)
+      const product = products.find((candidate) =>
+        exactSnapshot ? candidate === selectedProduct : candidate.id === selectedProduct.id,
+      )
+      if (product) {
+        return {
+          product,
+          products,
+          researchQuery: discoverProductResearchQuery(block, message.query),
+        }
+      }
+    }
+  }
+  return null
+}
+
+export function openProductFromDiscoverMessage(
+  message: DiscoverChatMessage,
+  product: Product,
+  onOpen: ProductOpenHandler,
+): void {
+  const context = discoverMessageProductOpenContext(message, product)
+  onOpen(
+    context?.product ?? product,
+    context?.products ?? [product],
+    context?.researchQuery ?? message.query,
+  )
 }
 
 export function cartLineForAddedBlock(

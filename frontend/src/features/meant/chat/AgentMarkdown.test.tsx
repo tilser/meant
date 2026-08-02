@@ -63,31 +63,53 @@ Want me to narrow these by *size* or price?`}
     } as Product
     const markup = renderToStaticMarkup(
       <AgentMarkdown
-        text="Try the [Organic cotton tee](meant:product:product_v3_grounded)."
+        text="**1. Organic cotton tee** — $21.54"
+        products={[product]}
+        onOpenProduct={() => undefined}
+      />,
+    )
+
+    expect(markup).toContain('<strong><button class="mt-agent-product-link"')
+    expect(markup).toContain('data-product-id="shirt-1"')
+    expect(markup).toContain('aria-label="Open Organic cotton tee in Meant"')
+    expect(markup).toContain('1. Organic cotton tee')
+    expect(markup).not.toContain('href=')
+  })
+
+  test('keeps a grounded product title inside an agent-authored link in Meant', () => {
+    const product = {
+      id: 'shirt-1',
+      name: 'Organic cotton tee',
+    } as Product
+    const markup = renderToStaticMarkup(
+      <AgentMarkdown
+        text="Try the [Organic cotton tee](https://merchant.example/products/shirt)."
         products={[product]}
         onOpenProduct={() => undefined}
       />,
     )
 
     expect(markup).toContain('<button class="mt-agent-product-link"')
-    expect(markup).toContain('data-product-key="product_v3_grounded"')
-    expect(markup).toContain('aria-label="Open Organic cotton tee in Meant"')
+    expect(markup).toContain('data-product-id="shirt-1"')
+    expect(markup).not.toContain('merchant.example')
     expect(markup).not.toContain('href=')
   })
 
-  test('does not activate an ungrounded internal product reference', () => {
+  test('does not activate an ungrounded or ambiguous product title', () => {
+    const first = { id: 'shirt-1', name: 'Organic cotton tee' } as Product
+    const second = { id: 'shirt-2', name: 'Organic cotton tee' } as Product
     const markup = renderToStaticMarkup(
       <AgentMarkdown
-        text="Try the [Invented tee](meant:product:product_v3_invented)."
-        products={[]}
+        text="Try the **Organic cotton tee** or **Invented tee**."
+        products={[first, second]}
         onOpenProduct={() => undefined}
       />,
     )
 
+    expect(markup).toContain('<strong>Organic cotton tee</strong>')
     expect(markup).toContain('Invented tee')
     expect(markup).not.toContain('<button')
     expect(markup).not.toContain('href=')
-    expect(markup).not.toContain('product_v3_invented')
   })
 
   test('offers progressive disclosure for long product-result messages', () => {

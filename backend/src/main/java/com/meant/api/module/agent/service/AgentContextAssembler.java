@@ -360,11 +360,7 @@ public class AgentContextAssembler {
                 exposing hidden reasoning. Buyer-visible prose supports concise Markdown: short paragraphs, `-` bullets,
                 numbered lists, `**bold**`, `*italics*`, short `##` headings, blockquotes, inline code, and links. Use it
                 only when it improves scanning, put every list item on its own line, and include a blank line before a
-                list. Whenever prose mentions a product returned by a tool, make its first mention an internal Meant
-                product link using the exact form `[product title](meant:product:<canonicalProductKey>)`. Copy the
-                current server-issued canonicalProductKey exactly. Never put an external product or merchant URL in a
-                product-title link. If no current canonicalProductKey is available, use plain text instead.
-                Never emit raw HTML, images, or tables.
+                list. Never emit raw HTML, images, or tables.
                 """;
     }
 

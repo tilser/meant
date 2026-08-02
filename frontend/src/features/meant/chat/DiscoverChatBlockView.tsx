@@ -126,6 +126,7 @@ export function DiscoverChatBlockView({
   agentActionsDisabled,
   compactText = false,
   messageProducts = [],
+  onOpenMessageProduct,
 }: Readonly<{
   threadId: string
   block: DiscoverChatBlock
@@ -196,6 +197,7 @@ export function DiscoverChatBlockView({
   agentActionsDisabled: boolean
   compactText?: boolean
   messageProducts?: readonly Product[]
+  onOpenMessageProduct?: (product: Product) => void
 }>) {
   const openProduct = productOpenWithResearchQuery(onOpen, researchQuery)
 
@@ -205,7 +207,7 @@ export function DiscoverChatBlockView({
         text={block.text}
         compact={compactText}
         products={messageProducts}
-        onOpenProduct={openProduct}
+        onOpenProduct={onOpenMessageProduct ?? ((product) => openProduct(product))}
       />
     )
   }
