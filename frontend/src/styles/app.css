@@ -759,7 +759,8 @@
 .mt-agent-markdown th,
 .mt-agent-markdown td {
   padding: 0.65em 0.8em;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
+  word-break: normal;
   text-align: left;
   vertical-align: top;
 }
