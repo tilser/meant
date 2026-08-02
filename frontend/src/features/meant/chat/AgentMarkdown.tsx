@@ -1,4 +1,12 @@
-import { Fragment, type ReactNode, useId, useState } from 'react'
+import {
+  cloneElement,
+  Fragment,
+  isValidElement,
+  type ReactElement,
+  type ReactNode,
+  useId,
+  useState,
+} from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -8,6 +16,7 @@ import { productArtworkUrl } from '../shared/productArtwork'
 
 const COMPACT_MESSAGE_MIN_LENGTH = 420
 const COMPACT_PREVIEW_MAX_LENGTH = 280
+const PRODUCT_GROUNDING_BOUNDARY = ' meantproductgroundingboundary '
 
 function compactAgentPreview(text: string): string {
   if (text.length <= COMPACT_PREVIEW_MAX_LENGTH) {
@@ -56,9 +65,30 @@ function safeAgentLink(href: string | undefined): string | null {
   }
 }
 
+function isProductActionElement(
+  value: ReactNode,
+): value is ReactElement<{ children?: ReactNode; 'data-product-id'?: string }> {
+  return (
+    isValidElement<{ children?: ReactNode; 'data-product-id'?: string }>(value) &&
+    typeof value.props['data-product-id'] === 'string'
+  )
+}
+
+function containsProductAction(children: ReactNode): boolean {
+  if (isProductActionElement(children)) return true
+  if (Array.isArray(children)) return children.some(containsProductAction)
+  return isValidElement<{ children?: ReactNode }>(children)
+    ? containsProductAction(children.props.children)
+    : false
+}
+
 function inlineText(children: ReactNode): string | null {
   if (typeof children === 'string' || typeof children === 'number') {
     return String(children)
+  }
+  if (isProductActionElement(children)) return null
+  if (isValidElement<{ children?: ReactNode }>(children)) {
+    return inlineText(children.props.children)
   }
   if (!Array.isArray(children)) {
     return null
@@ -76,12 +106,144 @@ function normalizedProductReferenceTitle(value: string): string {
   return normalizedProductTitle(value).replace(/^\d{1,3}[.)]\s+/, '')
 }
 
-function productTitlePattern(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+')
+interface ProductTitleToken {
+  value: string
+  start: number
+  end: number
 }
 
-function isWordCharacter(value: string | undefined): boolean {
-  return value ? /[\p{L}\p{N}]/u.test(value) : false
+interface ProductMentionRange {
+  product: Product
+  start: number
+  end: number
+}
+
+function productTitleTokens(value: string): ProductTitleToken[] {
+  return [...value.matchAll(/[\p{L}\p{N}]+/gu)].map((match) => ({
+    value: match[0].normalize('NFKC').toLocaleLowerCase(),
+    start: match.index,
+    end: match.index + match[0].length,
+  }))
+}
+
+function skipsProductGrounding(value: ReactNode): boolean {
+  if (isProductActionElement(value)) return true
+  return (
+    isValidElement<{ children?: ReactNode }>(value) &&
+    typeof value.type === 'string' &&
+    (value.type === 'code' || value.type === 'pre')
+  )
+}
+
+function productGroundingText(children: ReactNode): string {
+  if (typeof children === 'string' || typeof children === 'number') return String(children)
+  if (skipsProductGrounding(children)) return PRODUCT_GROUNDING_BOUNDARY
+  if (Array.isArray(children)) return children.map(productGroundingText).join('')
+  return isValidElement<{ children?: ReactNode }>(children)
+    ? productGroundingText(children.props.children)
+    : ''
+}
+
+function productMentionRanges(
+  children: ReactNode,
+  products: readonly Product[],
+): ProductMentionRange[] {
+  const textTokens = productTitleTokens(productGroundingText(children))
+  if (textTokens.length === 0 || products.length === 0) return []
+
+  const productByTokenTitle = new Map<string, Product | null>()
+  for (const product of products) {
+    const signature = productTitleTokens(product.name)
+      .map((token) => token.value)
+      .join('\u0000')
+    if (!signature) continue
+    const existing = productByTokenTitle.get(signature)
+    if (existing === undefined) {
+      productByTokenTitle.set(signature, product)
+    } else if (existing?.id !== product.id) {
+      productByTokenTitle.set(signature, null)
+    }
+  }
+  const candidates = [...productByTokenTitle.entries()]
+    .filter((entry): entry is [string, Product] => entry[1] !== null)
+    .map(([signature, product]) => ({ product, tokens: signature.split('\u0000') }))
+    .sort(
+      (left, right) =>
+        right.tokens.length - left.tokens.length ||
+        right.tokens.join('').length - left.tokens.join('').length,
+    )
+
+  const ranges: ProductMentionRange[] = []
+  for (let tokenIndex = 0; tokenIndex < textTokens.length;) {
+    const candidate = candidates.find(
+      ({ tokens }) =>
+        tokens.length <= textTokens.length - tokenIndex &&
+        tokens.every((token, offset) => token === textTokens[tokenIndex + offset]?.value),
+    )
+    if (!candidate) {
+      tokenIndex += 1
+      continue
+    }
+    const firstToken = textTokens[tokenIndex]
+    const lastToken = textTokens[tokenIndex + candidate.tokens.length - 1]
+    if (firstToken && lastToken) {
+      ranges.push({
+        product: candidate.product,
+        start: firstToken.start,
+        end: lastToken.end,
+      })
+    }
+    tokenIndex += candidate.tokens.length
+  }
+  return ranges
+}
+
+function replaceProductMentionRanges(
+  children: ReactNode,
+  ranges: readonly ProductMentionRange[],
+  renderProduct: (range: ProductMentionRange) => ReactNode,
+): ReactNode {
+  if (ranges.length === 0) return children
+
+  let textOffset = 0
+  const insertedRanges = new Set<ProductMentionRange>()
+  const replace = (value: ReactNode): ReactNode => {
+    if (typeof value === 'string' || typeof value === 'number') {
+      const text = String(value)
+      const segmentStart = textOffset
+      const segmentEnd = segmentStart + text.length
+      textOffset = segmentEnd
+      const overlapping = ranges.filter(
+        (range) => range.start < segmentEnd && range.end > segmentStart,
+      )
+      if (overlapping.length === 0) return value
+
+      const parts: ReactNode[] = []
+      let localOffset = 0
+      for (const range of overlapping) {
+        const overlapStart = Math.max(range.start, segmentStart) - segmentStart
+        const overlapEnd = Math.min(range.end, segmentEnd) - segmentStart
+        if (overlapStart > localOffset) parts.push(text.slice(localOffset, overlapStart))
+        if (!insertedRanges.has(range)) {
+          parts.push(renderProduct(range))
+          insertedRanges.add(range)
+        }
+        localOffset = Math.max(localOffset, overlapEnd)
+      }
+      if (localOffset < text.length) parts.push(text.slice(localOffset))
+      return parts
+    }
+    if (skipsProductGrounding(value)) {
+      textOffset += PRODUCT_GROUNDING_BOUNDARY.length
+      return value
+    }
+    if (Array.isArray(value)) return value.map(replace)
+    if (isValidElement<{ children?: ReactNode }>(value)) {
+      return cloneElement(value, undefined, replace(value.props.children))
+    }
+    return value
+  }
+  return replace(children)
 }
 
 function ProductMentionArtwork({ product }: Readonly<{ product: Product }>) {
@@ -166,39 +328,14 @@ export function AgentMarkdown({
     .filter((entry): entry is [string, Product] => entry[1] !== null)
     .map(([, product]) => product)
     .sort((left, right) => right.name.length - left.name.length)
-  const mentionPattern = mentionProducts.length
-    ? new RegExp(
-        mentionProducts.map((product) => productTitlePattern(product.name)).join('|'),
-        'giu',
-      )
-    : null
   const productMentions = (children: ReactNode): ReactNode => {
-    if (Array.isArray(children)) {
-      return children.map((child) => productMentions(child))
-    }
-    if (typeof children !== 'string' || !mentionPattern || !onOpenProduct) {
-      return children
-    }
-
-    const mentions: ReactNode[] = []
-    let cursor = 0
-    mentionPattern.lastIndex = 0
-    for (const match of children.matchAll(mentionPattern)) {
-      const start = match.index
-      const value = match[0]
-      const end = start + value.length
-      if (isWordCharacter(children[start - 1]) || isWordCharacter(children[end])) {
-        continue
-      }
-      const product = productByTitle.get(normalizedProductTitle(value))
-      if (!product) continue
-      if (start > cursor) mentions.push(children.slice(cursor, start))
-      mentions.push(productAction(product, value, `${product.id}-${start}`))
-      cursor = end
-    }
-    if (cursor === 0) return children
-    if (cursor < children.length) mentions.push(children.slice(cursor))
-    return mentions
+    if (!onOpenProduct) return children
+    return replaceProductMentionRanges(
+      children,
+      productMentionRanges(children, mentionProducts),
+      (range) =>
+        productAction(range.product, range.product.name, `${range.product.id}-${range.start}`),
+    )
   }
 
   return (
@@ -215,7 +352,16 @@ export function AgentMarkdown({
           components={{
             p: ({ children }) => <p>{productMentions(children)}</p>,
             li: ({ children }) => <li>{productMentions(children)}</li>,
+            h1: ({ children }) => <h1>{productMentions(children)}</h1>,
+            h2: ({ children }) => <h2>{productMentions(children)}</h2>,
+            h3: ({ children }) => <h3>{productMentions(children)}</h3>,
+            h4: ({ children }) => <h4>{productMentions(children)}</h4>,
+            h5: ({ children }) => <h5>{productMentions(children)}</h5>,
+            h6: ({ children }) => <h6>{productMentions(children)}</h6>,
             a: ({ children, href }) => {
+              if (containsProductAction(children)) {
+                return <Fragment>{children}</Fragment>
+              }
               const product = groundedProduct(children)
               if (product && onOpenProduct) {
                 return productAction(product, children)
@@ -250,6 +396,10 @@ export function AgentMarkdown({
             td: ({ children, node, ...props }) => {
               void node
               return <td {...props}>{productMentions(children)}</td>
+            },
+            th: ({ children, node, ...props }) => {
+              void node
+              return <th {...props}>{productMentions(children)}</th>
             },
           }}
         >

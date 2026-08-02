@@ -28,12 +28,12 @@ Want me to narrow these by *size* or price?`}
     const products = [
       {
         id: 'superman-shirt',
-        name: 'Superman 2025 T-Shirt',
+        name: 'Superman 2025 T-Shirt — Midnight Black',
         imageUrl: 'https://cdn.example/superman-shirt.jpg',
       },
       {
         id: 'batman-shirt',
-        name: 'Batman & Superman T-Shirt',
+        name: 'Batman & Superman T-Shirt — Washed Black',
         imageUrl: 'https://cdn.example/batman-shirt.jpg',
       },
     ] as Product[]
@@ -41,8 +41,8 @@ Want me to narrow these by *size* or price?`}
       <AgentMarkdown
         text={`| Shirt | Price | Best for |
 | --- | ---: | --- |
-| **Superman 2025 T-Shirt** | $27 | Best overall |
-| Batman & Superman T-Shirt | $17 | Budget pick |`}
+| **Superman 2025 T-Shirt** — Midnight Black | $27 | Best overall |
+| **Batman & Superman T-Shirt** — Washed Black | $17 | Budget pick |`}
         products={products}
         onOpenProduct={() => undefined}
       />,
@@ -59,6 +59,8 @@ Want me to narrow these by *size* or price?`}
     expect(markup).toContain('<strong><button class="mt-agent-product-link"')
     expect(markup).toContain('data-product-id="superman-shirt"')
     expect(markup).toContain('data-product-id="batman-shirt"')
+    expect(markup).toContain('Superman 2025 T-Shirt — Midnight Black')
+    expect(markup).toContain('Batman &amp; Superman T-Shirt — Washed Black')
     expect(markup.match(/class="mt-agent-product-link"/g)).toHaveLength(2)
     expect(markup).not.toContain('| --- |')
   })
@@ -109,10 +111,10 @@ Want me to narrow these by *size* or price?`}
       />,
     )
 
-    expect(markup).toContain('<strong><button class="mt-agent-product-link"')
+    expect(markup).toContain('<strong>1. <button class="mt-agent-product-link"')
     expect(markup).toContain('data-product-id="shirt-1"')
     expect(markup).toContain('aria-label="Open Organic cotton tee in Meant"')
-    expect(markup).toContain('1. Organic cotton tee')
+    expect(markup).toContain('Organic cotton tee')
     expect(markup).toContain('<span class="mt-agent-product-link-media" aria-hidden="true">')
     expect(markup).toContain('class="mt-agent-product-link-image"')
     expect(markup).toContain('src="https://cdn.example/organic-cotton-tee.jpg"')
@@ -161,6 +163,46 @@ Want me to narrow these by *size* or price?`}
     expect(markup.match(/class="mt-agent-product-link"/g)).toHaveLength(1)
     expect(markup).toContain('data-product-id="shirt-1"')
     expect(markup).toContain('organic cotton teepee is unrelated')
+  })
+
+  test('visualizes a product name split across Markdown in headings, prose, and lists', () => {
+    const product = {
+      id: 'jacket-1',
+      name: 'Alo Yoga Airlift Jacket — Black',
+      imageUrl: 'https://cdn.example/alo-jacket.jpg',
+    } as Product
+    const markup = renderToStaticMarkup(
+      <AgentMarkdown
+        text={`## **Alo Yoga Airlift Jacket** — Black
+
+Try **Alo Yoga Airlift Jacket** — Black for winter.
+
+- [Alo Yoga Airlift Jacket](https://merchant.example/jacket) — Black`}
+        products={[product]}
+        onOpenProduct={() => undefined}
+      />,
+    )
+
+    expect(markup.match(/class="mt-agent-product-link"/g)).toHaveLength(3)
+    expect(markup.match(/data-product-id="jacket-1"/g)).toHaveLength(3)
+    expect(markup).toContain('Alo Yoga Airlift Jacket — Black')
+    expect(markup).toContain('for winter')
+    expect(markup).not.toContain('merchant.example')
+    expect(markup).not.toContain('href=')
+  })
+
+  test('does not turn a product name inside code into a product action', () => {
+    const product = { id: 'shirt-1', name: 'Organic cotton tee' } as Product
+    const markup = renderToStaticMarkup(
+      <AgentMarkdown
+        text="Compare `Organic cotton tee` with the Organic cotton tee."
+        products={[product]}
+        onOpenProduct={() => undefined}
+      />,
+    )
+
+    expect(markup).toContain('<code>Organic cotton tee</code>')
+    expect(markup.match(/class="mt-agent-product-link"/g)).toHaveLength(1)
   })
 
   test('does not activate an ungrounded or ambiguous product title', () => {
