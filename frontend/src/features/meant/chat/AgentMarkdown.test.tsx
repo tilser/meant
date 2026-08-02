@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 
+import type { Product } from '../types'
 import { AgentMarkdown } from './AgentMarkdown'
 
 describe('AgentMarkdown', () => {
@@ -52,6 +53,41 @@ Want me to narrow these by *size* or price?`}
     expect(markup).toContain('href="https://shop.example/size-guide"')
     expect(markup).toContain('target="_blank"')
     expect(markup).toContain('rel="noreferrer"')
+  })
+
+  test('renders a grounded product reference as an internal Meant action', () => {
+    const product = {
+      id: 'shirt-1',
+      name: 'Organic cotton tee',
+      canonicalProduct: { key: 'product_v3_grounded' },
+    } as Product
+    const markup = renderToStaticMarkup(
+      <AgentMarkdown
+        text="Try the [Organic cotton tee](meant:product:product_v3_grounded)."
+        products={[product]}
+        onOpenProduct={() => undefined}
+      />,
+    )
+
+    expect(markup).toContain('<button class="mt-agent-product-link"')
+    expect(markup).toContain('data-product-key="product_v3_grounded"')
+    expect(markup).toContain('aria-label="Open Organic cotton tee in Meant"')
+    expect(markup).not.toContain('href=')
+  })
+
+  test('does not activate an ungrounded internal product reference', () => {
+    const markup = renderToStaticMarkup(
+      <AgentMarkdown
+        text="Try the [Invented tee](meant:product:product_v3_invented)."
+        products={[]}
+        onOpenProduct={() => undefined}
+      />,
+    )
+
+    expect(markup).toContain('Invented tee')
+    expect(markup).not.toContain('<button')
+    expect(markup).not.toContain('href=')
+    expect(markup).not.toContain('product_v3_invented')
   })
 
   test('offers progressive disclosure for long product-result messages', () => {

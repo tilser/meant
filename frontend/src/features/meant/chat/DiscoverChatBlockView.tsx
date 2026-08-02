@@ -125,6 +125,7 @@ export function DiscoverChatBlockView({
   cartAdditionPending = false,
   agentActionsDisabled,
   compactText = false,
+  messageProducts = [],
 }: Readonly<{
   threadId: string
   block: DiscoverChatBlock
@@ -194,11 +195,19 @@ export function DiscoverChatBlockView({
   cartAdditionPending?: boolean
   agentActionsDisabled: boolean
   compactText?: boolean
+  messageProducts?: readonly Product[]
 }>) {
   const openProduct = productOpenWithResearchQuery(onOpen, researchQuery)
 
   if (block.type === 'text') {
-    return <AgentMarkdown text={block.text} compact={compactText} />
+    return (
+      <AgentMarkdown
+        text={block.text}
+        compact={compactText}
+        products={messageProducts}
+        onOpenProduct={openProduct}
+      />
+    )
   }
   if (block.type === 'system') {
     return (

@@ -17,4 +17,10 @@ describe('agent text projections', () => {
       plainAgentText('## Top picks\n\n1. **Dead Cool Jacket** — washed denim\n2. *Cloud Puffer*'),
     ).toBe('Top picks\n\n1. Dead Cool Jacket — washed denim\n2. Cloud Puffer')
   })
+
+  test('preserves internal grounded product-link Markdown for the chat renderer', () => {
+    expect(agentMarkdownText('[Organic cotton tee](meant:product:product_v3_grounded)')).toBe(
+      '[Organic cotton tee](meant:product:product_v3_grounded)',
+    )
+  })
 })

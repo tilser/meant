@@ -127,4 +127,23 @@ describe('DiscoverChatBlockView merchant display identity', () => {
     expect(markup).not.toContain('mcp.shop.example')
     expect(markup).not.toContain('href=')
   })
+
+  test('binds an agent product link to the same product snapshot used by product cards', () => {
+    const linkedProduct = {
+      ...product,
+      canonicalProduct: { key: 'product_v3_grounded' },
+    } as Product
+    const block: DiscoverChatBlock = {
+      type: 'text',
+      text: '[Grounded trail shoe](meant:product:product_v3_grounded)',
+    }
+
+    const markup = renderToStaticMarkup(
+      <DiscoverChatBlockView {...baseProps} block={block} messageProducts={[linkedProduct]} />,
+    )
+
+    expect(markup).toContain('class="mt-agent-product-link"')
+    expect(markup).toContain('data-product-key="product_v3_grounded"')
+    expect(markup).not.toContain('href=')
+  })
 })

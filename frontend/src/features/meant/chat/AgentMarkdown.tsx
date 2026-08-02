@@ -1,10 +1,13 @@
 import { Fragment, useId, useState } from 'react'
 import Markdown from 'react-markdown'
 
+import type { Product } from '../types'
 import { ChevronIcon } from '../shared/icons'
 
 const COMPACT_MESSAGE_MIN_LENGTH = 420
 const COMPACT_PREVIEW_MAX_LENGTH = 280
+const INTERNAL_PRODUCT_LINK_PREFIX = 'meant:product:'
+const CANONICAL_PRODUCT_KEY = /^[A-Za-z0-9:_-]{1,500}$/
 
 function compactAgentPreview(text: string): string {
   if (text.length <= COMPACT_PREVIEW_MAX_LENGTH) {
@@ -53,16 +56,36 @@ function safeAgentLink(href: string | undefined): string | null {
   }
 }
 
+function internalProductKey(href: string | undefined): string | null {
+  if (!href?.startsWith(INTERNAL_PRODUCT_LINK_PREFIX)) return null
+
+  const key = href.slice(INTERNAL_PRODUCT_LINK_PREFIX.length)
+  return CANONICAL_PRODUCT_KEY.test(key) ? key : null
+}
+
 /** Renders the agent's buyer-safe Markdown without allowing raw HTML or remote images. */
 export function AgentMarkdown({
   text,
   compact = false,
-}: Readonly<{ text: string; compact?: boolean }>) {
+  products = [],
+  onOpenProduct,
+}: Readonly<{
+  text: string
+  compact?: boolean
+  products?: readonly Product[]
+  onOpenProduct?: (product: Product, products: readonly Product[]) => void
+}>) {
   const [expanded, setExpanded] = useState(false)
   const contentId = useId()
   const collapsible = compact && text.trim().length >= COMPACT_MESSAGE_MIN_LENGTH
   const collapsed = collapsible && !expanded
   const renderedText = collapsed ? compactAgentPreview(text) : text
+  const productByCanonicalKey = new Map(
+    products.flatMap((product) => {
+      const key = product.canonicalProduct?.key
+      return key ? [[key, product] as const] : []
+    }),
+  )
 
   return (
     <div
@@ -74,8 +97,29 @@ export function AgentMarkdown({
         <Markdown
           skipHtml
           disallowedElements={['img']}
+          urlTransform={(url) => url}
           components={{
             a: ({ children, href }) => {
+              const productKey = internalProductKey(href)
+              const product = productKey ? productByCanonicalKey.get(productKey) : undefined
+              if (product && onOpenProduct) {
+                return (
+                  <button
+                    className="mt-agent-product-link"
+                    type="button"
+                    data-product-key={productKey}
+                    aria-label={`Open ${product.name} in Meant`}
+                    onClick={(event) => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      onOpenProduct(product, products)
+                    }}
+                    onDragStart={(event) => event.stopPropagation()}
+                  >
+                    {children}
+                  </button>
+                )
+              }
               const safeHref = safeAgentLink(href)
               return safeHref ? (
                 <a href={safeHref} target="_blank" rel="noreferrer">

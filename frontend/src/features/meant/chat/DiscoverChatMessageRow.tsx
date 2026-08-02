@@ -28,6 +28,7 @@ import {
   copyTextToClipboard,
   discoverChatMessageCopyText,
   discoverProductResearchQuery,
+  productsInDiscoverMessage,
 } from './utils'
 
 function stableDustSeed(value: string): number {
@@ -363,6 +364,13 @@ export function DiscoverChatMessageRow({
   const copyMessage = () => copyTextToClipboard(discoverChatMessageCopyText(message))
   const containsCheckoutBlock = message.blocks?.some((block) => block.type === 'checkout') ?? false
   const containsProductBlock = message.blocks?.some((block) => block.type === 'products') ?? false
+  const messageProducts = productsInDiscoverMessage(message)
+  const messageProductResearchQuery =
+    message.blocks?.flatMap((block) =>
+      (block.type === 'products' || block.type === 'similar') && block.query?.trim()
+        ? [block.query]
+        : [],
+    )[0] ?? message.query
   const settling = message.settling === true
   const messageDraggable = !containsCheckoutBlock && !settling
 
@@ -431,7 +439,7 @@ export function DiscoverChatMessageRow({
                   key={`${message.id}-${index}`}
                   threadId={threadId}
                   block={block}
-                  researchQuery={discoverProductResearchQuery(block, message.query)}
+                  researchQuery={discoverProductResearchQuery(block, messageProductResearchQuery)}
                   deliveryLocations={deliveryLocations}
                   preferences={preferences}
                   cart={cart}
@@ -492,6 +500,7 @@ export function DiscoverChatMessageRow({
                   cartAdditionPending={cartAdditionPending}
                   agentActionsDisabled={agentActionsDisabled}
                   compactText={containsProductBlock && block.type === 'text'}
+                  messageProducts={messageProducts}
                 />
               ))}
             </div>

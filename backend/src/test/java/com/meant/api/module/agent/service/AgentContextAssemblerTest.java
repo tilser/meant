@@ -156,6 +156,9 @@ class AgentContextAssemblerTest {
                 .contains("Checkout tools cannot submit payment")
                 .contains("Buyer-visible prose supports concise Markdown")
                 .contains("put every list item on its own line")
+                .contains("[product title](meant:product:<canonicalProductKey>)")
+                .contains("Never put an external product or merchant URL")
+                .contains("product-title link")
                 .contains("Never emit raw HTML, images, or tables")
                 .doesNotContain("WAITING_FOR_USER");
 
