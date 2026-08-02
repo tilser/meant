@@ -25,12 +25,26 @@ Want me to narrow these by *size* or price?`}
   })
 
   test('renders GFM comparison tables as accessible scrollable tables', () => {
+    const products = [
+      {
+        id: 'superman-shirt',
+        name: 'Superman 2025 T-Shirt',
+        imageUrl: 'https://cdn.example/superman-shirt.jpg',
+      },
+      {
+        id: 'batman-shirt',
+        name: 'Batman & Superman T-Shirt',
+        imageUrl: 'https://cdn.example/batman-shirt.jpg',
+      },
+    ] as Product[]
     const markup = renderToStaticMarkup(
       <AgentMarkdown
         text={`| Shirt | Price | Best for |
 | --- | ---: | --- |
 | **Superman 2025 T-Shirt** | $27 | Best overall |
 | Batman & Superman T-Shirt | $17 | Budget pick |`}
+        products={products}
+        onOpenProduct={() => undefined}
       />,
     )
 
@@ -42,7 +56,10 @@ Want me to narrow these by *size* or price?`}
     expect(markup).toContain('<th>Shirt</th>')
     expect(markup).toContain('<th style="text-align:right">Price</th>')
     expect(markup).toContain('<tbody>')
-    expect(markup).toContain('<strong>Superman 2025 T-Shirt</strong>')
+    expect(markup).toContain('<strong><button class="mt-agent-product-link"')
+    expect(markup).toContain('data-product-id="superman-shirt"')
+    expect(markup).toContain('data-product-id="batman-shirt"')
+    expect(markup.match(/class="mt-agent-product-link"/g)).toHaveLength(2)
     expect(markup).not.toContain('| --- |')
   })
 
@@ -81,6 +98,7 @@ Want me to narrow these by *size* or price?`}
     const product = {
       id: 'shirt-1',
       name: 'Organic cotton tee',
+      imageUrl: 'https://cdn.example/organic-cotton-tee.jpg',
       canonicalProduct: { key: 'product_v3_grounded' },
     } as Product
     const markup = renderToStaticMarkup(
@@ -95,6 +113,12 @@ Want me to narrow these by *size* or price?`}
     expect(markup).toContain('data-product-id="shirt-1"')
     expect(markup).toContain('aria-label="Open Organic cotton tee in Meant"')
     expect(markup).toContain('1. Organic cotton tee')
+    expect(markup).toContain('<span class="mt-agent-product-link-media" aria-hidden="true">')
+    expect(markup).toContain('class="mt-agent-product-link-image"')
+    expect(markup).toContain('src="https://cdn.example/organic-cotton-tee.jpg"')
+    expect(markup).toContain('loading="lazy"')
+    expect(markup).toContain('decoding="async"')
+    expect(markup).toContain('View product')
     expect(markup).not.toContain('href=')
   })
 
@@ -113,8 +137,30 @@ Want me to narrow these by *size* or price?`}
 
     expect(markup).toContain('<button class="mt-agent-product-link"')
     expect(markup).toContain('data-product-id="shirt-1"')
+    expect(markup).toContain('class="mt-agent-product-link-fallback"')
+    expect(markup).toContain('>O</span>')
+    expect(markup).not.toContain('<img')
     expect(markup).not.toContain('merchant.example')
     expect(markup).not.toContain('href=')
+  })
+
+  test('visualizes an unformatted grounded product mention without matching a larger word', () => {
+    const product = {
+      id: 'shirt-1',
+      name: 'Organic cotton tee',
+      imageUrl: 'https://cdn.example/organic-cotton-tee.jpg',
+    } as Product
+    const markup = renderToStaticMarkup(
+      <AgentMarkdown
+        text="The Organic cotton tee is the strongest pick; organic cotton teepee is unrelated."
+        products={[product]}
+        onOpenProduct={() => undefined}
+      />,
+    )
+
+    expect(markup.match(/class="mt-agent-product-link"/g)).toHaveLength(1)
+    expect(markup).toContain('data-product-id="shirt-1"')
+    expect(markup).toContain('organic cotton teepee is unrelated')
   })
 
   test('does not activate an ungrounded or ambiguous product title', () => {

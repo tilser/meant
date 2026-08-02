@@ -131,6 +131,7 @@ describe('DiscoverChatBlockView merchant display identity', () => {
   test('binds an agent product link to the same product snapshot used by product cards', () => {
     const linkedProduct = {
       ...product,
+      imageUrl: 'https://cdn.example/grounded-trail-shoe.jpg',
       canonicalProduct: { key: 'product_v3_grounded' },
     } as Product
     const block: DiscoverChatBlock = {
@@ -144,6 +145,7 @@ describe('DiscoverChatBlockView merchant display identity', () => {
 
     expect(markup).toContain('class="mt-agent-product-link"')
     expect(markup).toContain('data-product-id="trail-shoe"')
+    expect(markup).toContain('src="https://cdn.example/grounded-trail-shoe.jpg"')
     expect(markup).not.toContain('href=')
   })
 })

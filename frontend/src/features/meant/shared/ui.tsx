@@ -1,6 +1,7 @@
 import { type ReactNode, useId } from 'react'
 
 import type { Product } from '../types'
+import { productArtworkUrl } from './productArtwork'
 
 interface ViewHeadProps {
   eyebrow: string
@@ -115,13 +116,7 @@ export function ProductArtwork({
   label: string
   imageUrl?: string | null
 }>) {
-  const artworkUrl =
-    imageUrl?.trim() ||
-    product.imageUrl?.trim() ||
-    product.media
-      ?.filter((item) => item.type?.toLowerCase() === 'image')
-      ?.map((item) => item.url?.trim() ?? '')
-      ?.find(Boolean)
+  const artworkUrl = productArtworkUrl(product, imageUrl)
   if (artworkUrl) {
     return <img className="mt-product-img" src={artworkUrl} alt="" loading="lazy" />
   }

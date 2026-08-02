@@ -696,8 +696,7 @@
   margin: 0;
 }
 
-.mt-agent-markdown a,
-.mt-agent-markdown .mt-agent-product-link {
+.mt-agent-markdown a {
   color: var(--accent);
   text-decoration-color: color-mix(in srgb, var(--accent) 42%, transparent);
   text-decoration-thickness: 1px;
@@ -706,24 +705,139 @@
 
 .mt-agent-markdown .mt-agent-product-link {
   appearance: none;
-  padding: 0;
-  border: 0;
-  background: none;
+  display: inline-grid;
+  min-width: min(100%, 250px);
+  max-width: min(100%, 430px);
+  min-height: 60px;
+  grid-template-columns: 52px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  margin: 0.2em 0.12em 0.16em 0;
+  padding: 4px 12px 4px 4px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface) 92%, var(--accent-tint));
+  box-shadow: 0 8px 24px -22px rgba(20, 24, 28, 0.55);
+  color: var(--ink);
   font: inherit;
   text-align: inherit;
-  text-decoration-line: underline;
+  text-decoration: none;
+  vertical-align: middle;
   cursor: pointer;
+  transition:
+    border-color var(--motion-quick) var(--ease-out),
+    background var(--motion-quick) var(--ease-out),
+    box-shadow var(--motion-medium) var(--ease-out),
+    transform var(--motion-quick) var(--ease-out);
 }
 
-.mt-agent-markdown a:hover,
-.mt-agent-markdown .mt-agent-product-link:hover {
+.mt-agent-markdown a:hover {
   text-decoration-color: currentColor;
 }
 
+.mt-agent-markdown .mt-agent-product-link:hover {
+  border-color: var(--accent-line);
+  background: color-mix(in srgb, var(--surface) 82%, var(--accent-tint));
+  box-shadow: 0 14px 30px -22px rgba(20, 24, 28, 0.48);
+  transform: translateY(-1px);
+}
+
 .mt-agent-markdown .mt-agent-product-link:focus-visible {
-  border-radius: 2px;
   outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline-offset: 3px;
+}
+
+.mt-agent-markdown .mt-agent-product-link:active {
+  transform: translateY(0) scale(0.99);
+}
+
+.mt-agent-product-link-media {
+  position: relative;
+  display: block;
+  width: 52px;
+  height: 52px;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--line-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 80%, transparent);
+}
+
+.mt-agent-product-link-image,
+.mt-agent-product-link-fallback {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.mt-agent-product-link-image {
+  object-fit: cover;
+  transition: transform var(--motion-medium) var(--ease-out);
+}
+
+.mt-agent-product-link:hover .mt-agent-product-link-image {
+  transform: scale(1.045);
+}
+
+.mt-agent-product-link-fallback {
+  display: grid;
+  place-items: center;
+  color: color-mix(in srgb, var(--ink) 68%, transparent);
+  font-family: var(--serif);
+  font-size: 23px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.mt-agent-product-link-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+
+.mt-agent-product-link-title {
+  display: -webkit-box;
+  max-width: 100%;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  color: var(--ink);
+  font-size: 0.94em;
+  font-weight: 650;
+  line-height: 1.22;
+  text-decoration-line: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 28%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.17em;
+  text-overflow: ellipsis;
+  -webkit-line-clamp: 2;
+}
+
+.mt-agent-product-link-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 8px;
+  font-weight: 500;
+  letter-spacing: 0.055em;
+  line-height: 1;
+  text-transform: uppercase;
+  transition: color var(--motion-quick) var(--ease-out);
+}
+
+.mt-agent-product-link-hint svg {
+  transition: transform var(--motion-quick) var(--ease-out);
+}
+
+.mt-agent-product-link:hover .mt-agent-product-link-hint {
+  color: var(--accent);
+}
+
+.mt-agent-product-link:hover .mt-agent-product-link-hint svg {
+  transform: translateX(2px);
 }
 
 .mt-agent-markdown blockquote {
@@ -2696,6 +2810,18 @@
     padding: 10px 13px 11px;
     font-size: 15px;
     line-height: 1.45;
+  }
+
+  .mt-agent-markdown .mt-agent-product-link {
+    width: 100%;
+    max-width: 100%;
+    grid-template-columns: 56px minmax(0, 1fr);
+    margin-right: 0;
+  }
+
+  .mt-agent-product-link-media {
+    width: 56px;
+    height: 56px;
   }
 
   .mt-ct-block,
@@ -11084,6 +11210,12 @@ button:disabled {
   .mt-card:hover,
   .mt-card:hover .mt-product-img,
   .mt-card:hover .mt-ph,
+  .mt-agent-product-link,
+  .mt-agent-product-link:hover,
+  .mt-agent-product-link-image,
+  .mt-agent-product-link:hover .mt-agent-product-link-image,
+  .mt-agent-product-link-hint svg,
+  .mt-agent-product-link:hover .mt-agent-product-link-hint svg,
   .mt-starter-card:hover,
   .mt-save:not(:disabled):hover,
   .mt-ct-av,

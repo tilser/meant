@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm'
 
 import type { Product } from '../types'
 import { ChevronIcon } from '../shared/icons'
+import { productArtworkUrl } from '../shared/productArtwork'
 
 const COMPACT_MESSAGE_MIN_LENGTH = 420
 const COMPACT_PREVIEW_MAX_LENGTH = 280
@@ -75,6 +76,37 @@ function normalizedProductReferenceTitle(value: string): string {
   return normalizedProductTitle(value).replace(/^\d{1,3}[.)]\s+/, '')
 }
 
+function productTitlePattern(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+')
+}
+
+function isWordCharacter(value: string | undefined): boolean {
+  return value ? /[\p{L}\p{N}]/u.test(value) : false
+}
+
+function ProductMentionArtwork({ product }: Readonly<{ product: Product }>) {
+  const artworkUrl = productArtworkUrl(product)
+  const fallbackLabel = product.name.trim().charAt(0).toLocaleUpperCase() || 'M'
+
+  return (
+    <span className="mt-agent-product-link-media" aria-hidden>
+      {artworkUrl ? (
+        <img
+          className="mt-agent-product-link-image"
+          src={artworkUrl}
+          alt=""
+          loading="lazy"
+          decoding="async"
+        />
+      ) : (
+        <span className="mt-agent-product-link-fallback" style={{ backgroundColor: product.tone }}>
+          {fallbackLabel}
+        </span>
+      )}
+    </span>
+  )
+}
+
 /** Renders the agent's buyer-safe Markdown without allowing raw HTML or remote images. */
 export function AgentMarkdown({
   text,
@@ -106,8 +138,9 @@ export function AgentMarkdown({
     const title = inlineText(children)
     return title ? (productByTitle.get(normalizedProductReferenceTitle(title)) ?? null) : null
   }
-  const productAction = (product: Product, children: ReactNode) => (
+  const productAction = (product: Product, children: ReactNode, key?: string) => (
     <button
+      key={key}
       className="mt-agent-product-link"
       type="button"
       data-product-id={product.id}
@@ -119,9 +152,54 @@ export function AgentMarkdown({
       }}
       onDragStart={(event) => event.stopPropagation()}
     >
-      {children}
+      <ProductMentionArtwork product={product} />
+      <span className="mt-agent-product-link-copy">
+        <span className="mt-agent-product-link-title">{children}</span>
+        <span className="mt-agent-product-link-hint" aria-hidden>
+          View product
+          <ChevronIcon direction="right" size={10} />
+        </span>
+      </span>
     </button>
   )
+  const mentionProducts = [...productByTitle.entries()]
+    .filter((entry): entry is [string, Product] => entry[1] !== null)
+    .map(([, product]) => product)
+    .sort((left, right) => right.name.length - left.name.length)
+  const mentionPattern = mentionProducts.length
+    ? new RegExp(
+        mentionProducts.map((product) => productTitlePattern(product.name)).join('|'),
+        'giu',
+      )
+    : null
+  const productMentions = (children: ReactNode): ReactNode => {
+    if (Array.isArray(children)) {
+      return children.map((child) => productMentions(child))
+    }
+    if (typeof children !== 'string' || !mentionPattern || !onOpenProduct) {
+      return children
+    }
+
+    const mentions: ReactNode[] = []
+    let cursor = 0
+    mentionPattern.lastIndex = 0
+    for (const match of children.matchAll(mentionPattern)) {
+      const start = match.index
+      const value = match[0]
+      const end = start + value.length
+      if (isWordCharacter(children[start - 1]) || isWordCharacter(children[end])) {
+        continue
+      }
+      const product = productByTitle.get(normalizedProductTitle(value))
+      if (!product) continue
+      if (start > cursor) mentions.push(children.slice(cursor, start))
+      mentions.push(productAction(product, value, `${product.id}-${start}`))
+      cursor = end
+    }
+    if (cursor === 0) return children
+    if (cursor < children.length) mentions.push(children.slice(cursor))
+    return mentions
+  }
 
   return (
     <div
@@ -135,6 +213,8 @@ export function AgentMarkdown({
           disallowedElements={['img']}
           remarkPlugins={[remarkGfm]}
           components={{
+            p: ({ children }) => <p>{productMentions(children)}</p>,
+            li: ({ children }) => <li>{productMentions(children)}</li>,
             a: ({ children, href }) => {
               const product = groundedProduct(children)
               if (product && onOpenProduct) {
@@ -167,6 +247,10 @@ export function AgentMarkdown({
                 <table>{children}</table>
               </div>
             ),
+            td: ({ children, node, ...props }) => {
+              void node
+              return <td {...props}>{productMentions(children)}</td>
+            },
           }}
         >
           {renderedText}

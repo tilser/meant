@@ -32,6 +32,16 @@ describe('discover chat layout styles', () => {
   test('does not leave feed padding below the sticky composer', () => {
     expect(styles).toMatch(/\.mt-feed\.mt-ct-feed\s*\{[^}]*padding-bottom: 0;[^}]*\}/)
   })
+
+  test('turns grounded agent product mentions into responsive visual previews', () => {
+    expect(styles).toMatch(
+      /\.mt-agent-markdown \.mt-agent-product-link\s*\{[^}]*display: inline-grid;[^}]*grid-template-columns: 52px minmax\(0, 1fr\);[^}]*\}/,
+    )
+    expect(styles).toMatch(/\.mt-agent-product-link-image\s*\{[^}]*object-fit: cover;[^}]*\}/)
+    expect(styles).toMatch(
+      /@media \(max-width: 720px\)\s*\{[\s\S]*?\.mt-agent-markdown \.mt-agent-product-link\s*\{[^}]*width: 100%;[^}]*max-width: 100%;[^}]*\}/,
+    )
+  })
 })
 
 describe('compare verdict styles', () => {
