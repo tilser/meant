@@ -25,9 +25,13 @@ In the Supabase dashboard:
 5. Configure a custom SMTP provider before enabling production email sign-up and password reset.
 6. Copy the project URL, publishable key, project reference, database password, JWKS URL, issuer,
    and Session Pooler connection details.
+7. Disable the Data API under **Integrations > Data API**. Application tables are accessed only by
+   the Spring backend through its direct PostgreSQL connection; Supabase Auth and Storage remain
+   available through their separate APIs.
 
 Do not expose the Supabase `service_role` key in the frontend. The publishable/anon key is intended
-for browser use and is protected by Supabase authorization and RLS policies.
+for browser Auth and Storage access. Liquibase enables RLS on application tables, removes Data API
+role privileges from the `public` schema, and automatically enables RLS on future public tables.
 
 ### GitHub production secrets
 

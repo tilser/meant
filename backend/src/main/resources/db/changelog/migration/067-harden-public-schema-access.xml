@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="067-harden-public-schema-access" author="codex">
+        <comment>
+            Application tables are accessed through the Spring backend's direct PostgreSQL connection,
+            not through Supabase PostgREST. Enable RLS defensively and keep Supabase Data API roles from
+            receiving table, sequence, or function privileges in the public schema.
+        </comment>
+
+        <sql dbms="postgresql" splitStatements="false"><![CDATA[
+            CREATE SCHEMA IF NOT EXISTS meant_internal;
+
+            REVOKE ALL PRIVILEGES ON SCHEMA meant_internal FROM PUBLIC;
+
+            CREATE OR REPLACE FUNCTION meant_internal.enable_public_table_rls()
+            RETURNS event_trigger
+            LANGUAGE plpgsql
+            SECURITY DEFINER
+            SET search_path = pg_catalog
+            AS $function$
+            DECLARE
+                command record;
+            BEGIN
+                FOR command IN
+                    SELECT *
+                    FROM pg_event_trigger_ddl_commands()
+                    WHERE command_tag IN ('CREATE TABLE', 'CREATE TABLE AS', 'SELECT INTO')
+                      AND object_type IN ('table', 'partitioned table')
+                      AND schema_name = 'public'
+                      AND NOT in_extension
+                LOOP
+                    EXECUTE format(
+                        'ALTER TABLE IF EXISTS %s ENABLE ROW LEVEL SECURITY',
+                        command.object_identity
+                    );
+                END LOOP;
+            END
+            $function$;
+
+            REVOKE EXECUTE ON FUNCTION meant_internal.enable_public_table_rls() FROM PUBLIC;
+
+            DROP EVENT TRIGGER IF EXISTS meant_enable_public_table_rls;
+
+            CREATE EVENT TRIGGER meant_enable_public_table_rls
+            ON ddl_command_end
+            WHEN TAG IN ('CREATE TABLE', 'CREATE TABLE AS', 'SELECT INTO')
+            EXECUTE FUNCTION meant_internal.enable_public_table_rls();
+
+            DO $migration$
+            DECLARE
+                target record;
+                data_api_roles text;
+            BEGIN
+                SELECT string_agg(quote_ident(role_name), ', ' ORDER BY role_name)
+                INTO data_api_roles
+                FROM (
+                    SELECT rolname AS role_name
+                    FROM pg_roles
+                    WHERE rolname IN ('anon', 'authenticated', 'service_role')
+                ) roles;
+
+                FOR target IN
+                    SELECT namespace.nspname AS schema_name,
+                           relation.relname AS table_name
+                    FROM pg_class relation
+                    JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+                    WHERE namespace.nspname = 'public'
+                      AND relation.relkind IN ('r', 'p')
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM pg_depend dependency
+                          WHERE dependency.classid = 'pg_class'::regclass
+                            AND dependency.objid = relation.oid
+                            AND dependency.deptype = 'e'
+                      )
+                LOOP
+                    EXECUTE format(
+                        'ALTER TABLE %I.%I ENABLE ROW LEVEL SECURITY',
+                        target.schema_name,
+                        target.table_name
+                    );
+
+                    IF data_api_roles IS NOT NULL THEN
+                        EXECUTE format(
+                            'REVOKE ALL PRIVILEGES ON TABLE %I.%I FROM %s',
+                            target.schema_name,
+                            target.table_name,
+                            data_api_roles
+                        );
+                    END IF;
+                END LOOP;
+
+                IF data_api_roles IS NOT NULL THEN
+                    EXECUTE format(
+                        'REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM %s',
+                        data_api_roles
+                    );
+                    EXECUTE format(
+                        'REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM %s',
+                        data_api_roles
+                    );
+                    EXECUTE format(
+                        'ALTER DEFAULT PRIVILEGES IN SCHEMA public '
+                        'REVOKE SELECT, INSERT, UPDATE, DELETE ON TABLES FROM %s',
+                        data_api_roles
+                    );
+                    EXECUTE format(
+                        'ALTER DEFAULT PRIVILEGES IN SCHEMA public '
+                        'REVOKE USAGE, SELECT ON SEQUENCES FROM %s',
+                        data_api_roles
+                    );
+                    EXECUTE format(
+                        'ALTER DEFAULT PRIVILEGES IN SCHEMA public '
+                        'REVOKE EXECUTE ON FUNCTIONS FROM %s',
+                        data_api_roles
+                    );
+                END IF;
+            END
+            $migration$;
+
+            REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC;
+
+            ALTER DEFAULT PRIVILEGES IN SCHEMA public
+                REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
+        ]]></sql>
+    </changeSet>
+</databaseChangeLog>
