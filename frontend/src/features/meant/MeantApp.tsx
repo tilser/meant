@@ -1,6 +1,8 @@
 import {
   type Dispatch,
   type SetStateAction,
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -18,13 +20,9 @@ import {
   PROMPTS,
 } from './data'
 import { Avatar } from './account/Avatar'
-import { AccountView } from './account/AccountView'
-import { AuthScreen } from './auth/AuthScreen'
 import { authProviderAvatarUrl } from './auth/authProviderProfile'
 import { useSupabaseAuth } from './auth/useSupabaseAuth'
 import { CartPopover } from './cart/CartPopover'
-import { CartCheckoutDialog } from './cart/CartCheckoutDialog'
-import { CartView } from './cart/CartView'
 import { cartCountSummary, formatCartCount } from './cart/cartCounts'
 import { resolveLiveCartItem } from './cart/cartPartition'
 import type { ActiveCheckoutSession, CheckoutAssistantContext } from './cart/checkoutTypes'
@@ -32,7 +30,6 @@ import { resolveCartableOffer } from './cart/cartOfferResolver'
 import { merchantDisplayOrigin, merchantOriginFromItems } from './cart/merchantOrigin'
 import type { MerchantCartSnapshot, MerchantCartStateReplacement } from './cart/types'
 import { useCartController } from './cart/useCartController'
-import { AgentDiscoverView } from './agent/AgentDiscoverView'
 import { commerceActionQueueFor } from './agent/actionQueue'
 import {
   cartStateReplacementsFromAgentArtifacts,
@@ -55,14 +52,11 @@ import {
   type AgentCartPartitionFingerprints,
   type PendingAgentCartRun,
 } from './agent/cartSync'
-import { CompareView } from './compare/CompareView'
-import { InventoryView } from './inventory/InventoryView'
 import {
   createInventoryItemWithPhoto,
   deleteInventoryItemWithPhoto,
   updateInventoryItemWithPhoto,
 } from './inventory/inventoryMutations'
-import { PreferencesView } from './preferences/PreferencesView'
 import { DEFAULT_BUDGET } from './preferences/preferencesUtils'
 import { ProfileBar } from './ProfileBar'
 import {
@@ -70,7 +64,6 @@ import {
   upsertInventorySnapshot,
 } from './inventory/inventoryUtils'
 import { ProductCard } from './product/ProductCard'
-import { ProductModal } from './product/ProductModal'
 import {
   bindPreparedProductPurchaseWithRecovery,
   prepareDirectProductPurchase,
@@ -85,7 +78,6 @@ import {
 } from './product/productSnapshots'
 import { productFromSearchResult } from './product/productSearchMapping'
 import { savedProductFromProfile, savedProductInput } from './product/savedProductMapping'
-import { OrdersView } from './orders/OrdersView'
 import { orderFromProfile } from './orders/orderMapping'
 import type { DiscoverFindRequest, ProductDetailChatRequest } from './chat/types'
 import type { ProductOpenProps, ProductSaveProps } from './product/types'
@@ -170,6 +162,45 @@ import type {
 import { cartItemIdentity, cartLines, cartMerchantKey, normalizedMerchantName } from './utils'
 import { resetPrimaryNavigationScroll } from './shared/primaryNavigationScroll'
 
+const AccountView = lazy(() =>
+  import('./account/AccountView').then(({ AccountView: component }) => ({ default: component })),
+)
+const AgentDiscoverView = lazy(() =>
+  import('./agent/AgentDiscoverView').then(({ AgentDiscoverView: component }) => ({
+    default: component,
+  })),
+)
+const AuthScreen = lazy(() =>
+  import('./auth/AuthScreen').then(({ AuthScreen: component }) => ({ default: component })),
+)
+const CartCheckoutDialog = lazy(() =>
+  import('./cart/CartCheckoutDialog').then(({ CartCheckoutDialog: component }) => ({
+    default: component,
+  })),
+)
+const CartView = lazy(() =>
+  import('./cart/CartView').then(({ CartView: component }) => ({ default: component })),
+)
+const CompareView = lazy(() =>
+  import('./compare/CompareView').then(({ CompareView: component }) => ({ default: component })),
+)
+const InventoryView = lazy(() =>
+  import('./inventory/InventoryView').then(({ InventoryView: component }) => ({
+    default: component,
+  })),
+)
+const OrdersView = lazy(() =>
+  import('./orders/OrdersView').then(({ OrdersView: component }) => ({ default: component })),
+)
+const PreferencesView = lazy(() =>
+  import('./preferences/PreferencesView').then(({ PreferencesView: component }) => ({
+    default: component,
+  })),
+)
+const ProductModal = lazy(() =>
+  import('./product/ProductModal').then(({ ProductModal: component }) => ({ default: component })),
+)
+
 const EMPTY_TASTE_PROFILE: UserTasteProfile = {
   profileHash: '',
   signals: [],
@@ -184,6 +215,10 @@ interface NavOptions {
 
 const DEFAULT_GREETING = 'Good afternoon'
 const SEARCH_SUGGESTION_COUNT = 4
+
+function ViewLoadingFallback() {
+  return <div className="mt-auth-loading" role="status" aria-label="Loading view" />
+}
 
 function greetingForHour(hour: number): string {
   if (hour >= 5 && hour < 12) {
@@ -3210,9 +3245,10 @@ export function MeantApp() {
         )
     }
   })()
+  const contentWithFallback = <Suspense fallback={<ViewLoadingFallback />}>{content}</Suspense>
 
   if (!authed) {
-    return content
+    return contentWithFallback
   }
 
   return (
@@ -3248,50 +3284,54 @@ export function MeantApp() {
         clothingFit={clothingFit}
         onEdit={() => nav('preferences')}
       />
-      {content}
+      {contentWithFallback}
       {activeCheckout && (activeCheckout.source === 'cart' || view === 'cart') ? (
-        <CartCheckoutDialog
-          session={activeCheckout}
-          busy={checkoutFlowBusy}
-          error={checkoutFlowError}
-          onClose={() => {
-            updateActiveCheckoutState(null)
-            setCheckoutFlowError(null)
-          }}
-          onRefresh={refreshActiveCheckout}
-          onCheckoutAssistant={assistActiveCheckout}
-        />
+        <Suspense fallback={null}>
+          <CartCheckoutDialog
+            session={activeCheckout}
+            busy={checkoutFlowBusy}
+            error={checkoutFlowError}
+            onClose={() => {
+              updateActiveCheckoutState(null)
+              setCheckoutFlowError(null)
+            }}
+            onRefresh={refreshActiveCheckout}
+            onCheckoutAssistant={assistActiveCheckout}
+          />
+        </Suspense>
       ) : null}
-      <ProductModal
-        product={currentActiveProduct}
-        userId={userId}
-        preferredCurrency={currency}
-        deliveryLocations={deliveryLocations}
-        preferences={allPreferences}
-        saved={currentActiveProduct ? savedSet.has(currentActiveProduct.id) : false}
-        savePending={currentActiveProduct ? savePendingSet.has(currentActiveProduct.id) : false}
-        savedOfferRefreshPending={
-          currentActiveProduct ? savedProductDetailLoadingId === currentActiveProduct.id : false
-        }
-        inCompare={currentActiveProduct ? compareSet.has(currentActiveProduct.id) : false}
-        cartMutationBlocked={false}
-        onClose={() => {
-          setActiveProduct(null)
-          setActiveProductResearchQuery(null)
-        }}
-        onToggleSave={toggleSave}
-        onUpdateSavedChoice={updateSavedChoice}
-        onCompare={handleProductCompare}
-        onAddToCart={addProductOfferToCartResolved}
-        onAddOfferKey={addSelectedOfferToCartGuarded}
-        onRefreshProduct={refreshSavedProductForOpen}
-        researchQuery={activeProductResearchQuery}
-        onAskInChat={sendProductQuestionToDiscover}
-        canPrev={canNavPrev}
-        canNext={canNavNext}
-        onPrev={() => navigateProduct(-1)}
-        onNext={() => navigateProduct(1)}
-      />
+      {currentActiveProduct ? (
+        <Suspense fallback={null}>
+          <ProductModal
+            product={currentActiveProduct}
+            userId={userId}
+            preferredCurrency={currency}
+            deliveryLocations={deliveryLocations}
+            preferences={allPreferences}
+            saved={savedSet.has(currentActiveProduct.id)}
+            savePending={savePendingSet.has(currentActiveProduct.id)}
+            savedOfferRefreshPending={savedProductDetailLoadingId === currentActiveProduct.id}
+            inCompare={compareSet.has(currentActiveProduct.id)}
+            cartMutationBlocked={false}
+            onClose={() => {
+              setActiveProduct(null)
+              setActiveProductResearchQuery(null)
+            }}
+            onToggleSave={toggleSave}
+            onUpdateSavedChoice={updateSavedChoice}
+            onCompare={handleProductCompare}
+            onAddToCart={addProductOfferToCartResolved}
+            onAddOfferKey={addSelectedOfferToCartGuarded}
+            onRefreshProduct={refreshSavedProductForOpen}
+            researchQuery={activeProductResearchQuery}
+            onAskInChat={sendProductQuestionToDiscover}
+            canPrev={canNavPrev}
+            canNext={canNavNext}
+            onPrev={() => navigateProduct(-1)}
+            onNext={() => navigateProduct(1)}
+          />
+        </Suspense>
+      ) : null}
       <Shelf
         open={shelfOpen}
         items={shelf}
