@@ -1,5 +1,6 @@
 package com.meant.api.module.user.controller;
 
+import com.meant.api.common.security.PermanentAccountRequired;
 import com.meant.api.module.user.controller.mapper.UserCommandMapper;
 import com.meant.api.module.user.controller.request.SaveUserProductRequest;
 import com.meant.api.module.user.controller.response.UserSavedProductResponse;
@@ -36,6 +37,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 @SecurityRequirement(name = "bearer-jwt")
 @Tag(name = "Users", description = "Profile endpoints for the authenticated Supabase user")
+@PermanentAccountRequired
 public class UserSavedProductController {
 
     private final UserSavedProductService userSavedProductService;

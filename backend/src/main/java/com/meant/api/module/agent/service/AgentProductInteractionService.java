@@ -8,6 +8,7 @@ import com.meant.api.module.agent.repository.AgentProductInteractionRepository;
 import com.meant.api.module.agent.service.dto.AgentProductInteractionReference;
 import com.meant.api.module.agent.service.dto.AgentProductInteractionResult;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
+import com.meant.api.module.user.exception.PermanentAccountRequiredException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
@@ -33,6 +34,12 @@ public class AgentProductInteractionService {
             String offerKey
     ) {
         AgentProductInteractionReference reference = validate(context, canonicalProductKey, offerKey);
+        if (context.anonymousUser()
+                && !interactionRepository.existsByUserIdAndCanonicalProductKeyAndPinnedTrue(
+                        context.userId(), reference.canonicalProductKey())
+                && interactionRepository.countByUserIdAndPinnedTrue(context.userId()) >= 2) {
+            throw new PermanentAccountRequiredException();
+        }
         Instant now = clock.instant();
         AgentProductInteraction interaction = findOrCreateForUpdate(context, reference, now);
         if (interaction.pin(reference.offerKey(), now)) {

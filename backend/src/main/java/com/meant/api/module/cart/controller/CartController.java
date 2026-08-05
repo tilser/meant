@@ -1,5 +1,6 @@
 package com.meant.api.module.cart.controller;
 
+import com.meant.api.common.security.PermanentAccountRequired;
 import com.meant.api.module.cart.controller.mapper.CartCommandMapper;
 import com.meant.api.module.cart.controller.request.AssistCheckoutRequest;
 import com.meant.api.module.cart.controller.request.CancelCheckoutRequest;
@@ -154,6 +155,7 @@ public class CartController {
     }
 
     @GetMapping("/{cartId}/checkout")
+    @PermanentAccountRequired
     @Operation(
             summary = "Get cart checkout session",
             description = "Creates or refreshes a UCP checkout session for in-page checkout. continueUrl is returned for iframe escalation only."
@@ -181,6 +183,7 @@ public class CartController {
     }
 
     @PostMapping("/{cartId}/checkout/embedded")
+    @PermanentAccountRequired
     @Operation(summary = "Create an embedded checkout bootstrap session")
     @ApiResponse(responseCode = "200", description = "Embedded checkout or safe fallback instructions",
             content = @Content(schema = @Schema(implementation = EmbeddedCheckoutBootstrapResponse.class)))
@@ -199,6 +202,7 @@ public class CartController {
     }
 
     @PostMapping("/{cartId}/checkout/embedded/{sessionId}/opened")
+    @PermanentAccountRequired
     @ResponseStatus(org.springframework.http.HttpStatus.NO_CONTENT)
     @Operation(summary = "Acknowledge a confirmed embedded checkout start")
     @ApiResponse(responseCode = "204", description = "Embedded checkout start acknowledged idempotently")
@@ -213,6 +217,7 @@ public class CartController {
     }
 
     @PostMapping("/{cartId}/checkout/embedded/{sessionId}/complete")
+    @PermanentAccountRequired
     @Operation(summary = "Verify an embedded checkout completion")
     @ApiResponse(responseCode = "200", description = "Provider-verified completed checkout",
             content = @Content(schema = @Schema(implementation = CheckoutResponse.class)))
@@ -232,6 +237,7 @@ public class CartController {
     }
 
     @PostMapping("/{cartId}/checkout/embedded/{sessionId}/cancel")
+    @PermanentAccountRequired
     @ResponseStatus(org.springframework.http.HttpStatus.NO_CONTENT)
     @Operation(summary = "Close an embedded checkout host session without cancelling the remote checkout")
     @ApiResponse(responseCode = "204", description = "Embedded host session closed")
@@ -246,6 +252,7 @@ public class CartController {
     }
 
     @PatchMapping("/{cartId}/checkout")
+    @PermanentAccountRequired
     @Operation(
             summary = "Update cart checkout session",
             description = "Updates buyer and fulfillment details on the active UCP checkout session before native completion."
@@ -272,6 +279,7 @@ public class CartController {
     }
 
     @PostMapping("/{cartId}/checkout/assistant")
+    @PermanentAccountRequired
     @Operation(
             summary = "Chat with the checkout assistant",
             description = "Conversational helper that asks the buyer for the pieces the merchant still needs "
@@ -310,6 +318,7 @@ public class CartController {
     }
 
     @PostMapping("/{cartId}/checkout/consent")
+    @PermanentAccountRequired
     @Operation(
             summary = "Record checkout consent",
             description = "Records buyer consent for the active UCP checkout session before native completion."
@@ -332,6 +341,7 @@ public class CartController {
     }
 
     @PostMapping("/{cartId}/checkout/complete")
+    @PermanentAccountRequired
     @Operation(
             summary = "Complete cart checkout natively",
             description = "Completes checkout through the merchant UCP complete_checkout tool when native checkout is enabled for the merchant."
@@ -356,6 +366,7 @@ public class CartController {
     }
 
     @PostMapping("/{cartId}/checkout/cancel")
+    @PermanentAccountRequired
     @Operation(
             summary = "Cancel native cart checkout",
             description = "Cancels checkout through the merchant UCP cancel_checkout tool unless completion is already in flight."

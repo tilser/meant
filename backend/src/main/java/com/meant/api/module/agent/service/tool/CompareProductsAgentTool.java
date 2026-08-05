@@ -2,6 +2,7 @@ package com.meant.api.module.agent.service.tool;
 
 import com.meant.api.module.agent.constant.AgentArtifactType;
 import com.meant.api.module.agent.constant.AgentToolRisk;
+import com.meant.api.module.agent.exception.AgentException;
 import com.meant.api.module.agent.service.AgentContextProfileService;
 import com.meant.api.module.agent.service.AgentJsonSupport;
 import com.meant.api.module.agent.service.AgentProductReadReferenceService;
@@ -53,6 +54,9 @@ public class CompareProductsAgentTool implements AgentTool {
     public AgentToolExecutionResult execute(AgentToolExecutionContext context, String argumentsJson) {
         CompareProductsAgentToolInput input = json.readArguments(argumentsJson, CompareProductsAgentToolInput.class);
         List<String> keys = normalizedKeys(input.canonicalProductKeys());
+        if (context.anonymousUser() && keys.size() > 2) {
+            throw AgentException.conflict("Save your progress to compare more than two products.");
+        }
         keys.forEach(key -> referenceService.requireProduct(context, key));
         UserCanonicalProductsRehydrationResult result = detailService.rehydrate(
                 profileService.profile(context.userId()),

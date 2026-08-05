@@ -43,6 +43,14 @@ public class AgentException extends RuntimeException implements ApiException {
         return new AgentException(HttpStatus.CONFLICT, ApiErrorCode.AGENT_CONFLICT, message);
     }
 
+    public static AgentException transferUnavailable() {
+        return new AgentException(
+                HttpStatus.GONE,
+                ApiErrorCode.AGENT_CONFLICT,
+                "This guest conversation transfer is invalid, expired, or already used."
+        );
+    }
+
     public static AgentException actionInProgress() {
         return new AgentException(
                 HttpStatus.CONFLICT,

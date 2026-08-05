@@ -15,11 +15,13 @@ export function DiscoverThreadHistoryButton({
   activeId,
   onSelect,
   onDelete,
+  onOpen,
 }: Readonly<{
   threads: readonly DiscoverChatThread[]
   activeId?: string
   onSelect: (threadId: string) => void
   onDelete: (threadId: string) => void
+  onOpen?: () => void
 }>) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement | null>(null)
@@ -59,7 +61,10 @@ export function DiscoverThreadHistoryButton({
       <button
         className={`mt-ct-tabtool ${open ? 'on' : ''}`}
         type="button"
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => {
+          if (onOpen) onOpen()
+          else setOpen((current) => !current)
+        }}
         aria-expanded={open}
         aria-haspopup="dialog"
         title="Open chat history"

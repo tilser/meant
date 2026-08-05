@@ -9,6 +9,7 @@ public enum ApiErrorCode {
     VALIDATION_FAILED("validation_failed"),
     BAD_REQUEST("bad_request"),
     AUTHENTICATION_REQUIRED("authentication_required"),
+    PERMANENT_ACCOUNT_REQUIRED("PERMANENT_ACCOUNT_REQUIRED"),
     FORBIDDEN("forbidden"),
     NOT_FOUND("not_found"),
     AGENT_DISABLED("agent_disabled"),

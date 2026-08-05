@@ -963,8 +963,8 @@ export const PROFILE: Profile = {
 }
 
 export const DEFAULT_USER: UserAccount = {
-  name: PROFILE.name,
-  email: '',
+  name: '',
+  email: null,
   avatar: null,
   avatarPath: null,
   newsletter: false,

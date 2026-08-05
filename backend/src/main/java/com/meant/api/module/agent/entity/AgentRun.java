@@ -39,6 +39,9 @@ public class AgentRun {
     @Column(nullable = false, updatable = false)
     private UUID triggeringMessageId;
 
+    @Column(nullable = false, updatable = false)
+    private boolean anonymousUser;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private AgentRunStatus status;
@@ -100,7 +103,7 @@ public class AgentRun {
             Instant now
     ) {
         return queued(conversationId, userId, triggeringMessageId, model, promptVersion,
-                null, null, null, now);
+                null, null, null, false, now);
     }
 
     public static AgentRun queued(
@@ -113,7 +116,7 @@ public class AgentRun {
             Instant now
     ) {
         return queued(conversationId, userId, triggeringMessageId, model, promptVersion,
-                buyerIp, null, null, now);
+                buyerIp, null, null, false, now);
     }
 
     public static AgentRun queued(
@@ -127,7 +130,7 @@ public class AgentRun {
             Instant now
     ) {
         return queued(conversationId, userId, triggeringMessageId, model, promptVersion,
-                buyerIp, userAgent, null, now);
+                buyerIp, userAgent, null, false, now);
     }
 
     public static AgentRun queued(
@@ -139,12 +142,14 @@ public class AgentRun {
             String buyerIp,
             String userAgent,
             String language,
+            boolean anonymousUser,
             Instant now
     ) {
         return AgentRun.builder()
                 .conversationId(conversationId)
                 .userId(userId)
                 .triggeringMessageId(triggeringMessageId)
+                .anonymousUser(anonymousUser)
                 .status(AgentRunStatus.QUEUED)
                 .model(model)
                 .promptVersion(promptVersion)

@@ -1,8 +1,10 @@
 package com.meant.api.module.agent.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -30,6 +32,8 @@ import com.meant.api.module.agent.service.dto.AgentMessageResult;
 import com.meant.api.module.agent.service.dto.SubmitAgentTurnResult;
 import com.meant.api.module.agent.service.dto.AgentUserActionResult;
 import com.meant.api.module.agent.service.query.GetAgentConversationQuery;
+import com.meant.api.module.agent.service.query.ListAgentConversationsQuery;
+import com.meant.api.module.user.exception.PermanentAccountRequiredException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
 import java.util.List;
@@ -39,6 +43,93 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.security.oauth2.jwt.Jwt;
 
 class AgentConversationControllerTest {
+
+    @Test
+    void allowsThreeGuestConversationsAndGatesTheFourth() {
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        Instant now = Instant.now();
+        AgentConversationService conversationService = mock(AgentConversationService.class);
+        when(conversationService.activeConversationCount(userId)).thenReturn(2L);
+        when(conversationService.create(any())).thenReturn(new AgentConversationSummaryResult(
+                conversationId,
+                "New conversation",
+                AgentConversationStatus.ACTIVE,
+                null,
+                null,
+                0L,
+                now,
+                now
+        ));
+        AgentConversationController controller = controller(conversationService);
+
+        assertThat(controller.create(
+                anonymousJwt(userId),
+                new CreateAgentConversationRequest(null, null)
+        ).conversationId()).isEqualTo(conversationId);
+
+        when(conversationService.activeConversationCount(userId)).thenReturn(3L);
+        assertThatThrownBy(() -> controller.create(
+                anonymousJwt(userId),
+                new CreateAgentConversationRequest(null, null)
+        )).isInstanceOf(PermanentAccountRequiredException.class);
+    }
+
+    @Test
+    void limitsGuestHistoryToThreeActiveConversations() {
+        UUID userId = UUID.randomUUID();
+        AgentConversationService conversationService = mock(AgentConversationService.class);
+        when(conversationService.list(any())).thenReturn(List.of());
+        AgentConversationController controller = controller(conversationService);
+
+        controller.list(anonymousJwt(userId), false, 50);
+
+        ArgumentCaptor<ListAgentConversationsQuery> queryCaptor =
+                ArgumentCaptor.forClass(ListAgentConversationsQuery.class);
+        verify(conversationService).list(queryCaptor.capture());
+        assertThat(queryCaptor.getValue().userId()).isEqualTo(userId);
+        assertThat(queryCaptor.getValue().archived()).isFalse();
+        assertThat(queryCaptor.getValue().limit()).isEqualTo(3);
+        assertThatThrownBy(() -> controller.list(anonymousJwt(userId), true, 50))
+                .isInstanceOf(PermanentAccountRequiredException.class);
+    }
+
+    @Test
+    void allowsGuestSimilarAndCartActions() {
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        AgentUserActionService userActionService = mock(AgentUserActionService.class);
+        AgentMessageResult message = new AgentMessageResult(
+                UUID.randomUUID(),
+                null,
+                1L,
+                AgentMessageRole.USER_ACTION,
+                AgentContentKind.TEXT,
+                "Action completed",
+                null,
+                null,
+                Instant.now()
+        );
+        when(userActionService.perform(any())).thenReturn(new AgentUserActionResult(message, "{}", List.of()));
+        AgentConversationController controller = new AgentConversationController(
+                mock(AgentConversationService.class),
+                mock(AgentTurnService.class),
+                mock(AgentRunCoordinator.class),
+                userActionService
+        );
+        HttpServletRequest request = mock(HttpServletRequest.class);
+
+        for (String toolName : List.of("find_similar_products", "prepare_carts")) {
+            controller.performAction(
+                    anonymousJwt(userId),
+                    conversationId,
+                    new AgentUserActionRequest(toolName, "{}", "action-" + toolName, "Action completed"),
+                    request
+            );
+        }
+
+        verify(userActionService, times(2)).perform(any());
+    }
 
     @Test
     void createsAConversationWithTheSelectedMerchantScope() {
@@ -235,5 +326,25 @@ class AgentConversationControllerTest {
                 .issuedAt(now)
                 .expiresAt(now.plusSeconds(60))
                 .build();
+    }
+
+    private Jwt anonymousJwt(UUID userId) {
+        Instant now = Instant.now();
+        return Jwt.withTokenValue("test-token")
+                .header("alg", "none")
+                .subject(userId.toString())
+                .claim("is_anonymous", true)
+                .issuedAt(now)
+                .expiresAt(now.plusSeconds(60))
+                .build();
+    }
+
+    private AgentConversationController controller(AgentConversationService conversationService) {
+        return new AgentConversationController(
+                conversationService,
+                mock(AgentTurnService.class),
+                mock(AgentRunCoordinator.class),
+                mock(AgentUserActionService.class)
+        );
     }
 }

@@ -41,6 +41,11 @@ export function PreferencesView({
   onSaveProductSearchPreference,
   onRemoveProductSearchPreference,
   onRefreshProductSearchPreferences,
+  preferenceDraft,
+  preferenceDraftBusy,
+  preferenceDraftError,
+  onAcceptPreferenceDraft,
+  onDismissPreferenceDraft,
   tasteProfile,
   onAcceptTasteSuggestion,
   onRejectTasteSuggestion,
@@ -65,6 +70,11 @@ export function PreferencesView({
   onSaveProductSearchPreference: (preference: UserProductSearchPreferenceProfile) => void
   onRemoveProductSearchPreference: (scope: string) => void
   onRefreshProductSearchPreferences: () => void
+  preferenceDraft?: readonly Preference[]
+  preferenceDraftBusy?: boolean
+  preferenceDraftError?: string | null
+  onAcceptPreferenceDraft?: () => void
+  onDismissPreferenceDraft?: () => void
   tasteProfile: UserTasteProfile
   onAcceptTasteSuggestion: (filterId: string) => void
   onRejectTasteSuggestion: (filterId: string) => void
@@ -155,6 +165,39 @@ export function PreferencesView({
           </button>
         }
       />
+
+      {preferenceDraft && preferenceDraft.length > 0 ? (
+        <section className="mt-prefs-draft" aria-label="Suggested preference defaults">
+          <div>
+            <h3>Use these as your defaults?</h3>
+            <p>Review the suggestions before adding them to your permanent preferences.</p>
+            <div className="mt-prefs-draft-chips">
+              {preferenceDraft.map((preference) => (
+                <span key={preference.id}>{preference.label}</span>
+              ))}
+            </div>
+            {preferenceDraftError ? <p role="alert">{preferenceDraftError}</p> : null}
+          </div>
+          <div className="mt-prefs-draft-actions">
+            <button
+              className="mt-act mt-act-primary"
+              type="button"
+              disabled={preferenceDraftBusy}
+              onClick={onAcceptPreferenceDraft}
+            >
+              {preferenceDraftBusy ? 'Saving…' : 'Use as defaults'}
+            </button>
+            <button
+              className="mt-act mt-act-ghost"
+              type="button"
+              disabled={preferenceDraftBusy}
+              onClick={onDismissPreferenceDraft}
+            >
+              Not now
+            </button>
+          </div>
+        </section>
+      ) : null}
 
       <section className="mt-prefs-section">
         <div className="mt-sechead">

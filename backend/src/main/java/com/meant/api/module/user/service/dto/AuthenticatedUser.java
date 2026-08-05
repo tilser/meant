@@ -18,13 +18,15 @@ public record AuthenticatedUser(
         UUID id,
         String email,
         String firstName,
-        String surname
+        String surname,
+        boolean anonymous
 ) {
 
     private static final String USER_METADATA_CLAIM = "user_metadata";
     public static AuthenticatedUser fromJwt(Jwt jwt) {
         UUID id = UUID.fromString(jwt.getSubject());
-        String email = jwt.getClaimAsString("email");
+        String emailClaim = jwt.getClaimAsString("email");
+        String email = StringUtils.hasText(emailClaim) ? emailClaim.trim() : null;
 
         Map<?, ?> userMetadata = Map.of();
         Object metadata = jwt.getClaim(USER_METADATA_CLAIM);
@@ -62,7 +64,8 @@ public record AuthenticatedUser(
                 id,
                 email,
                 StringUtils.hasText(firstName) ? firstName.trim() : null,
-                StringUtils.hasText(surname) ? surname.trim() : null);
+                StringUtils.hasText(surname) ? surname.trim() : null,
+                Boolean.TRUE.equals(jwt.getClaim("is_anonymous")));
     }
 
     private static String[] splitName(String fullName) {

@@ -1,5 +1,6 @@
 package com.meant.api.module.user.controller;
 
+import com.meant.api.common.security.PermanentAccountRequired;
 import com.meant.api.module.location.exception.InvalidLocationException;
 import com.meant.api.module.location.service.LocationService;
 import com.meant.api.module.location.service.dto.LocationSuggestion;
@@ -72,10 +73,13 @@ public class UserProfileSettingsController {
     )
     public UserResponse me(@AuthenticationPrincipal Jwt jwt) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
-        return UserResponse.from(userService.ensureProfile(UserCommandMapper.toEnsureProfileCommand(authenticatedUser)));
+        return UserResponse.from(
+                userService.ensureProfile(UserCommandMapper.toEnsureProfileCommand(authenticatedUser)),
+                authenticatedUser.anonymous());
     }
 
     @PatchMapping("/me")
+    @PermanentAccountRequired
     @Operation(
             summary = "Update current user profile",
             description = "Updates the first name and surname of the authenticated user."
@@ -94,10 +98,11 @@ public class UserProfileSettingsController {
         // exist yet if a client PATCHes before ever calling GET /me).
         return UserResponse.from(userService.updateProfile(
                 UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
-                UserCommandMapper.toUpdateCommand(authenticatedUser.id(), request)));
+                UserCommandMapper.toUpdateCommand(authenticatedUser.id(), request)), false);
     }
 
     @PatchMapping("/me/newsletter")
+    @PermanentAccountRequired
     @Operation(
             summary = "Update current user's newsletter subscription",
             description = "Stores whether the authenticated user wants newsletter updates."
@@ -114,10 +119,11 @@ public class UserProfileSettingsController {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
         return UserResponse.from(userService.updateNewsletter(
                 UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
-                UserCommandMapper.toUpdateCommand(authenticatedUser.id(), request)));
+                UserCommandMapper.toUpdateCommand(authenticatedUser.id(), request)), false);
     }
 
     @PatchMapping("/me/profile-picture")
+    @PermanentAccountRequired
     @Operation(
             summary = "Update current user profile picture",
             description = "Stores the Supabase Storage object path for the authenticated user's profile picture."
@@ -134,10 +140,11 @@ public class UserProfileSettingsController {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
         return UserResponse.from(userService.updateProfilePicture(
                 UserCommandMapper.toEnsureProfileCommand(authenticatedUser),
-                UserCommandMapper.toUpdateCommand(authenticatedUser.id(), request)));
+                UserCommandMapper.toUpdateCommand(authenticatedUser.id(), request)), false);
     }
 
     @DeleteMapping("/me/profile-picture")
+    @PermanentAccountRequired
     @Operation(
             summary = "Remove current user profile picture",
             description = "Clears the stored profile picture object path for the authenticated user."
@@ -150,10 +157,11 @@ public class UserProfileSettingsController {
     public UserResponse removeProfilePicture(@AuthenticationPrincipal Jwt jwt) {
         AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
         return UserResponse.from(userService.removeProfilePicture(
-                UserCommandMapper.toEnsureProfileCommand(authenticatedUser)));
+                UserCommandMapper.toEnsureProfileCommand(authenticatedUser)), false);
     }
 
     @GetMapping("/me/settings")
+    @PermanentAccountRequired
     @Operation(
             summary = "Get current user settings",
             description = "Returns the current user's shopping settings and canonical filter catalog."
@@ -171,6 +179,7 @@ public class UserProfileSettingsController {
     }
 
     @PatchMapping("/me/settings")
+    @PermanentAccountRequired
     @Operation(
             summary = "Update current user settings",
             description = "Updates shopping settings. When preferenceDescription is present, it is parsed into "
@@ -203,6 +212,7 @@ public class UserProfileSettingsController {
     }
 
     @DeleteMapping("/me/settings/product-search-preferences/{scope}")
+    @PermanentAccountRequired
     @Operation(
             operationId = "deleteProductSearchPreference",
             summary = "Delete a scoped product-search size preference",

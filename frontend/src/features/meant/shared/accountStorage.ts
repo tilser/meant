@@ -15,6 +15,7 @@ const LEGACY_UNSCOPED_ACCOUNT_STORAGE_KEYS = [
   'meant.chatPinned',
   'meant.workbench.insights',
   'meant.workbench.agents',
+  'meant.activeAgentConversation',
 ] as const
 
 const PRODUCT_BEARING_ACCOUNT_STORAGE_KEYS = [
@@ -28,6 +29,7 @@ const PRODUCT_BEARING_ACCOUNT_STORAGE_KEYS = [
   'meant.chatPinned',
   'meant.workbench.insights',
   'meant.workbench.agents',
+  'meant.activeAgentConversation',
 ] as const
 
 const COMPARE_SESSION_STORAGE_KEYS = ['meant.compare', 'meant.compareProducts'] as const

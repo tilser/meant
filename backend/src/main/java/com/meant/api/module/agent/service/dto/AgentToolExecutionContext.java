@@ -15,7 +15,8 @@ public record AgentToolExecutionContext(
         String userAgent,
         String language,
         AgentVisibleProductContext visibleProductContext,
-        UUID merchantId
+        UUID merchantId,
+        boolean anonymousUser
 ) {
 
     public AgentToolExecutionContext {
@@ -32,7 +33,7 @@ public record AgentToolExecutionContext(
             String triggeringUserText
     ) {
         this(userId, conversationId, runId, triggeringMessageId, triggeringUserText,
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, false);
     }
 
     public AgentToolExecutionContext(
@@ -44,7 +45,7 @@ public record AgentToolExecutionContext(
             UUID idempotencyKey
     ) {
         this(userId, conversationId, runId, triggeringMessageId, triggeringUserText,
-                idempotencyKey, null, null, null, null, null, null);
+                idempotencyKey, null, null, null, null, null, null, false);
     }
 
     public AgentToolExecutionContext(
@@ -57,7 +58,7 @@ public record AgentToolExecutionContext(
             UUID executionOwner
     ) {
         this(userId, conversationId, runId, triggeringMessageId, triggeringUserText,
-                idempotencyKey, executionOwner, null, null, null, null, null);
+                idempotencyKey, executionOwner, null, null, null, null, null, false);
     }
 
     public AgentToolExecutionContext(
@@ -71,7 +72,7 @@ public record AgentToolExecutionContext(
             String buyerIp
     ) {
         this(userId, conversationId, runId, triggeringMessageId, triggeringUserText,
-                idempotencyKey, executionOwner, buyerIp, null, null, null, null);
+                idempotencyKey, executionOwner, buyerIp, null, null, null, null, false);
     }
 
     public AgentToolExecutionContext(
@@ -86,7 +87,7 @@ public record AgentToolExecutionContext(
             AgentVisibleProductContext visibleProductContext
     ) {
         this(userId, conversationId, runId, triggeringMessageId, triggeringUserText,
-                idempotencyKey, executionOwner, buyerIp, null, null, visibleProductContext, null);
+                idempotencyKey, executionOwner, buyerIp, null, null, visibleProductContext, null, false);
     }
 
     public AgentToolExecutionContext withIdempotencyKey(UUID value) {
@@ -129,6 +130,24 @@ public record AgentToolExecutionContext(
                 triggeringUserText);
     }
 
+    public AgentToolExecutionContext withAnonymousUser(boolean value) {
+        return new AgentToolExecutionContext(
+                userId,
+                conversationId,
+                runId,
+                triggeringMessageId,
+                triggeringUserText,
+                idempotencyKey,
+                executionOwner,
+                buyerIp,
+                userAgent,
+                language,
+                visibleProductContext,
+                merchantId,
+                value
+        );
+    }
+
     /**
      * Returns the durable buyer message that bounds qualification history. Direct UI actions do
      * not have a ledger message until after their tool completes, so their history has no cutoff.
@@ -164,7 +183,8 @@ public record AgentToolExecutionContext(
                 nextUserAgent,
                 nextLanguage,
                 nextVisibleProductContext,
-                nextMerchantId
+                nextMerchantId,
+                anonymousUser
         );
     }
 }

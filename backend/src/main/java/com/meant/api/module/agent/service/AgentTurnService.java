@@ -102,6 +102,7 @@ public class AgentTurnService {
                 command.buyerIp(),
                 command.userAgent(),
                 command.language(),
+                command.anonymousUser(),
                 now
         ));
         userMessage.linkRun(run.getId());

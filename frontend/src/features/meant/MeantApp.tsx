@@ -20,8 +20,29 @@ import {
   PROMPTS,
 } from './data'
 import { Avatar } from './account/Avatar'
+import { trackMeantEvent } from './analytics'
+import { AuthSheet, type AuthSheetReason } from './auth/AuthSheet'
 import { authProviderAvatarUrl } from './auth/authProviderProfile'
+import {
+  claimPendingAccountAction,
+  completePendingAccountAction,
+  peekPendingAccountAction,
+  storePendingAccountAction,
+  type PendingAccountAction,
+} from './auth/pendingAccountAction'
+import {
+  clearProvisionalPreferenceDraft,
+  createProvisionalPreferenceDraft,
+  readProvisionalPreferenceDraft,
+  type ProvisionalPreferenceDraft,
+} from './auth/provisionalPreferenceDraft'
+import {
+  clearGuestConversationTransfer,
+  readGuestConversationTransfer,
+  storeGuestConversationTransfer,
+} from './auth/guestConversationTransfer'
 import { useSupabaseAuth } from './auth/useSupabaseAuth'
+import { captureCampaignEntry, claimCampaignBriefLoaded } from './campaign/campaignAttribution'
 import { CartPopover } from './cart/CartPopover'
 import { cartCountSummary, formatCartCount } from './cart/cartCounts'
 import { resolveLiveCartItem } from './cart/cartPartition'
@@ -108,6 +129,7 @@ import {
   getCartCheckout,
   getCart,
   getCompleteAgentConversation,
+  claimGuestConversationTransfer,
   getCurrentUser,
   getAgentRun,
   getMerchantIdentityLinks,
@@ -120,6 +142,7 @@ import {
   getUserProductSearchSuggestions,
   getUserSettings,
   getUserTasteProfile,
+  issueGuestConversationTransfer,
   removeSavedProduct,
   removeUserTasteSignal,
   rejectUserTasteSuggestion,
@@ -144,7 +167,6 @@ import {
   type UserSettingsProfile,
 } from '../../lib/apiClient'
 import type {
-  AuthMode,
   CartItem,
   ClothingFit,
   CheckoutPayload,
@@ -169,9 +191,6 @@ const AgentDiscoverView = lazy(() =>
   import('./agent/AgentDiscoverView').then(({ AgentDiscoverView: component }) => ({
     default: component,
   })),
-)
-const AuthScreen = lazy(() =>
-  import('./auth/AuthScreen').then(({ AuthScreen: component }) => ({ default: component })),
 )
 const CartCheckoutDialog = lazy(() =>
   import('./cart/CartCheckoutDialog').then(({ CartCheckoutDialog: component }) => ({
@@ -367,6 +386,9 @@ function TopBar({
   onCloseAccount,
   onRemoveFromCart,
   onSignOut,
+  isAnonymous,
+  onSaveProgress,
+  onLogIn,
 }: Readonly<{
   view: View
   theme: Theme
@@ -385,6 +407,9 @@ function TopBar({
   onCloseAccount: () => void
   onRemoveFromCart: (id: ProductId, merchant: string, identity?: string) => void
   onSignOut: () => void
+  isAnonymous: boolean
+  onSaveProgress: () => void
+  onLogIn: () => void
 }>) {
   // Count only items that resolve to a known product, so the badge can never
   // disagree with what the cart actually shows (e.g. a stale persisted cart).
@@ -470,20 +495,46 @@ function TopBar({
             />
           ) : null}
         </div>
-        <div className="mt-avatar-anchor">
-          <button
-            className={`mt-avatar ${accountMenu || view === 'account' ? 'on' : ''}`}
-            type="button"
-            onClick={onToggleAccount}
-            aria-label="Your account"
-            aria-expanded={accountMenu}
-          >
-            <Avatar user={user} size={38} />
-          </button>
-          {accountMenu ? (
-            <AccountMenu user={user} onNav={onNav} onClose={onCloseAccount} onSignOut={onSignOut} />
-          ) : null}
-        </div>
+        {isAnonymous ? (
+          <div className="mt-guest-auth-actions">
+            <button className="mt-login-cta" type="button" onClick={onLogIn}>
+              Log in
+            </button>
+            <button
+              className="mt-act mt-act-primary mt-save-progress-cta"
+              type="button"
+              onClick={onSaveProgress}
+              aria-label="Save your progress"
+            >
+              <span className="mt-save-progress-dot" aria-hidden />
+              <span className="mt-save-progress-label">Save your progress</span>
+              <span className="mt-save-progress-label-short">Save progress</span>
+              <span className="mt-save-progress-arrow" aria-hidden>
+                →
+              </span>
+            </button>
+          </div>
+        ) : (
+          <div className="mt-avatar-anchor">
+            <button
+              className={`mt-avatar ${accountMenu || view === 'account' ? 'on' : ''}`}
+              type="button"
+              onClick={onToggleAccount}
+              aria-label="Your account"
+              aria-expanded={accountMenu}
+            >
+              <Avatar user={user} size={38} />
+            </button>
+            {accountMenu ? (
+              <AccountMenu
+                user={user}
+                onNav={onNav}
+                onClose={onCloseAccount}
+                onSignOut={onSignOut}
+              />
+            ) : null}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -630,11 +681,47 @@ function SavedView({
 export function MeantApp() {
   const [view, setView] = useState<View>('discover')
   const [primaryNavigationSequence, setPrimaryNavigationSequence] = useState(0)
-  const [authMode, setAuthMode] = useState<AuthMode>('signin')
-  const { session, loading: authLoading, signOut, ...authActions } = useSupabaseAuth()
+  const auth = useSupabaseAuth()
+  const {
+    session,
+    loading: authLoading,
+    isAnonymous,
+    status: authStatus,
+    bootstrapError,
+    retryAnonymousBootstrap,
+    signOut,
+  } = auth
   const authed = Boolean(session)
+  const permanent = authed && !isAnonymous
   const userId = session?.user?.id
-  const userEmail = session?.user?.email
+  const userEmail = session?.user?.email ?? null
+  const [campaignEntry] = useState(() =>
+    typeof window === 'undefined'
+      ? {
+          brief: '',
+          attribution: { utmSource: null, utmMedium: null, utmCampaign: null, utmContent: null },
+        }
+      : captureCampaignEntry(window.location),
+  )
+  const [authSheetReason, setAuthSheetReason] = useState<AuthSheetReason | null>(null)
+  const [pendingAccountNotice, setPendingAccountNotice] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!pendingAccountNotice) return
+    const timeout = window.setTimeout(() => setPendingAccountNotice(null), 5_000)
+    return () => window.clearTimeout(timeout)
+  }, [pendingAccountNotice])
+
+  const [provisionalPreferenceDraft, setProvisionalPreferenceDraft] =
+    useState<ProvisionalPreferenceDraft | null>(null)
+  const [provisionalPreferenceDraftBusy, setProvisionalPreferenceDraftBusy] = useState(false)
+  const [provisionalPreferenceDraftError, setProvisionalPreferenceDraftError] = useState<
+    string | null
+  >(null)
+  const [guestTransferStatus, setGuestTransferStatus] = useState<'ready' | 'claiming' | 'failed'>(
+    () => (readGuestConversationTransfer() ? 'claiming' : 'ready'),
+  )
+  const [guestTransferError, setGuestTransferError] = useState<string | null>(null)
   const commerceOperationQueue = useMemo(
     () => commerceActionQueueFor(userId ?? 'signed-out'),
     [userId],
@@ -696,12 +783,12 @@ export function MeantApp() {
   const [availablePrefs, setAvailablePrefs] = useState<Preference[]>([...PREFERENCES])
   const [prefsOn, setPrefsOn] = useStoredState<PreferenceId[]>(
     accountStorageKey('meant.prefsOn', userId),
-    [...DEFAULT_PREFERENCE_IDS],
+    isAnonymous ? [] : [...DEFAULT_PREFERENCE_IDS],
   )
   const [tasteProfile, setTasteProfile] = useState<UserTasteProfile>(EMPTY_TASTE_PROFILE)
   const [budget, setBudget] = useStoredState<number | null>(
     accountStorageKey('meant.budget', userId),
-    DEFAULT_BUDGET,
+    isAnonymous ? null : DEFAULT_BUDGET,
   )
   const [currency, setCurrency] = useStoredState<string>(
     accountStorageKey('meant.currency', userId),
@@ -767,9 +854,116 @@ export function MeantApp() {
   const savePendingRef = useRef(new Map<ProductId, AccountOwnedOperation<ProductId>>())
   const allPreferencesRef = useRef<readonly Preference[]>(availablePrefs)
   const greeting = useBrowserGreeting()
+  const previousAuthStatusRef = useRef(authStatus)
   const closeAccountMenu = useCallback(() => {
     setAccountMenu(false)
   }, [])
+  const requestPermanentAccount = useCallback(
+    (reason: AuthSheetReason, action?: PendingAccountAction) => {
+      if (action) storePendingAccountAction(action)
+      trackMeantEvent('protected_action_attempted', {
+        anonymous: true,
+        reason,
+        pending_action_type: action?.type,
+      })
+      if (reason === 'new-conversation') {
+        trackMeantEvent('new_conversation_gate_viewed', { anonymous: true })
+      }
+      setAuthSheetReason(reason)
+      setAccountMenu(false)
+      setCartPeek(false)
+    },
+    [],
+  )
+
+  const signInToExistingAccount = useCallback(async () => {
+    if (!userId || !isAnonymous) {
+      window.location.assign('/login')
+      return
+    }
+    const storageKey = accountSessionStorageKey('meant.activeAgentConversation', userId)
+    let conversationId: string | null
+    try {
+      const stored = JSON.parse(window.sessionStorage.getItem(storageKey) ?? 'null')
+      conversationId = typeof stored === 'string' && stored.trim() ? stored : null
+    } catch {
+      window.location.assign('/login')
+      return
+    }
+    if (conversationId) {
+      const transfer = await issueGuestConversationTransfer({
+        conversationId,
+        expectedUserId: userId,
+      })
+      storeGuestConversationTransfer(transfer)
+    }
+    window.location.assign('/login')
+  }, [isAnonymous, userId])
+
+  const restoreGuestConversation = useCallback(async () => {
+    const transfer = readGuestConversationTransfer()
+    if (!permanent || !userId || !transfer) {
+      setGuestTransferStatus('ready')
+      setGuestTransferError(null)
+      return
+    }
+    setGuestTransferStatus('claiming')
+    setGuestTransferError(null)
+    try {
+      const imported = await claimGuestConversationTransfer({
+        token: transfer.token,
+        expectedUserId: userId,
+      })
+      window.sessionStorage.setItem(
+        accountSessionStorageKey('meant.activeAgentConversation', userId),
+        JSON.stringify(imported.conversationId),
+      )
+      clearGuestConversationTransfer(transfer.token)
+      trackMeantEvent('existing_account_signed_in', { identity_link_result: 'signed-in' })
+      trackMeantEvent('guest_conversation_imported', {
+        conversation_id: imported.conversationId,
+      })
+      setGuestTransferStatus('ready')
+    } catch (cause) {
+      if (cause instanceof ApiError && cause.status === 410) {
+        clearGuestConversationTransfer(transfer.token)
+      }
+      setGuestTransferError(
+        cause instanceof Error ? cause.message : 'Your current search could not be restored.',
+      )
+      setGuestTransferStatus('failed')
+    }
+  }, [permanent, userId])
+
+  useEffect(() => {
+    void restoreGuestConversation()
+  }, [restoreGuestConversation])
+
+  useEffect(() => {
+    const previous = previousAuthStatusRef.current
+    previousAuthStatusRef.current = authStatus
+    if (authStatus === 'anonymous' && previous !== 'anonymous') {
+      trackMeantEvent('anonymous_session_created', { anonymous: true })
+    }
+    if (authStatus === 'error' && previous !== 'error') {
+      trackMeantEvent('anonymous_session_failed', { reason: bootstrapError ?? 'unknown' })
+    }
+    if (authStatus === 'permanent' && previous === 'anonymous') {
+      trackMeantEvent('anonymous_account_converted', { identity_link_result: 'linked' })
+    }
+  }, [authStatus, bootstrapError])
+
+  useEffect(() => {
+    if (campaignEntry.brief && claimCampaignBriefLoaded(campaignEntry.brief)) {
+      trackMeantEvent('campaign_brief_loaded', {
+        anonymous: isAnonymous,
+        utm_source: campaignEntry.attribution.utmSource,
+        utm_medium: campaignEntry.attribution.utmMedium,
+        utm_campaign: campaignEntry.attribution.utmCampaign,
+        utm_content: campaignEntry.attribution.utmContent,
+      })
+    }
+  }, [campaignEntry, isAnonymous])
 
   const updateActiveCheckoutState = useCallback(
     (update: SetStateAction<ActiveCheckoutSession | null>) => {
@@ -886,7 +1080,7 @@ export function MeantApp() {
 
   const refreshMerchantIdentityLinks = useCallback(async () => {
     const requestedUserId = userId
-    if (!requestedUserId) {
+    if (!requestedUserId || !permanent) {
       setMerchantIdentityLinks([])
       setMerchantIdentityLinksError(null)
       return
@@ -906,7 +1100,7 @@ export function MeantApp() {
         setMerchantIdentityLinksLoading(false)
       }
     }
-  }, [userId])
+  }, [permanent, userId])
 
   const allPreferences = availablePrefs
   compareIdsRef.current = compareIds
@@ -1103,6 +1297,15 @@ export function MeantApp() {
   const addProductOfferToCartResolved = useCallback(
     async (product: Product, offer: Offer): Promise<boolean> => {
       const exactOfferKey = offer.offerKey?.trim()
+      if (isAnonymous) {
+        requestPermanentAccount(
+          'cart',
+          exactOfferKey
+            ? { type: 'ADD_TO_CART', productId: product.id, offerKey: exactOfferKey }
+            : undefined,
+        )
+        return false
+      }
       const key = exactOfferKey
         ? JSON.stringify(['add-to-cart', product.id, exactOfferKey])
         : JSON.stringify([
@@ -1154,6 +1357,8 @@ export function MeantApp() {
       addProductOfferToCart,
       addSelectedOfferToCart,
       deliveryLocations,
+      isAnonymous,
+      requestPermanentAccount,
       runUniqueCommerceMutation,
       userId,
     ],
@@ -1169,9 +1374,10 @@ export function MeantApp() {
   const liveProfile = useMemo(
     () => ({
       ...PROFILE,
-      name: firstNameFromName(user.name),
+      name: isAnonymous ? '' : firstNameFromName(user.name),
+      summary: isAnonymous ? '' : PROFILE.summary,
     }),
-    [user.name],
+    [isAnonymous, user.name],
   )
 
   const refreshSavedProductForOpen = useCallback(
@@ -1253,12 +1459,13 @@ export function MeantApp() {
 
   const openProduct = useCallback(
     (product: Product, list?: readonly Product[], researchQuery?: string | null) => {
+      trackMeantEvent('product_opened', { anonymous: isAnonymous })
       setActiveProduct(product)
       setActiveProductResearchQuery(researchQuery?.trim() || null)
       setNavProducts(list ?? [product])
       refreshSavedProductForOpen(product)
     },
-    [refreshSavedProductForOpen],
+    [isAnonymous, refreshSavedProductForOpen],
   )
 
   const navIndex = currentActiveProduct
@@ -1321,7 +1528,7 @@ export function MeantApp() {
 
   useEffect(() => {
     const requestedUserId = userId
-    if (!requestedUserId) {
+    if (!requestedUserId || !permanent) {
       return
     }
     const params = new URLSearchParams(window.location.search)
@@ -1366,7 +1573,7 @@ export function MeantApp() {
     return () => {
       active = false
     }
-  }, [userId])
+  }, [permanent, userId])
 
   // Once authenticated, hydrate the profile from the backend (which creates the users row on first
   // call). Falls back to the JWT email if the backend is unreachable so the shell still renders.
@@ -1457,29 +1664,29 @@ export function MeantApp() {
   )
 
   useEffect(() => {
-    if (!authed) {
+    if (!permanent) {
       setInventoryItems([])
       setInventoryError(null)
       setInventoryLoading(false)
       return
     }
     void loadInventory()
-  }, [authed, loadInventory])
+  }, [loadInventory, permanent])
 
   useEffect(() => {
-    if (!authed) {
+    if (!permanent) {
       setOrders([])
       setOrdersError(null)
       setOrdersLoading(false)
       return
     }
     void loadOrders()
-  }, [authed, loadOrders])
+  }, [loadOrders, permanent])
 
   const refreshSearchSuggestions = useCallback(async () => {
     const requestedUserId = userId
-    if (!requestedUserId) {
-      setSearchSuggestions([])
+    if (!requestedUserId || !permanent) {
+      setSearchSuggestions([...PROMPTS])
       return
     }
 
@@ -1503,7 +1710,7 @@ export function MeantApp() {
       }
       setSearchSuggestions([...PROMPTS])
     }
-  }, [userId])
+  }, [permanent, userId])
 
   useEffect(() => {
     void refreshSearchSuggestions()
@@ -1522,7 +1729,7 @@ export function MeantApp() {
     getCurrentUser()
       .then(async (profile) => {
         if (!active || activeUserIdRef.current !== requestedUserId) return
-        const uploadedAvatar = await getProfilePictureUrl(profile.profilePicturePath).catch(
+        const uploadedAvatar = await getProfilePictureUrl(profile.profilePicturePath ?? null).catch(
           () => null,
         )
         if (!active || activeUserIdRef.current !== requestedUserId) return
@@ -1544,6 +1751,16 @@ export function MeantApp() {
           avatar: current.avatar ?? providerAvatar,
         }))
       })
+    if (!permanent) {
+      setAvailablePrefs([...PREFERENCES])
+      setPrefsOn([])
+      setBudget(null)
+      setDeliveryLocations([])
+      setClothingFit('none')
+      return () => {
+        active = false
+      }
+    }
     void enqueueProductSearchPreferencesOperation(async () => {
       try {
         if (
@@ -1620,6 +1837,7 @@ export function MeantApp() {
     }
   }, [
     enqueueProductSearchPreferencesOperation,
+    permanent,
     userId,
     userEmail,
     providerAvatar,
@@ -1633,7 +1851,6 @@ export function MeantApp() {
 
   const handleSignOut = () => {
     void signOut()
-    setAuthMode('signin')
     setView('discover')
     setRemoteProducts([])
     setTasteProfile(EMPTY_TASTE_PROFILE)
@@ -1688,6 +1905,10 @@ export function MeantApp() {
 
   const updateNewsletter = useCallback(
     async (newsletter: boolean) => {
+      if (isAnonymous) {
+        requestPermanentAccount('generic')
+        throw new Error('Save your progress before subscribing.')
+      }
       const requestedUserId = userId
       if (!requestedUserId || activeUserIdRef.current !== requestedUserId) {
         throw new Error('Account changed before newsletter update')
@@ -1704,11 +1925,25 @@ export function MeantApp() {
         newsletter: profile.newsletter ?? newsletter,
       }))
     },
-    [setUser, userId],
+    [isAnonymous, requestPermanentAccount, setUser, userId],
   )
 
   const nav = useCallback(
     (next: View, options?: NavOptions) => {
+      if (isAnonymous && next !== 'discover' && next !== 'compare' && next !== 'cart') {
+        const action: PendingAccountAction =
+          next === 'saved'
+            ? { type: 'OPEN_SAVED' }
+            : next === 'inventory'
+              ? { type: 'OPEN_INVENTORY' }
+              : next === 'orders'
+                ? { type: 'OPEN_ORDERS' }
+                : next === 'preferences'
+                  ? { type: 'OPEN_PREFERENCES' }
+                  : { type: 'OPEN_ACCOUNT' }
+        requestPermanentAccount('generic', action)
+        return
+      }
       setView(next)
       setPrimaryNavigationSequence((current) => current + 1)
       if (next === 'discover' && options?.home) {
@@ -1720,7 +1955,7 @@ export function MeantApp() {
         void loadOrders({ silent: true })
       }
     },
-    [loadOrders],
+    [isAnonymous, loadOrders, requestPermanentAccount],
   )
 
   useLayoutEffect(() => {
@@ -2230,10 +2465,14 @@ export function MeantApp() {
     setSavePendingIds(Array.from(savePendingRef.current.keys()))
   }
 
-  const toggleSave = (product: Product) => {
+  const toggleSave = async (product: Product): Promise<boolean> => {
+    if (isAnonymous) {
+      requestPermanentAccount('save-product', { type: 'SAVE_PRODUCT', productId: product.id })
+      return false
+    }
     const saveOperation = beginSaveOperation(product.id)
     if (!saveOperation) {
-      return
+      return false
     }
     const productSnapshot = productWithCuratedFields(product, allPreferencesRef.current)
     const wasSaved = savedSet.has(product.id)
@@ -2263,11 +2502,11 @@ export function MeantApp() {
       setActiveProduct((current) =>
         current?.id === product.id ? savedProductRefreshShell(current) : current,
       )
-      void removeSavedProduct(product.id, { expectedUserId: saveOperation.ownerId })
-        .catch(() => {
-          if (!isSaveOperationCurrent(saveOperation)) {
-            return
-          }
+      try {
+        await removeSavedProduct(product.id, { expectedUserId: saveOperation.ownerId })
+        return true
+      } catch {
+        if (isSaveOperationCurrent(saveOperation)) {
           setSavedProducts((current) => upsertProductSnapshot(current, rollbackSnapshot))
           setSavedIds((current) =>
             current.includes(product.id) ? current : [product.id, ...current],
@@ -2294,9 +2533,11 @@ export function MeantApp() {
           if (!rollbackSnapshot.offers.some((offer) => Boolean(offer.offerKey?.trim()))) {
             refreshSavedProductForOpen(rollbackSnapshot, true)
           }
-        })
-        .finally(() => endSaveOperation(saveOperation))
-      return
+        }
+        return false
+      } finally {
+        endSaveOperation(saveOperation)
+      }
     }
 
     setSavedProducts((current) => upsertProductSnapshot(current, productSnapshot))
@@ -2305,13 +2546,12 @@ export function MeantApp() {
       product.canonicalProduct?.recommendedOfferKey?.trim() ||
       product.offers.find((offer) => offer.offerKey?.trim())?.offerKey?.trim() ||
       null
-    void saveUserProduct(savedProductInput(product, allPreferencesRef.current, selectedOfferKey), {
-      expectedUserId: saveOperation.ownerId,
-    })
-      .then((savedProduct) => {
-        if (!isSaveOperationCurrent(saveOperation)) {
-          return
-        }
+    try {
+      const savedProduct = await saveUserProduct(
+        savedProductInput(product, allPreferencesRef.current, selectedOfferKey),
+        { expectedUserId: saveOperation.ownerId },
+      )
+      if (isSaveOperationCurrent(saveOperation)) {
         const snapshot = savedProductFromProfile(savedProduct, allPreferencesRef.current)
         const confirmedSnapshot = confirmedSavedProductSnapshot(productSnapshot, snapshot)
         setSavedProducts((current) => upsertProductSnapshot(current, confirmedSnapshot))
@@ -2320,16 +2560,102 @@ export function MeantApp() {
         )
         refreshSavedProductForOpen(confirmedSnapshot, true)
         void refreshTasteProfile()
-      })
-      .catch(() => {
-        if (!isSaveOperationCurrent(saveOperation)) {
-          return
-        }
+      }
+      return true
+    } catch {
+      if (isSaveOperationCurrent(saveOperation)) {
         setSavedProducts((current) => current.filter((candidate) => candidate.id !== product.id))
         setSavedIds((current) => current.filter((candidate) => candidate !== product.id))
-      })
-      .finally(() => endSaveOperation(saveOperation))
+      }
+      return false
+    } finally {
+      endSaveOperation(saveOperation)
+    }
   }
+
+  useEffect(() => {
+    if (!permanent || guestTransferStatus !== 'ready') return
+    setAuthSheetReason(null)
+    const nextAction = peekPendingAccountAction()
+    if (
+      nextAction &&
+      (nextAction.type === 'SAVE_PRODUCT' || nextAction.type === 'ADD_TO_CART') &&
+      !allKnownProductsMap.has(nextAction.productId)
+    ) {
+      return
+    }
+    const pending = claimPendingAccountAction()
+    if (!pending) return
+    const execute = async () => {
+      try {
+        switch (pending.action.type) {
+          case 'SAVE_PRODUCT': {
+            const product = allKnownProductsMap.get(pending.action.productId)
+            if (!product) throw new Error('That product is no longer available in this view.')
+            if (!savedSet.has(product.id) && !(await toggleSave(product))) {
+              throw new Error('The product could not be saved.')
+            }
+            break
+          }
+          case 'ADD_TO_CART': {
+            const product = allKnownProductsMap.get(pending.action.productId)
+            if (!product) throw new Error('That product is no longer available in this view.')
+            const added = await addSelectedOfferToCartGuarded(product, pending.action.offerKey)
+            if (!added) throw new Error('The product could not be added to your cart.')
+            break
+          }
+          case 'OPEN_SAVED':
+            nav('saved')
+            break
+          case 'OPEN_INVENTORY':
+            nav('inventory')
+            break
+          case 'OPEN_ORDERS':
+            nav('orders')
+            break
+          case 'OPEN_CART':
+            nav('cart')
+            break
+          case 'OPEN_PREFERENCES':
+            nav('preferences')
+            break
+          case 'REMEMBER_PREFERENCES': {
+            const draft = readProvisionalPreferenceDraft(pending.action.preferenceDraftId)
+            if (!draft) throw new Error('Those preference suggestions have expired.')
+            setProvisionalPreferenceDraft(draft)
+            setProvisionalPreferenceDraftError(null)
+            nav('preferences')
+            break
+          }
+          case 'OPEN_ACCOUNT':
+            nav('account')
+            break
+          case 'START_NEW_CONVERSATION':
+            nav('discover', { home: true })
+            break
+          case 'OPEN_HISTORY':
+            nav('discover')
+            break
+          case 'ENABLE_ALERT':
+            throw new Error('Alerts are not available yet.')
+        }
+        completePendingAccountAction(pending.id)
+        setPendingAccountNotice('Done — everything Meant for you is safely saved.')
+        trackMeantEvent('pending_action_completed', { pending_action_type: pending.action.type })
+        trackMeantEvent('activated_account', { pending_action_type: pending.action.type })
+      } catch (error) {
+        completePendingAccountAction(pending.id)
+        setPendingAccountNotice(
+          error instanceof Error ? error.message : 'That action could not be completed.',
+        )
+        trackMeantEvent('pending_action_failed', { pending_action_type: pending.action.type })
+      }
+    }
+    void execute()
+    // Pending actions are claimed atomically; auth listener replays and subsequent renders are no-ops.
+    // Product actions wait until an imported conversation has rebuilt its grounded product snapshot.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allKnownProductsMap, guestTransferStatus, permanent, userId])
 
   const updateSavedChoice = (product: Product, offerKey: string) => {
     const exactOfferKey = offerKey.trim()
@@ -2404,6 +2730,10 @@ export function MeantApp() {
       setActiveProduct(null)
       setActiveProductResearchQuery(null)
       nav('compare')
+      return
+    }
+    if (isAnonymous && compareIdsRef.current.length >= 2) {
+      requestPermanentAccount('generic')
       return
     }
     addProductToCompare(product)
@@ -2708,7 +3038,11 @@ export function MeantApp() {
   }
 
   const compareChatProducts = (products: readonly Product[]) => {
-    const nextProducts = products.slice(0, 4)
+    if (isAnonymous && products.length > 2) {
+      requestPermanentAccount('generic')
+      return
+    }
+    const nextProducts = products.slice(0, isAnonymous ? 2 : 4)
     if (nextProducts.length < 2) {
       return
     }
@@ -2849,11 +3183,19 @@ export function MeantApp() {
     commerceOperationQueue.enqueue(() => startCheckoutNow(payload, source))
 
   const checkout = async (payload: CheckoutPayload) => {
+    if (isAnonymous) {
+      requestPermanentAccount('checkout')
+      return
+    }
     await startCheckout(payload, 'cart')
   }
 
   const checkoutInChat = async (payload: CheckoutPayload) => {
     if (payload.items.length === 0) {
+      return
+    }
+    if (isAnonymous) {
+      requestPermanentAccount('checkout')
       return
     }
     const errorMessage = await startCheckout(payload, 'chat')
@@ -3027,10 +3369,49 @@ export function MeantApp() {
 
   const content = (() => {
     if (authLoading) {
-      return <div className="mt-auth-loading" />
+      return <div className="mt-auth-loading" role="status" aria-label="Preparing Meant" />
+    }
+    if (authStatus === 'error') {
+      return (
+        <main className="mt-auth-retry" role="alert">
+          <img src="/assets/meant-logo.png" alt="Meant" />
+          <h1>Meant could not start</h1>
+          <p>{bootstrapError ?? 'Check your connection and try again.'}</p>
+          <button type="button" onClick={() => void retryAnonymousBootstrap()}>
+            Try again
+          </button>
+          <a href="/login">Sign in instead</a>
+        </main>
+      )
     }
     if (!authed) {
-      return <AuthScreen mode={authMode} onMode={setAuthMode} auth={authActions} />
+      return <div className="mt-auth-loading" role="status" aria-label="Preparing Meant" />
+    }
+    if (permanent && guestTransferStatus === 'claiming') {
+      return <div className="mt-auth-loading" role="status" aria-label="Restoring your search" />
+    }
+    if (permanent && guestTransferStatus === 'failed') {
+      return (
+        <main className="mt-auth-retry" role="alert">
+          <img src="/assets/meant-logo.png" alt="Meant" />
+          <h1>Your account is ready</h1>
+          <p>{guestTransferError ?? 'Your current search could not be restored.'}</p>
+          {readGuestConversationTransfer() ? (
+            <button type="button" onClick={() => void restoreGuestConversation()}>
+              Try restoring again
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => {
+              clearGuestConversationTransfer()
+              setGuestTransferStatus('ready')
+            }}
+          >
+            Continue to Meant
+          </button>
+        </main>
+      )
     }
 
     switch (view) {
@@ -3110,6 +3491,36 @@ export function MeantApp() {
             onSaveProductSearchPreference={saveProductSearchPreference}
             onRemoveProductSearchPreference={removeProductSearchPreference}
             onRefreshProductSearchPreferences={refreshProductSearchPreferences}
+            preferenceDraft={allPreferences.filter((preference) =>
+              provisionalPreferenceDraft?.preferenceIds.includes(preference.id),
+            )}
+            preferenceDraftBusy={provisionalPreferenceDraftBusy}
+            preferenceDraftError={provisionalPreferenceDraftError}
+            onAcceptPreferenceDraft={() => {
+              if (!provisionalPreferenceDraft || provisionalPreferenceDraftBusy) return
+              const draft = provisionalPreferenceDraft
+              const next = [...new Set([...prefsOn, ...draft.preferenceIds])]
+              setProvisionalPreferenceDraftBusy(true)
+              setProvisionalPreferenceDraftError(null)
+              void saveSettings({ filterIds: next })
+                .then((saved) => {
+                  if (!saved) {
+                    setProvisionalPreferenceDraftError('Could not save these defaults. Try again.')
+                    return
+                  }
+                  setPrefsOn(next)
+                  clearProvisionalPreferenceDraft(draft.id)
+                  setProvisionalPreferenceDraft(null)
+                })
+                .finally(() => setProvisionalPreferenceDraftBusy(false))
+            }}
+            onDismissPreferenceDraft={() => {
+              if (provisionalPreferenceDraft) {
+                clearProvisionalPreferenceDraft(provisionalPreferenceDraft.id)
+              }
+              setProvisionalPreferenceDraft(null)
+              setProvisionalPreferenceDraftError(null)
+            }}
             tasteProfile={currentTasteProfile}
             onAcceptTasteSuggestion={acceptTasteSuggestion}
             onRejectTasteSuggestion={rejectTasteSuggestion}
@@ -3189,8 +3600,28 @@ export function MeantApp() {
       default:
         return (
           <AgentDiscoverView
-            key={userId ?? 'anonymous'}
             expectedUserId={userId ?? ''}
+            guestMode={isAnonymous}
+            initialBrief={campaignEntry.brief}
+            onPermanentAccountRequired={(reason) => {
+              const action: PendingAccountAction | undefined =
+                reason === 'new-conversation'
+                  ? { type: 'START_NEW_CONVERSATION' }
+                  : reason === 'history'
+                    ? { type: 'OPEN_HISTORY' }
+                    : undefined
+              requestPermanentAccount(
+                reason === 'new-conversation' ? 'new-conversation' : 'generic',
+                action,
+              )
+            }}
+            onRememberPreferences={(preferenceIds) => {
+              const draft = createProvisionalPreferenceDraft(preferenceIds)
+              requestPermanentAccount('preferences', {
+                type: 'REMEMBER_PREFERENCES',
+                preferenceDraftId: draft.id,
+              })
+            }}
             profile={liveProfile}
             greeting={greeting}
             prompts={currentSearchSuggestions}
@@ -3277,13 +3708,35 @@ export function MeantApp() {
         onCloseAccount={closeAccountMenu}
         onRemoveFromCart={removeFromCartGuarded}
         onSignOut={handleSignOut}
+        isAnonymous={isAnonymous}
+        onSaveProgress={() => requestPermanentAccount('generic')}
+        onLogIn={() => {
+          void signInToExistingAccount().catch(() => window.location.assign('/login'))
+        }}
       />
-      <ProfileBar
-        preferences={activePreferences}
-        deliveryLocations={deliveryLocations}
-        clothingFit={clothingFit}
-        onEdit={() => nav('preferences')}
-      />
+      {!isAnonymous ? (
+        <ProfileBar
+          preferences={activePreferences}
+          deliveryLocations={deliveryLocations}
+          clothingFit={clothingFit}
+          onEdit={() => nav('preferences')}
+        />
+      ) : null}
+      {pendingAccountNotice ? (
+        <div className="mt-account-notice" role="status">
+          <span className="mt-account-notice-check" aria-hidden>
+            ✓
+          </span>
+          <span>{pendingAccountNotice}</span>
+          <button
+            type="button"
+            onClick={() => setPendingAccountNotice(null)}
+            aria-label="Dismiss notification"
+          >
+            ×
+          </button>
+        </div>
+      ) : null}
       {contentWithFallback}
       {activeCheckout && (activeCheckout.source === 'cart' || view === 'cart') ? (
         <Suspense fallback={null}>
@@ -3346,6 +3799,16 @@ export function MeantApp() {
         onFind={findShelfMessage}
         onFindProduct={findShelfProduct}
         onOpenProduct={(product) => openProduct(product, [product])}
+      />
+      <AuthSheet
+        open={authSheetReason !== null}
+        reason={authSheetReason ?? 'generic'}
+        auth={auth}
+        onExistingAccountSignIn={signInToExistingAccount}
+        onClose={() => {
+          trackMeantEvent('auth_sheet_dismissed', { reason: authSheetReason })
+          setAuthSheetReason(null)
+        }}
       />
     </div>
   )

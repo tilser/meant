@@ -19,13 +19,21 @@ project uses the same major version.
 In the Supabase dashboard:
 
 1. Enable the `vector` PostgreSQL extension.
-2. Configure the production Site URL, for example `https://app.usemeant.com`.
-3. Add `https://app.usemeant.com/**` and `http://localhost:3000/**` as Auth redirect URLs.
-4. Configure the Google and Apple Auth providers that are enabled in the frontend.
-5. Configure a custom SMTP provider before enabling production email sign-up and password reset.
-6. Copy the project URL, publishable key, project reference, database password, JWKS URL, issuer,
+2. Enable **Anonymous Sign-Ins** and **Manual Identity Linking** under Auth settings.
+3. Configure the production Site URL, for example `https://app.usemeant.com`.
+4. Add `https://app.usemeant.com/auth/callback`, `https://app.usemeant.com/auth/recovery`,
+   preview equivalents, and the matching `http://localhost:3000` URLs as Auth redirect URLs.
+5. Configure Google and Apple Auth. Both providers must permit the `/auth/callback` URL.
+6. Configure a custom SMTP provider and passwordless email templates before enabling email conversion.
+7. Enable Cloudflare Turnstile (or hCaptcha) for anonymous sign-in and set its secret only in
+   Supabase. Set the matching public site key as `VITE_TURNSTILE_SITE_KEY` in the frontend host.
+8. Schedule a 30-day anonymous-user retention job. It must select only rows where
+   `auth.users.is_anonymous` is still true, remove the matching application-owned rows and Auth
+   identity together, and record deletion counts. Verify in staging that an identity converted
+   before the cutoff is excluded from every cleanup step.
+9. Copy the project URL, publishable key, project reference, database password, JWKS URL, issuer,
    and Session Pooler connection details.
-7. Disable the Data API under **Integrations > Data API**. Application tables are accessed only by
+10. Disable the Data API under **Integrations > Data API**. Application tables are accessed only by
    the Spring backend through its direct PostgreSQL connection; Supabase Auth and Storage remain
    available through their separate APIs.
 
@@ -142,6 +150,7 @@ Set these variables for the Production environment:
 VITE_MEANT_API_URL=https://api.usemeant.com
 VITE_SUPABASE_URL=https://<project-ref>.supabase.co
 VITE_SUPABASE_ANON_KEY=<publishable-or-anon-key>
+VITE_TURNSTILE_SITE_KEY=<public-turnstile-site-key>
 VITE_EMBEDDED_CHECKOUT_ENABLED=true
 VITE_CHECKOUT_KIT_DEBUG=false
 ```

@@ -14,6 +14,8 @@ import org.springframework.data.repository.query.Param;
 
 public interface AgentConversationRepository extends JpaRepository<AgentConversation, UUID> {
 
+    long countByUserIdAndStatus(UUID userId, AgentConversationStatus status);
+
     Optional<AgentConversation> findByIdAndUserId(UUID id, UUID userId);
 
     List<AgentConversation> findByUserIdAndStatusOrderByUpdatedAtDesc(

@@ -53,6 +53,22 @@ class AgentToolAuthorizationPolicyTest {
         )).isTrue();
     }
 
+    @Test
+    void guestModelLaneKeepsDiscoveryButRemovesAccountOwnedTools() {
+        List<AgentToolDescriptor> descriptors = List.of(
+                descriptor("search_catalog", AgentToolRisk.READ),
+                descriptor("get_product", AgentToolRisk.READ),
+                descriptor("get_user_preferences", AgentToolRisk.READ),
+                descriptor("list_saved_products", AgentToolRisk.READ),
+                descriptor("prepare_carts", AgentToolRisk.REVERSIBLE_MUTATION),
+                descriptor("prepare_checkout", AgentToolRisk.CHECKOUT_PREPARATION)
+        );
+
+        assertThat(policy.available(modelContext("Find a coat").withAnonymousUser(true), descriptors))
+                .extracting(AgentToolDescriptor::name)
+                .containsExactly("search_catalog", "get_product", "prepare_carts");
+    }
+
     private AgentToolExecutionContext modelContext(String text) {
         return new AgentToolExecutionContext(
                 UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), text);

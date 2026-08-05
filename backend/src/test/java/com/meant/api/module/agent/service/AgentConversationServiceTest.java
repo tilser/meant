@@ -9,6 +9,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.meant.api.module.agent.constant.AgentConversationStatus;
 import com.meant.api.module.agent.constant.AgentRunStatus;
 import com.meant.api.module.agent.entity.AgentConversation;
 import com.meant.api.module.agent.entity.AgentRun;
@@ -47,6 +48,15 @@ class AgentConversationServiceTest {
             merchantLookupService,
             Clock.fixed(NOW, ZoneOffset.UTC)
     );
+
+    @Test
+    void countsActiveConversationsForGuestLimits() {
+        UUID userId = UUID.randomUUID();
+        when(conversationRepository.countByUserIdAndStatus(userId, AgentConversationStatus.ACTIVE))
+                .thenReturn(3L);
+
+        assertThat(service.activeConversationCount(userId)).isEqualTo(3L);
+    }
 
     @Test
     void validatesAndPersistsTheSelectedActiveMerchantScope() {

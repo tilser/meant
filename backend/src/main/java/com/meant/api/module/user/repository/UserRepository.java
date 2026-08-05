@@ -32,16 +32,18 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     /**
      * Atomically inserts the profile or, if it already exists, refreshes its email — leaving the
      * user-edited names untouched. Callers serialize first-time provisioning for the user before this
-     * query runs; {@code updated_at} only advances when the email actually changes, mirroring the
-     * entity's dirty-check guard so reads stay write-free.
+     * query runs; {@code updated_at} only advances when a non-null identity email actually changes,
+     * mirroring the entity's dirty-check guard so a stale anonymous token cannot downgrade a
+     * converted profile.
      */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """
             INSERT INTO users (id, email, first_name, surname, created_at, updated_at)
             VALUES (:id, :email, :firstName, :surname, :now, :now)
             ON CONFLICT (id) DO UPDATE
-                SET email = EXCLUDED.email,
-                    updated_at = CASE WHEN users.email IS DISTINCT FROM EXCLUDED.email
+                SET email = COALESCE(EXCLUDED.email, users.email),
+                    updated_at = CASE WHEN EXCLUDED.email IS NOT NULL
+                                           AND users.email IS DISTINCT FROM EXCLUDED.email
                                       THEN EXCLUDED.updated_at ELSE users.updated_at END
             """, nativeQuery = true)
     void insertOrRefreshFromIdentity(

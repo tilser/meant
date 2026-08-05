@@ -29,6 +29,8 @@ public interface AgentRunRepository extends JpaRepository<AgentRun, UUID> {
             Collection<AgentRunStatus> statuses
     );
 
+    boolean existsByConversationIdAndStatusIn(UUID conversationId, Collection<AgentRunStatus> statuses);
+
     List<AgentRun> findByStatusOrderByIdAsc(AgentRunStatus status, Pageable pageable);
 
     List<AgentRun> findByStatusAndIdGreaterThanOrderByIdAsc(

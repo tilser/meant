@@ -32,6 +32,9 @@ describe('account storage isolation', () => {
     expect(accountSessionStorageKey('meant.agentCartProvenance', 'user-a')).toBe(
       'meant.agentCartProvenance.buyerSafeV2.account.user-a',
     )
+    expect(accountSessionStorageKey('meant.activeAgentConversation', 'user-a')).toBe(
+      'meant.activeAgentConversation.buyerSafeV2.account.user-a',
+    )
     expect(() => accountSessionStorageKey('meant.locations', 'user-a')).toThrow(
       'Account storage key is not session-only',
     )

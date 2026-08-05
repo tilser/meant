@@ -62,7 +62,8 @@ public class AgentUserActionService {
                 reservation.actionId(),
                 command.summary(),
                 reservation.actionId()
-        ).withBuyerIp(command.buyerIp())
+        ).withAnonymousUser(command.anonymousUser())
+                .withBuyerIp(command.buyerIp())
                 .withMerchantId(reservation.merchantId());
         AgentMutationExecutionLane.Attempt attempt =
                 mutationExecutionLane.newAttempt(properties.toolDeadline());

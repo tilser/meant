@@ -46,6 +46,11 @@ public class AgentConversationService {
     private final MerchantLookupService merchantLookupService;
     private final Clock clock;
 
+    @Transactional(readOnly = true)
+    public long activeConversationCount(UUID userId) {
+        return conversationRepository.countByUserIdAndStatus(userId, AgentConversationStatus.ACTIVE);
+    }
+
     @Transactional
     public AgentConversationSummaryResult create(@Valid CreateAgentConversationCommand command) {
         Instant now = clock.instant();

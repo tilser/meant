@@ -3172,15 +3172,17 @@ export interface components {
         UserResponse: {
             /** Format: uuid */
             id: string;
-            email: string;
-            firstName: string;
-            surname: string;
-            profilePicturePath: string;
+            email?: string | null;
+            firstName?: string | null;
+            surname?: string | null;
+            profilePicturePath?: string | null;
             newsletter: boolean;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+            /** @description Whether this profile belongs to a temporary anonymous identity. */
+            anonymous: boolean;
         };
         UpdateUserTasteSignalRequest: {
             /** Format: double */

@@ -17,6 +17,7 @@ import com.meant.api.module.location.exception.LocationSearchException;
 import com.meant.api.module.order.exception.OrderException;
 import com.meant.api.module.review.exception.ReviewException;
 import com.meant.api.module.user.exception.SelectedOfferResolutionException;
+import com.meant.api.module.user.exception.PermanentAccountRequiredException;
 import com.meant.api.module.user.exception.UnsupportedProductSearchCurrencyException;
 import com.meant.api.module.user.exception.UserException;
 import com.meant.api.module.user.exception.UserProductSearchException;
@@ -165,6 +166,7 @@ public class GlobalApiExceptionHandler {
             MerchantIdentityLinkException.class,
             InvalidLocationException.class,
             OrderException.class,
+            PermanentAccountRequiredException.class,
             SelectedOfferResolutionException.class,
             UnsupportedProductSearchCurrencyException.class,
             UserException.class
@@ -273,7 +275,9 @@ public class GlobalApiExceptionHandler {
         logException(status, traceId, exception);
 
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
-        problem.setTitle(title(status));
+        problem.setTitle(exception instanceof PermanentAccountRequiredException
+                ? "Permanent account required"
+                : title(status));
         problem.setType(URI.create("https://api.meant.com/problems/" + code.getValue()));
         problem.setInstance(URI.create(request.getRequestURI()));
         problem.setProperty("timestamp", Instant.now());

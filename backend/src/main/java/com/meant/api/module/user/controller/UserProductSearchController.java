@@ -1,5 +1,6 @@
 package com.meant.api.module.user.controller;
 
+import com.meant.api.common.security.PermanentAccountRequired;
 import com.meant.api.module.user.constant.UserProductDiscoverySortDirection;
 import com.meant.api.module.user.constant.UserProductDiscoverySortField;
 import com.meant.api.module.user.controller.mapper.UserCommandMapper;
@@ -41,6 +42,7 @@ public class UserProductSearchController {
     private final UserProductSearchSuggestionService userProductSearchSuggestionService;
 
     @GetMapping("/me/product-search-suggestions")
+    @PermanentAccountRequired
     @Operation(
             summary = "Generate product search suggestions",
             description = "Generates four fresh product search suggestions from the current user's active shopping "
@@ -58,6 +60,7 @@ public class UserProductSearchController {
     }
 
     @GetMapping("/me/product-discovery")
+    @PermanentAccountRequired
     @Operation(
             summary = "Get product discovery context",
             description = "Returns product snapshots the authenticated user already owns through saved products "

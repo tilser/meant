@@ -36,6 +36,43 @@ class AuthenticatedUserTest {
         assertThat(user.surname()).isNull();
     }
 
+    @Test
+    void acceptsAnonymousIdentityWithoutEmailOrNameClaims() {
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "none")
+                .subject(UUID.randomUUID().toString())
+                .claim("is_anonymous", true)
+                .build();
+
+        AuthenticatedUser user = AuthenticatedUser.fromJwt(jwt);
+
+        assertThat(user.email()).isNull();
+        assertThat(user.firstName()).isNull();
+        assertThat(user.surname()).isNull();
+        assertThat(user.anonymous()).isTrue();
+    }
+
+    @Test
+    void treatsSupabaseAnonymousEmptyEmailAsMissing() {
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "none")
+                .subject(UUID.randomUUID().toString())
+                .claim("email", "  ")
+                .claim("is_anonymous", true)
+                .build();
+
+        AuthenticatedUser user = AuthenticatedUser.fromJwt(jwt);
+
+        assertThat(user.email()).isNull();
+    }
+
+    @Test
+    void treatsMissingAnonymousClaimAsPermanent() {
+        AuthenticatedUser user = AuthenticatedUser.fromJwt(jwt(Map.of()));
+
+        assertThat(user.anonymous()).isFalse();
+    }
+
     private Jwt jwt(Map<String, Object> claims) {
         Jwt.Builder builder = Jwt.withTokenValue("token")
                 .header("alg", "none")

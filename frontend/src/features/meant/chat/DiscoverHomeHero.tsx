@@ -16,6 +16,9 @@ export function DiscoverHomeHero({
   prompts,
   onSubmit,
   loading,
+  guestMode,
+  initialBrief,
+  onHistoryOpen,
   merchants,
   selectedMerchantId,
   merchantsLoading,
@@ -33,6 +36,9 @@ export function DiscoverHomeHero({
   prompts: readonly string[]
   onSubmit: (query: string) => void
   loading: boolean
+  guestMode: boolean
+  initialBrief: string
+  onHistoryOpen?: () => void
   merchants: readonly MerchantProfile[]
   selectedMerchantId: string | null
   merchantsLoading: boolean
@@ -69,6 +75,10 @@ export function DiscoverHomeHero({
     inputRef.current?.focus()
   }, [replyDraft])
 
+  useEffect(() => {
+    if (initialBrief) setValue((current) => current || initialBrief)
+  }, [initialBrief])
+
   const submit = (text?: string) => {
     if (loading) {
       return
@@ -93,14 +103,15 @@ export function DiscoverHomeHero({
   return (
     <header className="mt-hero">
       <div className="mt-mono mt-hero-eyebrow">
-        {greeting}, {profile.name}
+        {guestMode ? 'Discover' : `${greeting}, ${profile.name}`}
       </div>
       <h1 className="mt-hero-title">
         Everything here is <em>Meant</em> for you.
       </h1>
       <p className="mt-hero-sub">
-        Ask for products across supported merchants. Meant already knows you prefer{' '}
-        {profile.summary}
+        {guestMode
+          ? 'Tell Meant what you are looking for and what you will not compromise on.'
+          : `Ask for products across supported merchants. Meant already knows you prefer ${profile.summary}`}
       </p>
       {replyDraft ? (
         <div className="mt-ask-replyto mt-hero-replyto">
@@ -137,6 +148,7 @@ export function DiscoverHomeHero({
           onChange={(event) => setValue(event.target.value)}
           placeholder={discoverSearchPlaceholder(isPhone)}
           disabled={loading}
+          maxLength={1000}
         />
         <button type="submit" className="mt-search-go" aria-label="Ask" disabled={loading}>
           <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden>
@@ -163,6 +175,7 @@ export function DiscoverHomeHero({
           activeId={activeThreadId}
           onSelect={onHistorySelect}
           onDelete={onHistoryDelete}
+          onOpen={onHistoryOpen}
         />
       </div>
       <div className="mt-prompts">

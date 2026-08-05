@@ -1,5 +1,6 @@
 package com.meant.api.module.order.controller;
 
+import com.meant.api.common.security.PermanentAccountRequired;
 import com.meant.api.module.order.constant.OrderListPagination;
 import com.meant.api.module.order.controller.response.OrderListResponse;
 import com.meant.api.module.order.controller.response.OrderResponse;
@@ -29,6 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 @SecurityRequirement(name = "bearer-jwt")
 @Tag(name = "Orders", description = "Merchant-backed user orders")
+@PermanentAccountRequired
 public class OrderController {
 
     private final OrderService orderService;

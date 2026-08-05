@@ -229,7 +229,8 @@ public class AgentRunCoordinator {
                 runId,
                 run.getTriggeringMessageId(),
                 context.triggeringUserText()
-        ).withVisibleProductContext(context.visibleProductContext())
+        ).withAnonymousUser(run.isAnonymousUser())
+                .withVisibleProductContext(context.visibleProductContext())
                 .withMerchantId(context.merchantId())
                 .withExecutionOwner(executionOwner)
                 .withBuyerIp(run.getBuyerIp())

@@ -15,6 +15,7 @@ import java.lang.reflect.Proxy;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -46,6 +47,35 @@ class UserServiceTest {
         assertThat(created.getCreatedAt()).isNotNull();
         assertThat(created.getUpdatedAt()).isNotNull();
         assertThat(userRepository.insertCount).isEqualTo(1);
+    }
+
+    @Test
+    void anonymousProfileProvisioningIsIdempotentAndConversionFillsEmail() {
+        UUID id = UUID.randomUUID();
+
+        User anonymous = userService.ensureProfile(new EnsureUserProfileCommand(id, "  ", null, null));
+        assertThat(anonymous.getEmail()).isNull();
+        User restored = userService.ensureProfile(new EnsureUserProfileCommand(id, null, null, null));
+        User converted = userService.ensureProfile(
+                new EnsureUserProfileCommand(id, "ada@example.com", "Ada", "Lovelace"));
+
+        assertThat(restored).isSameAs(anonymous);
+        assertThat(converted.getId()).isEqualTo(id);
+        assertThat(converted.getEmail()).isEqualTo("ada@example.com");
+        assertThat(converted.getFirstName()).isEqualTo("Ada");
+        assertThat(userRepository.insertCount).isEqualTo(1);
+    }
+
+    @Test
+    void staleAnonymousIdentityCannotRemoveAConvertedEmail() {
+        UUID id = UUID.randomUUID();
+        userService.ensureProfile(new EnsureUserProfileCommand(id, null, null, null));
+        userService.ensureProfile(new EnsureUserProfileCommand(id, "ada@example.com", "Ada", null));
+
+        User restoredFromStaleToken = userService.ensureProfile(
+                new EnsureUserProfileCommand(id, null, null, null));
+
+        assertThat(restoredFromStaleToken.getEmail()).isEqualTo("ada@example.com");
     }
 
     @Test
@@ -226,7 +256,7 @@ class UserServiceTest {
                     (proxy, method, args) -> switch (method.getName()) {
                         case "findById" -> Optional.ofNullable(usersById.get(args[0]));
                         case "findByEmail" -> usersById.values().stream()
-                                .filter(user -> user.getEmail().equals(args[0]))
+                                .filter(user -> Objects.equals(user.getEmail(), args[0]))
                                 .findFirst();
                         case "lockProfileProvisioning" -> 1;
                         // Mirrors the native INSERT ... ON CONFLICT: insert with names, or on conflict
@@ -250,7 +280,9 @@ class UserServiceTest {
                                         .build());
                                 insertCount++;
                             } else {
-                                existing.updateEmail(email, now);
+                                if (email != null) {
+                                    existing.updateEmail(email, now);
+                                }
                             }
                             yield null;
                         }

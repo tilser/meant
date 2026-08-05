@@ -1,5 +1,6 @@
 package com.meant.api.module.merchant.controller;
 
+import com.meant.api.common.security.PermanentAccountRequired;
 import com.meant.api.module.merchant.controller.request.MerchantSemanticProductSearchRequest;
 import com.meant.api.module.merchant.controller.request.MerchantSemanticSearchRequest;
 import com.meant.api.module.merchant.controller.request.MerchantIdentityCallbackRequest;
@@ -76,6 +77,7 @@ public class MerchantController {
     }
 
     @GetMapping("/identity-links")
+    @PermanentAccountRequired
     @Operation(
             summary = "List connected merchant accounts",
             description = "Returns the current user's merchant identity-linking connection state."
@@ -93,6 +95,7 @@ public class MerchantController {
     }
 
     @PostMapping("/{merchantId}/identity-link/authorization")
+    @PermanentAccountRequired
     @Operation(
             summary = "Start merchant account linking",
             description = "Creates a PKCE OAuth 2.0 authorization URL for merchants that advertise identity linking."
@@ -112,6 +115,7 @@ public class MerchantController {
     }
 
     @PostMapping("/identity-links/oauth/callback")
+    @PermanentAccountRequired
     @Operation(
             summary = "Complete merchant account linking",
             description = "Stores scoped merchant OAuth tokens after the client receives an authorization code."
@@ -135,6 +139,7 @@ public class MerchantController {
     }
 
     @DeleteMapping("/identity-links/{merchantId}")
+    @PermanentAccountRequired
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(
             summary = "Revoke a connected merchant account",

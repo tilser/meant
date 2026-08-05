@@ -1,5 +1,7 @@
 package com.meant.api.module.agent.controller;
 
+import static com.meant.api.module.user.service.PermanentAccountPolicy.requirePermanentAccount;
+
 import com.meant.api.common.util.AcceptLanguageParser;
 import com.meant.api.module.agent.controller.request.AgentUserActionRequest;
 import com.meant.api.module.agent.controller.request.CreateAgentConversationRequest;
@@ -34,6 +36,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -59,6 +62,18 @@ public class AgentConversationController {
 
     private static final int DEFAULT_LIST_LIMIT = 30;
     private static final int DEFAULT_MESSAGE_LIMIT = 100;
+    private static final int ANONYMOUS_CONVERSATION_LIMIT = 3;
+    private static final Set<String> ANONYMOUS_USER_ACTIONS = Set.of(
+            "pin_product",
+            "unpin_product",
+            "find_similar_products",
+            "prepare_carts",
+            "get_active_carts",
+            "get_cart",
+            "add_cart_line",
+            "update_cart_line",
+            "remove_cart_line"
+    );
 
     private final AgentConversationService conversationService;
     private final AgentTurnService turnService;
@@ -77,7 +92,12 @@ public class AgentConversationController {
             @AuthenticationPrincipal Jwt jwt,
             @Valid @RequestBody CreateAgentConversationRequest request
     ) {
-        UUID userId = AuthenticatedUser.fromJwt(jwt).id();
+        AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
+        UUID userId = authenticatedUser.id();
+        if (authenticatedUser.anonymous()
+                && conversationService.activeConversationCount(userId) >= ANONYMOUS_CONVERSATION_LIMIT) {
+            requirePermanentAccount(authenticatedUser);
+        }
         return AgentConversationSummaryResponse.from(
                 conversationService.create(new CreateAgentConversationCommand(
                         userId,
@@ -101,8 +121,15 @@ public class AgentConversationController {
             @RequestParam(defaultValue = "false") boolean archived,
             @RequestParam(defaultValue = "30") int limit
     ) {
-        UUID userId = AuthenticatedUser.fromJwt(jwt).id();
+        AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
+        UUID userId = authenticatedUser.id();
+        if (authenticatedUser.anonymous() && archived) {
+            requirePermanentAccount(authenticatedUser);
+        }
         int requestedLimit = limit == 0 ? DEFAULT_LIST_LIMIT : limit;
+        if (authenticatedUser.anonymous()) {
+            requestedLimit = Math.min(requestedLimit, ANONYMOUS_CONVERSATION_LIMIT);
+        }
         return conversationService.list(new ListAgentConversationsQuery(userId, archived, requestedLimit)).stream()
                 .map(AgentConversationSummaryResponse::from)
                 .toList();
@@ -130,7 +157,11 @@ public class AgentConversationController {
             @PathVariable UUID conversationId,
             @Valid @RequestBody UpdateAgentConversationRequest request
     ) {
-        UUID userId = AuthenticatedUser.fromJwt(jwt).id();
+        AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
+        if (authenticatedUser.anonymous() && request.archived() != null) {
+            requirePermanentAccount(authenticatedUser);
+        }
+        UUID userId = authenticatedUser.id();
         return AgentConversationSummaryResponse.from(conversationService.update(
                 new UpdateAgentConversationCommand(userId, conversationId, request.title(), request.archived())
         ));
@@ -159,7 +190,8 @@ public class AgentConversationController {
             @Valid @RequestBody SubmitAgentTurnRequest request,
             HttpServletRequest httpRequest
     ) {
-        UUID userId = AuthenticatedUser.fromJwt(jwt).id();
+        AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
+        UUID userId = authenticatedUser.id();
         var accepted = turnService.submit(new SubmitAgentTurnCommand(
                 userId,
                 conversationId,
@@ -184,7 +216,8 @@ public class AgentConversationController {
                                 .toList()),
                 httpRequest.getRemoteAddr(),
                 userAgent(httpRequest),
-                language(httpRequest)
+                language(httpRequest),
+                authenticatedUser.anonymous()
         ));
         runCoordinator.schedule(accepted.runId());
         return SubmitAgentTurnResponse.from(accepted);
@@ -210,7 +243,11 @@ public class AgentConversationController {
             @Valid @RequestBody AgentUserActionRequest request,
             HttpServletRequest httpRequest
     ) {
-        UUID userId = AuthenticatedUser.fromJwt(jwt).id();
+        AuthenticatedUser authenticatedUser = AuthenticatedUser.fromJwt(jwt);
+        if (authenticatedUser.anonymous() && !ANONYMOUS_USER_ACTIONS.contains(request.toolName())) {
+            requirePermanentAccount(authenticatedUser);
+        }
+        UUID userId = authenticatedUser.id();
         return AgentUserActionResponse.from(userActionService.perform(new RecordAgentUserActionCommand(
                 userId,
                 conversationId,
@@ -218,7 +255,8 @@ public class AgentConversationController {
                 request.argumentsJson(),
                 request.idempotencyKey(),
                 request.summary(),
-                httpRequest.getRemoteAddr()
+                httpRequest.getRemoteAddr(),
+                authenticatedUser.anonymous()
         )));
     }
 }

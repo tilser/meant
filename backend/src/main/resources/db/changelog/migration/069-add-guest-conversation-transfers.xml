@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="069-add-guest-conversation-transfers" author="codex">
+        <comment>
+            Store only hashes of short-lived guest conversation transfer capabilities. A source
+            conversation has one rotating capability and can be imported only once.
+        </comment>
+        <createTable tableName="agent_guest_conversation_transfer">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="token_hash" type="text">
+                <constraints nullable="false" unique="true"
+                             uniqueConstraintName="uk_agent_guest_transfer_token_hash"/>
+            </column>
+            <column name="guest_user_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="conversation_id" type="uuid">
+                <constraints nullable="false" unique="true"
+                             uniqueConstraintName="uk_agent_guest_transfer_conversation"/>
+            </column>
+            <column name="expires_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="consumed_at" type="timestamp with time zone"/>
+            <column name="target_user_id" type="uuid"/>
+            <column name="created_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="timestamp with time zone">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addForeignKeyConstraint
+                baseTableName="agent_guest_conversation_transfer"
+                baseColumnNames="guest_user_id"
+                referencedTableName="users"
+                referencedColumnNames="id"
+                onDelete="CASCADE"
+                constraintName="fk_agent_guest_transfer_guest_user"/>
+        <addForeignKeyConstraint
+                baseTableName="agent_guest_conversation_transfer"
+                baseColumnNames="conversation_id"
+                referencedTableName="agent_conversation"
+                referencedColumnNames="id"
+                onDelete="CASCADE"
+                constraintName="fk_agent_guest_transfer_conversation"/>
+        <addForeignKeyConstraint
+                baseTableName="agent_guest_conversation_transfer"
+                baseColumnNames="target_user_id"
+                referencedTableName="users"
+                referencedColumnNames="id"
+                onDelete="SET NULL"
+                constraintName="fk_agent_guest_transfer_target_user"/>
+        <createIndex tableName="agent_guest_conversation_transfer"
+                     indexName="idx_agent_guest_transfer_expiry">
+            <column name="expires_at"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>

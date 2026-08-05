@@ -51,4 +51,8 @@ public interface AgentProductInteractionRepository extends JpaRepository<AgentPr
             @Param("userId") UUID userId,
             Pageable pageable
     );
+
+    long countByUserIdAndPinnedTrue(UUID userId);
+
+    boolean existsByUserIdAndCanonicalProductKeyAndPinnedTrue(UUID userId, String canonicalProductKey);
 }

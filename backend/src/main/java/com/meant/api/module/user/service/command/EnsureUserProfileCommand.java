@@ -11,8 +11,12 @@ import java.util.UUID;
  */
 public record EnsureUserProfileCommand(
         @NotNull UUID id,
-        @NotNull @Email String email,
+        @Email String email,
         String firstName,
         String surname
 ) {
+
+    public EnsureUserProfileCommand {
+        email = email == null || email.isBlank() ? null : email.trim();
+    }
 }

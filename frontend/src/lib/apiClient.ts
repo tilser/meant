@@ -2063,6 +2063,12 @@ export interface AgentConversationSummaryProfile {
   updatedAt: string
 }
 
+export interface GuestConversationTransferTokenProfile {
+  token: string
+  conversationId: string
+  expiresAt: string
+}
+
 export interface AgentConversationDetailProfile extends AgentConversationSummaryProfile {
   rollingSummary: string | null
   summaryVersion: number
@@ -2132,6 +2138,48 @@ export interface AgentRunEventStreamInput extends AccountBoundRequestOptions {
 
 const agentConversationUrl = (conversationId: string): string =>
   `${API_URL}/api/v1/users/me/agent/conversations/${encodeURIComponent(conversationId)}`
+
+const guestConversationTransferUrl = `${API_URL}/api/v1/users/me/agent/guest-conversation-transfers`
+
+export async function issueGuestConversationTransfer(input: {
+  conversationId: string
+  expectedUserId?: string
+  signal?: AbortSignal
+}): Promise<GuestConversationTransferTokenProfile> {
+  const response = await fetch(guestConversationTransferUrl, {
+    method: 'POST',
+    headers: {
+      ...(await authHeaders(input.expectedUserId)),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ conversationId: input.conversationId }),
+    signal: input.signal,
+  })
+  return parseJsonResponse<GuestConversationTransferTokenProfile>(
+    response,
+    'Failed to prepare the guest conversation',
+  )
+}
+
+export async function claimGuestConversationTransfer(input: {
+  token: string
+  expectedUserId?: string
+  signal?: AbortSignal
+}): Promise<AgentConversationSummaryProfile> {
+  const response = await fetch(`${guestConversationTransferUrl}/claim`, {
+    method: 'POST',
+    headers: {
+      ...(await authHeaders(input.expectedUserId)),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ token: input.token }),
+    signal: input.signal,
+  })
+  return parseJsonResponse<AgentConversationSummaryProfile>(
+    response,
+    'Failed to import the guest conversation',
+  )
+}
 
 export async function createAgentConversation(input?: {
   title?: string

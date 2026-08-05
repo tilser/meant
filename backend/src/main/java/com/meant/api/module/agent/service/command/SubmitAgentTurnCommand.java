@@ -16,7 +16,8 @@ public record SubmitAgentTurnCommand(
         @Valid ShelfContextCommand shelfContext,
         @Size(max = 128) String buyerIp,
         @Size(max = 512) String userAgent,
-        @Size(max = AcceptLanguageParser.MAXIMUM_LANGUAGE_TAG_LENGTH) String language
+        @Size(max = AcceptLanguageParser.MAXIMUM_LANGUAGE_TAG_LENGTH) String language,
+        boolean anonymousUser
 ) {
 
     private static final int MAXIMUM_USER_AGENT_LENGTH = 512;
@@ -32,7 +33,7 @@ public record SubmitAgentTurnCommand(
             String message,
             String clientTurnId
     ) {
-        this(userId, conversationId, message, clientTurnId, null, null, null, null, null);
+        this(userId, conversationId, message, clientTurnId, null, null, null, null, null, false);
     }
 
     public SubmitAgentTurnCommand(
@@ -42,7 +43,7 @@ public record SubmitAgentTurnCommand(
             String clientTurnId,
             String buyerIp
     ) {
-        this(userId, conversationId, message, clientTurnId, null, null, buyerIp, null, null);
+        this(userId, conversationId, message, clientTurnId, null, null, buyerIp, null, null, false);
     }
 
     public SubmitAgentTurnCommand(
@@ -54,7 +55,7 @@ public record SubmitAgentTurnCommand(
             String buyerIp
     ) {
         this(userId, conversationId, message, clientTurnId,
-                visibleProductContext, null, buyerIp, null, null);
+                visibleProductContext, null, buyerIp, null, null, false);
     }
 
     public SubmitAgentTurnCommand(
@@ -68,7 +69,22 @@ public record SubmitAgentTurnCommand(
             String userAgent
     ) {
         this(userId, conversationId, message, clientTurnId,
-                visibleProductContext, shelfContext, buyerIp, userAgent, null);
+                visibleProductContext, shelfContext, buyerIp, userAgent, null, false);
+    }
+
+    public SubmitAgentTurnCommand(
+            UUID userId,
+            UUID conversationId,
+            String message,
+            String clientTurnId,
+            VisibleProductContextCommand visibleProductContext,
+            ShelfContextCommand shelfContext,
+            String buyerIp,
+            String userAgent,
+            String language
+    ) {
+        this(userId, conversationId, message, clientTurnId,
+                visibleProductContext, shelfContext, buyerIp, userAgent, language, false);
     }
 
     private static String sanitizedUserAgent(String value) {

@@ -1,5 +1,6 @@
 import type { ActiveCheckoutSession } from './checkoutTypes'
 import { merchantCheckoutUrl } from './checkoutSessionUi'
+import { trackMeantEvent } from '../analytics'
 
 export function MerchantCheckoutLink({
   session,
@@ -23,6 +24,7 @@ export function MerchantCheckoutLink({
       target="_blank"
       rel="noopener noreferrer"
       aria-label={`${label} (opens in a new tab)`}
+      onClick={() => trackMeantEvent('merchant_outbound_clicked')}
     >
       {label}
     </a>

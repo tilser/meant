@@ -85,4 +85,16 @@ describe('agent Discovery home', () => {
     expect(markup).toContain('Workbench')
     expect(markup).not.toContain('Loading your agent conversation')
   })
+
+  test('uses neutral guest copy without rendering fake profile data', () => {
+    const markup = renderToStaticMarkup(
+      <AgentDiscoverView {...props} guestMode initialBrief="wool coat under 150" />,
+    )
+
+    expect(markup).toContain(
+      'Tell Meant what you are looking for and what you will not compromise on.',
+    )
+    expect(markup).not.toContain(`Good morning, ${PROFILE.name}`)
+    expect(markup).not.toContain(PROFILE.summary)
+  })
 })

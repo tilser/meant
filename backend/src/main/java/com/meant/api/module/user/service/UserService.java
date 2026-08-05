@@ -11,6 +11,7 @@ import com.meant.api.module.user.service.query.GetUserQuery;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -100,7 +101,8 @@ public class UserService {
      */
     private User ensureProfileInternal(EnsureUserProfileCommand command, Instant now) {
         return userRepository.findById(command.id())
-                .filter(existing -> existing.getEmail().equals(command.email())
+                .filter(existing -> (command.email() == null
+                        || Objects.equals(existing.getEmail(), command.email()))
                         && (StringUtils.hasText(existing.getFirstName())
                                 || !StringUtils.hasText(command.firstName())))
                 .or(() -> provisionProfile(command, now))
@@ -112,7 +114,9 @@ public class UserService {
         Optional<User> existing = userRepository.findById(command.id());
         if (existing.isPresent()) {
             User user = existing.orElseThrow();
-            user.updateEmail(command.email(), now);
+            if (command.email() != null) {
+                user.updateEmail(command.email(), now);
+            }
             if (!StringUtils.hasText(user.getFirstName()) && StringUtils.hasText(command.firstName())) {
                 user.updateProfile(command.firstName(), command.surname(), now);
             }

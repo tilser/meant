@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="070-preserve-agent-run-anonymous-identity" author="codex">
+        <comment>
+            Preserve the authenticated identity class on queued work so asynchronous tool
+            authorization cannot lose the guest restrictions after the HTTP request ends.
+        </comment>
+        <addColumn tableName="agent_run">
+            <column name="anonymous_user" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+        <dropDefaultValue tableName="agent_run" columnName="anonymous_user"/>
+    </changeSet>
+
+</databaseChangeLog>

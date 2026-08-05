@@ -1,5 +1,6 @@
 package com.meant.api.module.user.controller;
 
+import com.meant.api.common.security.PermanentAccountRequired;
 import com.meant.api.module.user.constant.UserInventoryCategory;
 import com.meant.api.module.user.controller.mapper.UserCommandMapper;
 import com.meant.api.module.user.controller.request.AddUserInventoryItemRequest;
@@ -42,6 +43,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 @SecurityRequirement(name = "bearer-jwt")
 @Tag(name = "Users", description = "Profile endpoints for the authenticated Supabase user")
+@PermanentAccountRequired
 public class UserInventoryController {
 
     private final UserInventoryService userInventoryService;

@@ -2,6 +2,24 @@ import { expect, test } from 'bun:test'
 
 import type { components, paths } from './schema'
 
+test('user profiles expose anonymous identity state and a nullable email', () => {
+  type User = components['schemas']['UserResponse']
+  const fields: Array<keyof User> = ['id', 'email', 'anonymous']
+  const anonymousProfile: User = {
+    id: '00000000-0000-0000-0000-000000000001',
+    firstName: '',
+    surname: '',
+    profilePicturePath: '',
+    newsletter: false,
+    createdAt: '2026-08-05T00:00:00Z',
+    updatedAt: '2026-08-05T00:00:00Z',
+    anonymous: true,
+  }
+
+  expect(fields).toContain('anonymous')
+  expect(anonymousProfile.email).toBeUndefined()
+})
+
 test('generated OpenAPI schema exposes only federated V1 search routes', () => {
   const expectedPaths: Array<keyof paths> = [
     '/api/v1/users/me/product-searches',

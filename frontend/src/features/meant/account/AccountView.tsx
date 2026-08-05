@@ -360,7 +360,7 @@ export function AccountView({
           </label>
           <label className="mt-field">
             <span className="mt-field-label mt-mono">Email</span>
-            <input className="mt-input" type="email" value={user.email} readOnly disabled />
+            <input className="mt-input" type="email" value={user.email ?? ''} readOnly disabled />
             <span className="mt-field-hint">
               Your email is your sign-in identity and can't be changed here.
             </span>

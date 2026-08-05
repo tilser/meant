@@ -24,6 +24,7 @@ import {
   type MerchantProfile,
 } from '../../../lib/apiClient'
 import { ApiError } from '../../../lib/apiError'
+import { trackMeantEvent } from '../analytics'
 import { AskComposer } from '../ask/AskComposer'
 import type {
   ActiveCheckoutSession,
@@ -47,6 +48,8 @@ import type {
   VisibleProductContextChange,
 } from '../chat/types'
 import { PROFILE } from '../data'
+import { accountSessionStorageKey } from '../shared/accountStorage'
+import { useSessionStoredState } from '../shared/storage'
 import { prepareDirectProductPurchase } from '../product/directPurchasePreparation'
 import { productImageUrl } from '../product/productSnapshots'
 import type {
@@ -211,6 +214,10 @@ function shelfMessageSnapshot(message: DiscoverChatMessage): ShelfMessageSnapsho
 
 export interface AgentDiscoverViewProps {
   expectedUserId: string
+  guestMode?: boolean
+  initialBrief?: string
+  onPermanentAccountRequired?: (reason: 'history' | 'new-conversation' | 'protected-action') => void
+  onRememberPreferences?: (preferenceIds: readonly string[]) => void
   profile: typeof PROFILE
   greeting: string
   prompts: readonly string[]
@@ -272,6 +279,10 @@ export interface AgentDiscoverViewProps {
 
 export function AgentDiscoverView({
   expectedUserId,
+  guestMode = false,
+  initialBrief = '',
+  onPermanentAccountRequired = () => undefined,
+  onRememberPreferences = () => undefined,
   profile,
   greeting,
   prompts,
@@ -323,7 +334,10 @@ export function AgentDiscoverView({
   const [archivedConversations, setArchivedConversations] = useState<
     AgentConversationSummaryProfile[]
   >([])
-  const [activeConversationId, setActiveConversationId] = useState<string | null>(null)
+  const [activeConversationId, setActiveConversationId] = useSessionStoredState<string | null>(
+    accountSessionStorageKey('meant.activeAgentConversation', expectedUserId),
+    null,
+  )
   const [draftMerchantId, setDraftMerchantId] = useState<string | null>(null)
   const [conversation, setConversation] = useState<AgentConversationDetailProfile | null>(null)
   const [activeRunId, setActiveRunId] = useState<string | null>(null)
@@ -343,6 +357,7 @@ export function AgentDiscoverView({
   )
   const [trayClearing, setTrayClearing] = useState(false)
   const [newsletterPending, setNewsletterPending] = useState(false)
+  const [briefConsumed, setBriefConsumed] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [shareOpen, setShareOpen] = useState(false)
   const [localMessagesByConversationId, setLocalMessagesByConversationId] = useState<
@@ -434,14 +449,17 @@ export function AgentDiscoverView({
     [],
   )
 
-  const updateActiveConversationId = useCallback((next: string | null) => {
-    if (activeConversationIdRef.current !== next) {
-      visibleProductContextRef.current = null
-      visibleProductContextsRef.current.clear()
-    }
-    activeConversationIdRef.current = next
-    setActiveConversationId(next)
-  }, [])
+  const updateActiveConversationId = useCallback(
+    (next: string | null) => {
+      if (activeConversationIdRef.current !== next) {
+        visibleProductContextRef.current = null
+        visibleProductContextsRef.current.clear()
+      }
+      activeConversationIdRef.current = next
+      setActiveConversationId(next)
+    },
+    [setActiveConversationId],
+  )
 
   const captureVisibleProductContext = useCallback<VisibleProductContextChange>(
     (sourceMessageId, context) => {
@@ -511,15 +529,17 @@ export function AgentDiscoverView({
     const requestId = refreshListsRequestRef.current + 1
     refreshListsRequestRef.current = requestId
     const [active, archived] = await Promise.all([
-      getAgentConversations({ expectedUserId, archived: false, limit: 50 }),
-      getAgentConversations({ expectedUserId, archived: true, limit: 50 }),
+      getAgentConversations({ expectedUserId, archived: false, limit: guestMode ? 3 : 50 }),
+      guestMode
+        ? Promise.resolve([])
+        : getAgentConversations({ expectedUserId, archived: true, limit: 50 }),
     ])
     if (refreshListsRequestRef.current === requestId) {
       setConversations(active)
       setArchivedConversations(archived)
     }
     return active
-  }, [expectedUserId])
+  }, [expectedUserId, guestMode])
 
   const refreshConversation = useCallback(
     async (conversationId: string): Promise<AgentConversationDetailProfile> => {
@@ -668,7 +688,7 @@ export function AgentDiscoverView({
       }
     })()
     return () => controller.abort()
-  }, [expectedUserId, refreshLists])
+  }, [expectedUserId, guestMode, refreshLists])
 
   useEffect(() => {
     if (!activeConversationId) return
@@ -882,6 +902,11 @@ export function AgentDiscoverView({
     () => productsFromAgentArtifacts(combinedConversation?.artifacts ?? []),
     [combinedConversation?.artifacts],
   )
+  const provisionalPreferences = useMemo(() => {
+    if (!guestMode || products.length === 0) return []
+    const matchedIds = new Set(products.flatMap((product) => product.satisfies))
+    return preferences.filter((preference) => matchedIds.has(preference.id)).slice(0, 4)
+  }, [guestMode, preferences, products])
   const currentProductSnapshots = useMemo(
     () => currentAgentProductSnapshots(combinedConversation?.artifacts ?? []),
     [combinedConversation?.artifacts],
@@ -891,6 +916,22 @@ export function AgentDiscoverView({
       onAgentProductsSnapshot?.(currentProductSnapshots)
     }
   }, [currentProductSnapshots, onAgentProductsSnapshot])
+  const resultsViewedConversationIdsRef = useRef(new Set<string>())
+  useEffect(() => {
+    const conversationId = combinedConversation?.conversationId
+    if (
+      !conversationId ||
+      currentProductSnapshots.length === 0 ||
+      resultsViewedConversationIdsRef.current.has(conversationId)
+    ) {
+      return
+    }
+    resultsViewedConversationIdsRef.current.add(conversationId)
+    trackMeantEvent('agent_results_viewed', {
+      anonymous: guestMode,
+      conversation_id: conversationId,
+    })
+  }, [combinedConversation?.conversationId, currentProductSnapshots.length, guestMode])
   const allProducts = useMemo(() => {
     const byId = new Map(cartProducts.map((product) => [product.id, product]))
     products.forEach((product) => byId.set(product.id, product))
@@ -1173,6 +1214,8 @@ export function AgentDiscoverView({
       if (loading || !queuedText) {
         return false
       }
+      const campaignBriefSubmission = !briefConsumed && Boolean(initialBrief.trim())
+      setBriefConsumed(true)
       const requestedConversationId = activeConversationIdRef.current
       const requestedConversation =
         conversationRef.current?.conversationId === requestedConversationId
@@ -1232,6 +1275,21 @@ export function AgentDiscoverView({
               shelfContext: agentShelfContext(shelf),
               expectedUserId,
             })
+            if (targetConversation.latestSequence > 0) {
+              const refinementOrdinal = targetConversation.messages.filter(
+                (message) => message.role === 'USER',
+              ).length
+              trackMeantEvent('agent_refinement_submitted', {
+                anonymous: guestMode,
+                conversation_id: targetConversationId,
+                refinement_ordinal: refinementOrdinal,
+              })
+            } else if (campaignBriefSubmission) {
+              trackMeantEvent('brief_submitted', {
+                anonymous: guestMode,
+                conversation_id: targetConversationId,
+              })
+            }
             onAgentRunSubmitted?.(turn.runId, targetConversationId, submittedCartRevision)
             if (activeConversationIdRef.current === targetConversationId) {
               updateConversationState((current) => {
@@ -1253,6 +1311,10 @@ export function AgentDiscoverView({
               }
             }
           } catch (caught) {
+            if (caught instanceof ApiError && caught.code === 'PERMANENT_ACCOUNT_REQUIRED') {
+              onPermanentAccountRequired('new-conversation')
+              return
+            }
             const chatRejection = agentTurnChatRejectionMessage(caught)
             if (chatRejection && targetConversationId) {
               appendLocalMessage(
@@ -1277,11 +1339,15 @@ export function AgentDiscoverView({
     },
     [
       appendLocalMessage,
+      briefConsumed,
       expectedUserId,
       invalidateConversationSnapshotRequests,
       loading,
+      guestMode,
+      initialBrief,
       onCaptureAgentCartRevision,
       onAgentRunSubmitted,
+      onPermanentAccountRequired,
       draftMerchantId,
       shelf,
       updateActiveConversationId,
@@ -1332,6 +1398,10 @@ export function AgentDiscoverView({
             expectedUserId,
           })
         } catch (caught) {
+          if (caught instanceof ApiError && caught.code === 'PERMANENT_ACCOUNT_REQUIRED') {
+            onPermanentAccountRequired('protected-action')
+            return null
+          }
           actionIdempotencyRef.current.failed(pendingKey, caught)
           setError(caught instanceof Error ? caught.message : 'That action could not be completed.')
           return null
@@ -1368,6 +1438,7 @@ export function AgentDiscoverView({
       invalidateConversationSnapshotRequests,
       onAgentCartSnapshot,
       onCaptureAgentCartRevision,
+      onPermanentAccountRequired,
       updateConversationState,
     ],
   )
@@ -1386,6 +1457,10 @@ export function AgentDiscoverView({
 
   const togglePin = (product: Product) => {
     const pinned = interactionState.pinned.has(product.id)
+    if (guestMode && !pinned && pinnedProducts.length >= 2) {
+      onPermanentAccountRequired('protected-action')
+      return
+    }
     void performAction(
       pinned ? 'unpin_product' : 'pin_product',
       { canonicalProductKey: product.id, offerKey: productOfferAnchorKey(product) ?? undefined },
@@ -1606,6 +1681,14 @@ export function AgentDiscoverView({
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }, [updateActiveConversationId, updateActiveRunId, updateConversationState])
 
+  const startNewConversation = useCallback(() => {
+    if (guestMode && conversations.length >= 3) {
+      onPermanentAccountRequired('new-conversation')
+      return
+    }
+    returnHome()
+  }, [conversations.length, guestMode, onPermanentAccountRequired, returnHome])
+
   const selectConversation = useCallback(
     async (conversationId: string) => {
       const archived = archivedConversations.find((item) => item.conversationId === conversationId)
@@ -1635,8 +1718,8 @@ export function AgentDiscoverView({
   useEffect(() => {
     if (handledHomeRequestRef.current === homeRequestId) return
     handledHomeRequestRef.current = homeRequestId
-    returnHome()
-  }, [homeRequestId, returnHome])
+    startNewConversation()
+  }, [homeRequestId, startNewConversation])
 
   useEffect(() => {
     if (
@@ -1829,6 +1912,8 @@ export function AgentDiscoverView({
             prompts={prompts}
             onSubmit={(text) => void submit(text)}
             loading={loading || submitting}
+            guestMode={guestMode}
+            initialBrief={briefConsumed ? '' : initialBrief}
             merchants={merchants}
             selectedMerchantId={draftMerchantId}
             merchantsLoading={merchantsLoading}
@@ -1869,8 +1954,8 @@ export function AgentDiscoverView({
             threads={activeThreads}
             activeId={activeConversationId}
             onSelect={(id) => void selectConversation(id)}
-            onDelete={(id) => void archiveConversation(id)}
-            onNew={returnHome}
+            onDelete={(id) => void (guestMode ? deleteConversation(id) : archiveConversation(id))}
+            onNew={startNewConversation}
             onRename={(id, title) => void renameConversation(id, title)}
             onShare={() => setShareOpen(true)}
             onReorder={(fromIndex, toIndex) =>
@@ -1924,8 +2009,9 @@ export function AgentDiscoverView({
             </span>
             <div className="mt-ct-meant-body">
               <p className="mt-ct-intro">
-                {greeting}, {profile.name}. I can search, compare, inspect what you own, build
-                carts, and prepare merchant checkout while keeping every step in this conversation.
+                {guestMode
+                  ? 'Keep refining this search, compare the current results, and inspect product details and offers in this conversation.'
+                  : `${greeting}, ${profile.name}. I can search, compare, inspect what you own, build carts, and prepare merchant checkout while keeping every step in this conversation.`}
               </p>
             </div>
           </div>
@@ -2018,6 +2104,27 @@ export function AgentDiscoverView({
             <div className="mt-ct-system" aria-live="polite">
               <span className="mt-scan-pulse" /> Applying your action…
             </div>
+          ) : null}
+          {provisionalPreferences.length >= 2 ? (
+            <aside className="mt-ct-preference-prompt" aria-label="Suggested preferences">
+              <div>
+                <strong>Meant noticed what matters to you</strong>
+                <div className="mt-ct-preference-chips">
+                  {provisionalPreferences.map((preference) => (
+                    <span key={preference.id}>{preference.label}</span>
+                  ))}
+                </div>
+              </div>
+              <button
+                className="mt-act mt-act-primary"
+                type="button"
+                onClick={() =>
+                  onRememberPreferences(provisionalPreferences.map((preference) => preference.id))
+                }
+              >
+                Remember these
+              </button>
+            </aside>
           ) : null}
           <div ref={bottomRef} className="mt-ct-bottom-sentinel" aria-hidden="true" />
         </div>

@@ -250,7 +250,7 @@ export interface Order {
 
 export interface UserAccount {
   name: string
-  email: string
+  email: string | null
   avatar: string | null
   avatarPath: string | null
   newsletter: boolean
