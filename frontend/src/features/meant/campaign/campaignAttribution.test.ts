@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 
 import {
+  CAMPAIGN_BRIEF_KEY,
   CAMPAIGN_BRIEF_MAX_LENGTH,
   captureCampaignEntry,
   claimCampaignBriefLoaded,
+  clearStoredCampaignBrief,
   storedCampaignAttribution,
 } from './campaignAttribution'
 
@@ -58,5 +60,14 @@ describe('campaign entry capture', () => {
   test('claims the brief-loaded analytics event once across refreshes', () => {
     expect(claimCampaignBriefLoaded('Find a wool coat')).toBeTrue()
     expect(claimCampaignBriefLoaded('Find a wool coat')).toBeFalse()
+  })
+
+  test('clears a stored brief after automatic submission consumes it', () => {
+    captureCampaignEntry({ pathname: '/', search: '?brief=Find+a+wool+coat' })
+    expect(window.sessionStorage.getItem(CAMPAIGN_BRIEF_KEY)).toBe('Find a wool coat')
+
+    clearStoredCampaignBrief()
+
+    expect(window.sessionStorage.getItem(CAMPAIGN_BRIEF_KEY)).toBeNull()
   })
 })

@@ -43,7 +43,11 @@ import {
   storeGuestConversationTransfer,
 } from './auth/guestConversationTransfer'
 import { useSupabaseAuth } from './auth/useSupabaseAuth'
-import { captureCampaignEntry, claimCampaignBriefLoaded } from './campaign/campaignAttribution'
+import {
+  captureCampaignEntry,
+  claimCampaignBriefLoaded,
+  clearStoredCampaignBrief,
+} from './campaign/campaignAttribution'
 import { CartPopover } from './cart/CartPopover'
 import { cartCountSummary, formatCartCount } from './cart/cartCounts'
 import { resolveLiveCartItem } from './cart/cartPartition'
@@ -696,7 +700,7 @@ export function MeantApp() {
   const permanent = authed && !isAnonymous
   const userId = session?.user?.id
   const userEmail = session?.user?.email ?? null
-  const [campaignEntry] = useState(() =>
+  const [campaignEntry, setCampaignEntry] = useState(() =>
     typeof window === 'undefined'
       ? {
           brief: '',
@@ -704,6 +708,17 @@ export function MeantApp() {
         }
       : captureCampaignEntry(window.location),
   )
+  const consumeCampaignBrief = useCallback(() => {
+    clearStoredCampaignBrief()
+    setCampaignEntry((current) =>
+      current.brief
+        ? {
+            ...current,
+            brief: '',
+          }
+        : current,
+    )
+  }, [])
   const [authSheetReason, setAuthSheetReason] = useState<AuthSheetReason | null>(null)
   const [pendingAccountNotice, setPendingAccountNotice] = useState<string | null>(null)
 
@@ -3608,6 +3623,7 @@ export function MeantApp() {
             expectedUserId={userId ?? ''}
             guestMode={isAnonymous}
             initialBrief={campaignEntry.brief}
+            onInitialBriefConsumed={consumeCampaignBrief}
             onPermanentAccountRequired={(reason) => {
               const action: PendingAccountAction | undefined =
                 reason === 'new-conversation'

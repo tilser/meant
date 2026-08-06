@@ -33,6 +33,7 @@ import type {
 } from '../cart/checkoutTypes'
 import { AgentActivityPanel } from '../chat/AgentActivityPanel'
 import { DiscoverHomeHero } from '../chat/DiscoverHomeHero'
+import { submitAutomaticCampaignBrief } from '../campaign/automaticCampaignBrief'
 import { comingSoonMessage } from '../chat/comingSoon'
 import { DiscoverChatMessageRow } from '../chat/DiscoverChatMessageRow'
 import { DiscoverShareSheet } from '../chat/DiscoverShareSheet'
@@ -216,6 +217,7 @@ export interface AgentDiscoverViewProps {
   expectedUserId: string
   guestMode?: boolean
   initialBrief?: string
+  onInitialBriefConsumed?: () => void
   onPermanentAccountRequired?: (reason: 'history' | 'new-conversation' | 'protected-action') => void
   onRememberPreferences?: (preferenceIds: readonly string[]) => void
   profile: typeof PROFILE
@@ -281,6 +283,7 @@ export function AgentDiscoverView({
   expectedUserId,
   guestMode = false,
   initialBrief = '',
+  onInitialBriefConsumed = () => undefined,
   onPermanentAccountRequired = () => undefined,
   onRememberPreferences = () => undefined,
   profile,
@@ -403,6 +406,7 @@ export function AgentDiscoverView({
   const handledAgentRunSettlementRevisionRef = useRef(agentRunSettlementRevision)
   const handledFindRequestRef = useRef<string | null>(null)
   const handledProductRequestRef = useRef<string | null>(null)
+  const automaticBriefAttemptRef = useRef<string | null>(null)
   eventStateRef.current = eventState
   activeConversationIdRef.current = activeConversationId
 
@@ -1688,6 +1692,18 @@ export function AgentDiscoverView({
     }
     returnHome()
   }, [conversations.length, guestMode, onPermanentAccountRequired, returnHome])
+
+  useEffect(() => {
+    void submitAutomaticCampaignBrief({
+      initialBrief,
+      unavailable: briefConsumed || loading || agentActionsDisabled,
+      attempt: automaticBriefAttemptRef,
+      submit,
+      onConsumed: onInitialBriefConsumed,
+    }).catch((caught) => {
+      setError(caught instanceof Error ? caught.message : 'Could not start the linked search.')
+    })
+  }, [agentActionsDisabled, briefConsumed, initialBrief, loading, onInitialBriefConsumed, submit])
 
   const selectConversation = useCallback(
     async (conversationId: string) => {

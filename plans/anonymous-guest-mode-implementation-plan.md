@@ -176,9 +176,8 @@ https://app.usemeant.com/
 
 Requirements:
 
-- `brief` pre-fills the Discover composer.
-- The brief is not automatically submitted.
-- The user can edit it before submission.
+- `brief` starts a Discover search automatically once the chat is ready.
+- Automatic submission is claimed once so refreshes and view changes do not repeat the search.
 - UTM and creator attribution are captured for the anonymous session.
 - Attribution survives permanent-account conversion.
 - Campaign parameters must not become user preferences or identity metadata.
