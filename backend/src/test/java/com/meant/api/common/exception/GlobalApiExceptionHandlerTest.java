@@ -31,6 +31,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 
 @ExtendWith(OutputCaptureExtension.class)
 class GlobalApiExceptionHandlerTest {
@@ -164,6 +165,18 @@ class GlobalApiExceptionHandlerTest {
     }
 
     @Test
+    void disconnectedEventStreamDoesNotProduceAnErrorResponseOrLog(CapturedOutput output) throws Exception {
+        mockMvc.perform(get("/test-errors/disconnected-stream")
+                        .accept(MediaType.TEXT_EVENT_STREAM))
+                .andExpect(status().isOk())
+                .andExpect(content().string(""));
+
+        assertThat(output)
+                .doesNotContain("API error")
+                .doesNotContain("AsyncRequestNotUsableException");
+    }
+
+    @Test
     void problemDetailUsesMdcTraceIdWhenPresent() throws Exception {
         try (MDC.MDCCloseable ignored = MDC.putCloseable("traceId", "trace-123")) {
             mockMvc.perform(get("/test-errors/unhandled"))
@@ -228,6 +241,11 @@ class GlobalApiExceptionHandlerTest {
         @GetMapping("/unhandled")
         void unhandled() {
             throw new IllegalStateException("SQL detail: select * from users at com.meant.Secret");
+        }
+
+        @GetMapping(value = "/disconnected-stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+        void disconnectedStream() throws AsyncRequestNotUsableException {
+            throw new AsyncRequestNotUsableException("Servlet container error notification for disconnected client");
         }
     }
 

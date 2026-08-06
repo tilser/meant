@@ -52,6 +52,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.util.DisconnectedClientHelper;
 
 @Slf4j
 @RestControllerAdvice
@@ -244,6 +245,10 @@ public class GlobalApiExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     ResponseEntity<ProblemDetail> handleUnhandledException(Exception exception, HttpServletRequest request) {
+        if (DisconnectedClientHelper.isClientDisconnectedException(exception)) {
+            // The response is already unusable. A null ResponseEntity marks it handled without another write attempt.
+            return null;
+        }
         return problem(
                 HttpStatus.INTERNAL_SERVER_ERROR,
                 ApiErrorCode.INTERNAL_ERROR,
