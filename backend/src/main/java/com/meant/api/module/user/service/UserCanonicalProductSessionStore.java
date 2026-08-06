@@ -10,6 +10,9 @@ import com.meant.api.module.user.properties.UserProductSearchProperties;
 import com.meant.api.module.user.service.dto.UserCatalogSourceState;
 import com.meant.api.module.user.service.dto.UserCanonicalProductPersonalizationResult;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -97,6 +100,32 @@ public class UserCanonicalProductSessionStore {
         return Optional.ofNullable(entries.getIfPresent(new Key(userId, canonicalProductKey)));
     }
 
+    int copyAccess(UUID sourceUserId, UUID targetUserId, List<String> canonicalProductKeys) {
+        if (sourceUserId == null || targetUserId == null || sourceUserId.equals(targetUserId)
+                || canonicalProductKeys == null || canonicalProductKeys.isEmpty()) {
+            return 0;
+        }
+        int copied = 0;
+        for (String canonicalProductKey : new LinkedHashSet<>(canonicalProductKeys)) {
+            Entry source = entries.getIfPresent(new Key(sourceUserId, canonicalProductKey));
+            if (source == null) {
+                continue;
+            }
+            Entry target = entries.getIfPresent(new Key(targetUserId, canonicalProductKey));
+            Entry merged = merge(source, target);
+            entries.put(new Key(targetUserId, canonicalProductKey), merged);
+            merged.product().offers().forEach(offer -> {
+                offers.put(
+                        new OfferKey(targetUserId, offer.key()),
+                        new OfferEntry(merged.product().key(), offer)
+                );
+                recentOfferOwners.put(offer.key(), targetUserId);
+            });
+            copied++;
+        }
+        return copied;
+    }
+
     public Optional<OfferEntry> findOffer(UUID userId, String offerKey) {
         return Optional.ofNullable(offers.getIfPresent(new OfferKey(userId, offerKey)));
     }
@@ -116,6 +145,32 @@ public class UserCanonicalProductSessionStore {
     }
 
     public record OfferEntry(String canonicalProductKey, Offer offer) {
+    }
+
+    private Entry merge(Entry source, Entry target) {
+        if (target == null) {
+            return source;
+        }
+        Map<String, Offer> offersByKey = new LinkedHashMap<>();
+        source.product().offers().forEach(offer -> offersByKey.put(offer.key(), offer));
+        target.product().offers().forEach(offer -> offersByKey.putIfAbsent(offer.key(), offer));
+
+        Map<String, OfferRankingExplanation> offerExplanations = new LinkedHashMap<>();
+        target.offerExplanations().forEach(offerExplanations::put);
+        source.offerExplanations().forEach(offerExplanations::put);
+
+        List<UserCatalogSourceState> sourceStates = new ArrayList<>(source.sourceStates());
+        target.sourceStates().stream()
+                .filter(state -> !sourceStates.contains(state))
+                .forEach(sourceStates::add);
+        return new Entry(
+                source.product().withOffers(List.copyOf(offersByKey.values())),
+                source.productExplanation() == null
+                        ? target.productExplanation() : source.productExplanation(),
+                Map.copyOf(offerExplanations),
+                target.personalization(),
+                List.copyOf(sourceStates)
+        );
     }
 
     record Entry(

@@ -1,6 +1,8 @@
 package com.meant.api.module.agent.service;
 
 import com.meant.api.module.agent.constant.AgentArtifactType;
+import com.meant.api.module.agent.constant.AgentContentKind;
+import com.meant.api.module.agent.constant.AgentMessageRole;
 import com.meant.api.module.agent.constant.AgentRunStatus;
 import com.meant.api.module.agent.entity.AgentArtifactReference;
 import com.meant.api.module.agent.entity.AgentConversation;
@@ -14,8 +16,16 @@ import com.meant.api.module.agent.repository.AgentRunRepository;
 import com.meant.api.module.agent.repository.GuestConversationTransferRepository;
 import com.meant.api.module.agent.service.command.ClaimGuestConversationTransferCommand;
 import com.meant.api.module.agent.service.command.IssueGuestConversationTransferCommand;
+import com.meant.api.module.agent.service.dto.AgentCartResult;
 import com.meant.api.module.agent.service.dto.AgentConversationSummaryResult;
 import com.meant.api.module.agent.service.dto.GuestConversationTransferToken;
+import com.meant.api.module.cart.service.CartOwnershipTransferService;
+import com.meant.api.module.cart.service.CartService;
+import com.meant.api.module.cart.service.command.TransferCartOwnershipCommand;
+import com.meant.api.module.cart.service.dto.CartResult;
+import com.meant.api.module.cart.service.query.GetCartQuery;
+import com.meant.api.module.user.service.UserCanonicalProductAccessTransferService;
+import com.meant.api.module.user.service.command.TransferUserCanonicalProductAccessCommand;
 import jakarta.validation.Valid;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -50,7 +60,9 @@ public class GuestConversationTransferService {
             AgentArtifactType.PRODUCT_STATE,
             AgentArtifactType.COMPARISON,
             AgentArtifactType.REVIEWS,
-            AgentArtifactType.DISCOUNT_CODES
+            AgentArtifactType.DISCOUNT_CODES,
+            AgentArtifactType.CART,
+            AgentArtifactType.CART_LINE
     );
 
     private final GuestConversationTransferRepository transferRepository;
@@ -58,6 +70,11 @@ public class GuestConversationTransferService {
     private final AgentMessageRepository messageRepository;
     private final AgentArtifactReferenceRepository artifactRepository;
     private final AgentRunRepository runRepository;
+    private final UserCanonicalProductAccessTransferService canonicalProductAccessTransferService;
+    private final CartOwnershipTransferService cartOwnershipTransferService;
+    private final CartService cartService;
+    private final AgentArtifactService agentArtifactService;
+    private final AgentJsonSupport jsonSupport;
     private final Clock clock;
 
     @Transactional
@@ -107,9 +124,28 @@ public class GuestConversationTransferService {
                 .orElseThrow(AgentException::transferUnavailable);
         requireSettled(source.getId());
 
-        AgentConversation imported = transfer.getGuestUserId().equals(command.targetUserId())
-                ? source
-                : copyVisibleConversation(source, command.targetUserId(), now);
+        AgentConversation imported;
+        if (transfer.getGuestUserId().equals(command.targetUserId())) {
+            imported = source;
+        } else {
+            ConversationImport conversationImport = copyVisibleConversation(source, command.targetUserId(), now);
+            canonicalProductAccessTransferService.transfer(new TransferUserCanonicalProductAccessCommand(
+                    transfer.getGuestUserId(),
+                    command.targetUserId(),
+                    conversationImport.canonicalProductKeys()
+            ));
+            List<UUID> transferredCartIds = cartOwnershipTransferService.transfer(new TransferCartOwnershipCommand(
+                    transfer.getGuestUserId(),
+                    command.targetUserId()
+            ));
+            persistMissingTransferredCartSnapshot(
+                    conversationImport,
+                    command.targetUserId(),
+                    transferredCartIds,
+                    now
+            );
+            imported = conversationImport.conversation();
+        }
         transfer.consume(command.targetUserId(), now);
         return AgentResultMapper.conversation(imported);
     }
@@ -145,7 +181,7 @@ public class GuestConversationTransferService {
         }
     }
 
-    private AgentConversation copyVisibleConversation(AgentConversation source, UUID targetUserId, Instant now) {
+    private ConversationImport copyVisibleConversation(AgentConversation source, UUID targetUserId, Instant now) {
         AgentConversation imported = conversationRepository.saveAndFlush(AgentConversation.builder()
                 .userId(targetUserId)
                 .merchantId(source.getMerchantId())
@@ -174,7 +210,51 @@ public class GuestConversationTransferService {
                 .map(artifact -> copyArtifact(artifact, imported.getId(), messageIds.get(artifact.getMessageId())))
                 .toList();
         artifactRepository.saveAll(artifacts);
-        return imported;
+        List<String> canonicalProductKeys = artifacts.stream()
+                .map(AgentArtifactReference::getCanonicalProductKey)
+                .filter(key -> key != null && !key.isBlank())
+                .map(String::trim)
+                .distinct()
+                .toList();
+        List<UUID> copiedCartIds = artifacts.stream()
+                .filter(artifact -> artifact.getArtifactType() == AgentArtifactType.CART)
+                .map(AgentArtifactReference::getCartId)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .toList();
+        return new ConversationImport(imported, canonicalProductKeys, copiedCartIds);
+    }
+
+    private void persistMissingTransferredCartSnapshot(
+            ConversationImport conversationImport,
+            UUID targetUserId,
+            List<UUID> transferredCartIds,
+            Instant now
+    ) {
+        List<CartResult> missingCarts = transferredCartIds.stream()
+                .filter(cartId -> !conversationImport.copiedCartIds().contains(cartId))
+                .map(cartId -> cartService.get(new GetCartQuery(cartId, targetUserId, false)))
+                .toList();
+        if (missingCarts.isEmpty()) {
+            return;
+        }
+
+        AgentConversation imported = conversationImport.conversation();
+        AgentMessage cartMessage = messageRepository.saveAndFlush(AgentMessage.builder()
+                .conversationId(imported.getId())
+                .role(AgentMessageRole.TOOL)
+                .contentKind(AgentContentKind.TOOL_RESULT)
+                .sequenceNumber(imported.nextSequence(now))
+                .correlationId("guest-transfer:get_active_carts")
+                .createdAt(now)
+                .build());
+        agentArtifactService.persist(
+                imported.getId(),
+                null,
+                cartMessage.getId(),
+                null,
+                AgentCartArtifacts.from(AgentCartResult.success(missingCarts), jsonSupport)
+        );
     }
 
     private AgentMessage copyMessage(AgentMessage source, UUID conversationId, Map<UUID, UUID> messageIds) {
@@ -203,6 +283,8 @@ public class GuestConversationTransferService {
                 .label(source.getLabel())
                 .canonicalProductKey(source.getCanonicalProductKey())
                 .offerKey(source.getOfferKey())
+                .cartId(source.getCartId())
+                .cartLineId(source.getCartLineId())
                 .payloadJson(source.getPayloadJson())
                 .createdAt(source.getCreatedAt())
                 .build();
@@ -212,5 +294,12 @@ public class GuestConversationTransferService {
         byte[] bytes = new byte[32];
         SECURE_RANDOM.nextBytes(bytes);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    private record ConversationImport(
+            AgentConversation conversation,
+            List<String> canonicalProductKeys,
+            List<UUID> copiedCartIds
+    ) {
     }
 }

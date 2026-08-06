@@ -1,6 +1,9 @@
+import { ApiError } from '../../../lib/apiError'
+
 export type SelectedOfferCartFailureKind =
   | 'unknown_or_expired'
   | 'stale_identity_or_routing'
+  | 'merchant_rejected'
   | 'authentication'
   | 'provider_unavailable'
   | 'unknown'
@@ -48,6 +51,14 @@ export function selectedOfferCartFailure(error: unknown): SelectedOfferCartFailu
       message:
         'Your session cannot add this offer. Sign in again, then re-search for fresh offers.',
       refresh: false,
+      research: true,
+    }
+  }
+  if (status === 400 && error instanceof ApiError && error.message.trim()) {
+    return {
+      kind: 'merchant_rejected',
+      message: error.message.trim(),
+      refresh: true,
       research: true,
     }
   }

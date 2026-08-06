@@ -7,6 +7,7 @@ import com.meant.api.module.cart.constant.CartAppliedCodeType;
 import com.meant.api.module.cart.entity.Cart;
 import com.meant.api.module.cart.entity.CartAppliedCode;
 import com.meant.api.module.cart.entity.CartLine;
+import com.meant.api.module.cart.service.command.TransferCartOwnershipCommand;
 import com.meant.api.module.user.entity.User;
 import jakarta.persistence.EntityManager;
 import java.time.Instant;
@@ -25,6 +26,9 @@ class CartPersistenceQueryIT extends PostgresIntegrationTestSupport {
 
     @Autowired
     private CartPersistenceService cartPersistenceService;
+
+    @Autowired
+    private CartOwnershipTransferService cartOwnershipTransferService;
 
     @Autowired
     private EntityManager entityManager;
@@ -59,6 +63,40 @@ class CartPersistenceQueryIT extends PostgresIntegrationTestSupport {
             assertThat(cart.getAppliedCodes()).hasSize(1);
         });
         assertThat(statistics.getPrepareStatementCount()).isEqualTo(3);
+    }
+
+    @Test
+    void ownershipTransferPersistsTheGuestCartUnderThePermanentUser() {
+        UUID guestUserId = UUID.randomUUID();
+        UUID targetUserId = UUID.randomUUID();
+        Instant now = Instant.parse("2026-08-05T20:00:00Z");
+        entityManager.persist(user(guestUserId, "guest", now));
+        entityManager.persist(user(targetUserId, "target", now));
+        Cart guestCart = cart(guestUserId, 100, now);
+        entityManager.persist(guestCart);
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(cartOwnershipTransferService.transfer(
+                new TransferCartOwnershipCommand(guestUserId, targetUserId)))
+                .containsExactly(guestCart.getId());
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(cartPersistenceService.findActiveCarts(guestUserId, 0, 20)).isEmpty();
+        assertThat(cartPersistenceService.findActiveCarts(targetUserId, 0, 20))
+                .extracting(Cart::getId)
+                .containsExactly(guestCart.getId());
+    }
+
+    private User user(UUID userId, String prefix, Instant now) {
+        return User.builder()
+                .id(userId)
+                .email(prefix + "-cart-transfer-" + userId + "@example.test")
+                .newsletter(false)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
     }
 
     private Cart cart(UUID userId, int index, Instant now) {

@@ -190,7 +190,7 @@ public class ShopifyGlobalCatalogProvider {
         return new ShopifyGlobalCatalogProductResult(
                 execution.catalogResult(),
                 execution.catalogResult().successful() && products.size() == 1 ? products.getFirst() : null,
-                execution.catalogResult().successful() && payload != null ? payload.messages() : List.of()
+                payload == null ? List.of() : payload.messages()
         );
     }
 

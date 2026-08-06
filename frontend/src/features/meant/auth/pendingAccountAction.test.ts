@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import {
   claimPendingAccountAction,
   completePendingAccountAction,
+  pendingAccountNavigation,
   peekPendingAccountAction,
   storePendingAccountAction,
 } from './pendingAccountAction'
@@ -41,5 +42,18 @@ describe('pending account actions', () => {
     if (!claimed) throw new Error('Expected an action')
     completePendingAccountAction(claimed.id)
     expect(peekPendingAccountAction()).toBeNull()
+  })
+
+  test('keeps an imported guest conversation ahead of deferred preference navigation', () => {
+    expect(pendingAccountNavigation({ type: 'OPEN_PREFERENCES' }, true)).toBeNull()
+    expect(
+      pendingAccountNavigation(
+        { type: 'REMEMBER_PREFERENCES', preferenceDraftId: 'draft-1' },
+        true,
+      ),
+    ).toBeNull()
+    expect(pendingAccountNavigation({ type: 'OPEN_PREFERENCES' }, false)).toEqual({
+      view: 'preferences',
+    })
   })
 })

@@ -26,6 +26,7 @@ import { authProviderAvatarUrl } from './auth/authProviderProfile'
 import {
   claimPendingAccountAction,
   completePendingAccountAction,
+  pendingAccountNavigation,
   peekPendingAccountAction,
   storePendingAccountAction,
   type PendingAccountAction,
@@ -722,6 +723,10 @@ export function MeantApp() {
     () => (readGuestConversationTransfer() ? 'claiming' : 'ready'),
   )
   const [guestTransferError, setGuestTransferError] = useState<string | null>(null)
+  const [importedGuestConversationId, setImportedGuestConversationId] = useState<string | null>(
+    null,
+  )
+  const [claimedGuestCartOwnerId, setClaimedGuestCartOwnerId] = useState<string | null>(null)
   const commerceOperationQueue = useMemo(
     () => commerceActionQueueFor(userId ?? 'signed-out'),
     [userId],
@@ -895,7 +900,7 @@ export function MeantApp() {
         conversationId,
         expectedUserId: userId,
       })
-      storeGuestConversationTransfer(transfer)
+      storeGuestConversationTransfer({ ...transfer, guestUserId: userId })
     }
     window.location.assign('/login')
   }, [isAnonymous, userId])
@@ -903,6 +908,7 @@ export function MeantApp() {
   const restoreGuestConversation = useCallback(async () => {
     const transfer = readGuestConversationTransfer()
     if (!permanent || !userId || !transfer) {
+      setImportedGuestConversationId(null)
       setGuestTransferStatus('ready')
       setGuestTransferError(null)
       return
@@ -918,6 +924,12 @@ export function MeantApp() {
         accountSessionStorageKey('meant.activeAgentConversation', userId),
         JSON.stringify(imported.conversationId),
       )
+      setImportedGuestConversationId(imported.conversationId)
+      setView('discover')
+      setPrimaryNavigationSequence((current) => current + 1)
+      if (transfer.guestUserId && transfer.guestUserId !== userId) {
+        setClaimedGuestCartOwnerId(transfer.guestUserId)
+      }
       clearGuestConversationTransfer(transfer.token)
       trackMeantEvent('existing_account_signed_in', { identity_link_result: 'signed-in' })
       trackMeantEvent('guest_conversation_imported', {
@@ -925,6 +937,7 @@ export function MeantApp() {
       })
       setGuestTransferStatus('ready')
     } catch (cause) {
+      setImportedGuestConversationId(null)
       if (cause instanceof ApiError && cause.status === 410) {
         clearGuestConversationTransfer(transfer.token)
       }
@@ -1190,7 +1203,7 @@ export function MeantApp() {
     removeCartCode,
     updateDeliveryAddress,
     updateDeliveryOption,
-  } = useCartController(allKnownProducts, userId)
+  } = useCartController(allKnownProducts, userId, claimedGuestCartOwnerId)
   const replaceMerchantCartStatesRef = useRef(replaceMerchantCartStates)
   replaceMerchantCartStatesRef.current = replaceMerchantCartStates
 
@@ -1851,6 +1864,7 @@ export function MeantApp() {
 
   const handleSignOut = () => {
     void signOut()
+    setImportedGuestConversationId(null)
     setView('discover')
     setRemoteProducts([])
     setTasteProfile(EMPTY_TASTE_PROFILE)
@@ -2588,6 +2602,10 @@ export function MeantApp() {
     if (!pending) return
     const execute = async () => {
       try {
+        const navigation = pendingAccountNavigation(
+          pending.action,
+          importedGuestConversationId !== null,
+        )
         switch (pending.action.type) {
           case 'SAVE_PRODUCT': {
             const product = allKnownProductsMap.get(pending.action.productId)
@@ -2605,39 +2623,26 @@ export function MeantApp() {
             break
           }
           case 'OPEN_SAVED':
-            nav('saved')
-            break
           case 'OPEN_INVENTORY':
-            nav('inventory')
-            break
           case 'OPEN_ORDERS':
-            nav('orders')
-            break
           case 'OPEN_CART':
-            nav('cart')
-            break
           case 'OPEN_PREFERENCES':
-            nav('preferences')
+          case 'OPEN_ACCOUNT':
+          case 'START_NEW_CONVERSATION':
+          case 'OPEN_HISTORY':
             break
           case 'REMEMBER_PREFERENCES': {
             const draft = readProvisionalPreferenceDraft(pending.action.preferenceDraftId)
             if (!draft) throw new Error('Those preference suggestions have expired.')
             setProvisionalPreferenceDraft(draft)
             setProvisionalPreferenceDraftError(null)
-            nav('preferences')
             break
           }
-          case 'OPEN_ACCOUNT':
-            nav('account')
-            break
-          case 'START_NEW_CONVERSATION':
-            nav('discover', { home: true })
-            break
-          case 'OPEN_HISTORY':
-            nav('discover')
-            break
           case 'ENABLE_ALERT':
             throw new Error('Alerts are not available yet.')
+        }
+        if (navigation) {
+          nav(navigation.view, navigation.home ? { home: true } : undefined)
         }
         completePendingAccountAction(pending.id)
         setPendingAccountNotice('Done — everything Meant for you is safely saved.')
@@ -2655,7 +2660,7 @@ export function MeantApp() {
     // Pending actions are claimed atomically; auth listener replays and subsequent renders are no-ops.
     // Product actions wait until an imported conversation has rebuilt its grounded product snapshot.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allKnownProductsMap, guestTransferStatus, permanent, userId])
+  }, [allKnownProductsMap, guestTransferStatus, importedGuestConversationId, permanent, userId])
 
   const updateSavedChoice = (product: Product, offerKey: string) => {
     const exactOfferKey = offerKey.trim()

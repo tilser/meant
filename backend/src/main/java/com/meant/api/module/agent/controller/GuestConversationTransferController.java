@@ -43,7 +43,7 @@ public class GuestConversationTransferController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    @Operation(summary = "Prepare the active guest conversation for an existing-account sign-in")
+    @Operation(summary = "Prepare the active guest session for an existing-account sign-in")
     @ApiResponse(
             responseCode = "201",
             description = "Transfer capability issued",
@@ -68,7 +68,7 @@ public class GuestConversationTransferController {
     @Operation(summary = "Import a prepared guest conversation into the permanent account")
     @ApiResponse(
             responseCode = "200",
-            description = "Imported conversation",
+            description = "Imported conversation with guest product and cart ownership transferred",
             content = @Content(schema = @Schema(implementation = AgentConversationSummaryResponse.class))
     )
     public AgentConversationSummaryResponse claim(

@@ -6,6 +6,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.util.Objects;
 import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -107,6 +108,53 @@ public class UserCanonicalProductReference extends AssignedIdEntity<UUID> {
                 .referenceVerifiedAt(now)
                 .createdAt(now)
                 .build();
+    }
+
+    public UserCanonicalProductReference copyForUser(UUID targetUserId, Instant now) {
+        if (targetUserId == null || now == null) {
+            throw new IllegalArgumentException("Target user and copy timestamp are required");
+        }
+        return UserCanonicalProductReference.builder()
+                .id(UUID.randomUUID())
+                .userId(targetUserId)
+                .canonicalProductKey(canonicalProductKey)
+                .offerKey(offerKey)
+                .offerRank(offerRank)
+                .sourceProvider(sourceProvider)
+                .sourceType(sourceType)
+                .sourceIdentity(sourceIdentity)
+                .localMerchantId(localMerchantId)
+                .merchantIntegrationId(merchantIntegrationId)
+                .externalMerchantId(externalMerchantId)
+                .externalMerchantDomain(externalMerchantDomain)
+                .externalProductId(externalProductId)
+                .externalVariantId(externalVariantId)
+                .selectedOptionsJson(selectedOptionsJson)
+                .componentsJson(componentsJson)
+                .sellingPlanJson(sellingPlanJson)
+                .retentionPolicyKey(retentionPolicyKey)
+                .referenceVerifiedAt(referenceVerifiedAt)
+                .createdAt(now)
+                .build();
+    }
+
+    public boolean hasSameReference(UserCanonicalProductReference other) {
+        return other != null
+                && Objects.equals(canonicalProductKey, other.canonicalProductKey)
+                && Objects.equals(offerKey, other.offerKey)
+                && Objects.equals(sourceProvider, other.sourceProvider)
+                && Objects.equals(sourceType, other.sourceType)
+                && Objects.equals(sourceIdentity, other.sourceIdentity)
+                && Objects.equals(localMerchantId, other.localMerchantId)
+                && Objects.equals(merchantIntegrationId, other.merchantIntegrationId)
+                && Objects.equals(externalMerchantId, other.externalMerchantId)
+                && Objects.equals(externalMerchantDomain, other.externalMerchantDomain)
+                && Objects.equals(externalProductId, other.externalProductId)
+                && Objects.equals(externalVariantId, other.externalVariantId)
+                && Objects.equals(selectedOptionsJson, other.selectedOptionsJson)
+                && Objects.equals(componentsJson, other.componentsJson)
+                && Objects.equals(sellingPlanJson, other.sellingPlanJson)
+                && Objects.equals(retentionPolicyKey, other.retentionPolicyKey);
     }
 
     public record DurableReferenceSnapshot(

@@ -272,7 +272,7 @@ public class GlobalApiExceptionHandler {
             List<Map<String, String>> validationErrors
     ) {
         String traceId = traceId();
-        logException(status, traceId, exception);
+        logException(status, code, traceId, request, exception);
 
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
         problem.setTitle(exception instanceof PermanentAccountRequiredException
@@ -347,13 +347,35 @@ public class GlobalApiExceptionHandler {
         return name;
     }
 
-    private void logException(HttpStatusCode status, String traceId, Exception exception) {
+    private void logException(
+            HttpStatusCode status,
+            ApiErrorCode code,
+            String traceId,
+            HttpServletRequest request,
+            Exception exception
+    ) {
         if (status.is5xxServerError()) {
-            log.error("API error traceId={}", traceId, exception);
+            log.error(
+                    "API error traceId={} method={} path={} status={} code={}",
+                    traceId,
+                    request.getMethod(),
+                    request.getRequestURI(),
+                    status.value(),
+                    code.getValue(),
+                    exception
+            );
             return;
         }
-        log.warn("API request rejected traceId={} status={} exception={} message={}", traceId, status.value(),
-                exception.getClass().getName(), exception.getMessage());
+        log.warn(
+                "API request rejected traceId={} method={} path={} status={} code={} exception={} message={}",
+                traceId,
+                request.getMethod(),
+                request.getRequestURI(),
+                status.value(),
+                code.getValue(),
+                exception.getClass().getName(),
+                exception.getMessage()
+        );
     }
 
     private static String traceId() {

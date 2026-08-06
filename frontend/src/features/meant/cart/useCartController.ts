@@ -1,4 +1,4 @@
-import { type Dispatch, type SetStateAction, useCallback, useRef } from 'react'
+import { type Dispatch, type SetStateAction, useCallback, useEffect, useRef } from 'react'
 
 import {
   bindSelectedOfferToCart as bindSelectedOfferToRemoteCart,
@@ -43,6 +43,11 @@ import {
   settleUnconfirmedSelectedOfferAddition,
 } from './selectedOfferCartBinding'
 import { cartItemsShareMerchantPartition } from './cartPartition'
+import {
+  consumeGuestCartTransferState,
+  mergeTransferredGuestCart,
+  mergeTransferredGuestCartSnapshots,
+} from './guestCartTransfer'
 
 function resolveSetStateAction<T>(action: SetStateAction<T>, current: T): T {
   return typeof action === 'function' ? (action as (previous: T) => T)(current) : action
@@ -98,7 +103,11 @@ export function reconcileMerchantCartStates(
   }
 }
 
-export function useCartController(products: readonly Product[], ownerId: string | undefined) {
+export function useCartController(
+  products: readonly Product[],
+  ownerId: string | undefined,
+  transferredGuestOwnerId?: string | null,
+) {
   const [cart, setStoredCart] = useSessionStoredState<CartItem[]>(
     accountSessionStorageKey('meant.cart', ownerId),
     [],
@@ -110,10 +119,23 @@ export function useCartController(products: readonly Product[], ownerId: string 
   activeOwnerIdRef.current = ownerId
   const cartRef = useRef<CartItem[]>(cart)
   const cartSnapshotsRef = useRef<Record<string, MerchantCartSnapshot>>(cartSnapshots)
+  const consumedGuestTransferRef = useRef<string | null>(null)
   cartRef.current = cart
   cartSnapshotsRef.current = cartSnapshots
   const getCurrentCart = useCallback(() => cartRef.current, [])
   const getCurrentCartSnapshots = useCallback(() => cartSnapshotsRef.current, [])
+
+  useEffect(() => {
+    if (!ownerId || !transferredGuestOwnerId || ownerId === transferredGuestOwnerId) return
+    const transferKey = `${transferredGuestOwnerId}->${ownerId}`
+    if (consumedGuestTransferRef.current === transferKey) return
+    consumedGuestTransferRef.current = transferKey
+    const transferred = consumeGuestCartTransferState(transferredGuestOwnerId)
+    setStoredCart((current) => mergeTransferredGuestCart(current, transferred.cart))
+    setStoredCartSnapshots((current) =>
+      mergeTransferredGuestCartSnapshots(current, transferred.snapshots),
+    )
+  }, [ownerId, setStoredCart, setStoredCartSnapshots, transferredGuestOwnerId])
 
   const isAccountCurrent = () => Boolean(ownerId && activeOwnerIdRef.current === ownerId)
   const requireCurrentOwner = (): string => {

@@ -4,6 +4,7 @@ export interface StoredGuestConversationTransfer {
   token: string
   conversationId: string
   expiresAt: string
+  guestUserId?: string
 }
 
 export function storeGuestConversationTransfer(transfer: StoredGuestConversationTransfer): void {
@@ -20,7 +21,8 @@ export function readGuestConversationTransfer(): StoredGuestConversationTransfer
       !value ||
       typeof value.token !== 'string' ||
       typeof value.conversationId !== 'string' ||
-      typeof value.expiresAt !== 'string'
+      typeof value.expiresAt !== 'string' ||
+      (value.guestUserId !== undefined && typeof value.guestUserId !== 'string')
     ) {
       return null
     }

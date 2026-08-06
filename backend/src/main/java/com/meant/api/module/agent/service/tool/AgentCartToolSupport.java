@@ -2,9 +2,9 @@ package com.meant.api.module.agent.service.tool;
 
 import com.meant.api.common.constant.ApiErrorCode;
 import com.meant.api.common.exception.ApiException;
-import com.meant.api.module.agent.constant.AgentArtifactType;
 import com.meant.api.module.agent.exception.AgentException;
 import com.meant.api.module.agent.repository.AgentConversationRepository;
+import com.meant.api.module.agent.service.AgentCartArtifacts;
 import com.meant.api.module.agent.service.AgentJsonSupport;
 import com.meant.api.module.agent.service.AgentProductReadReferenceService;
 import com.meant.api.module.agent.service.dto.AgentArtifact;
@@ -212,45 +212,8 @@ class AgentCartToolSupport {
         return jsonSupport.write(value);
     }
 
-    private String artifactJson(Object value) {
-        return jsonSupport.writeArtifact(value);
-    }
-
     List<AgentArtifact> artifacts(AgentCartResult result) {
-        List<AgentArtifact> artifacts = new ArrayList<>();
-        int ordinal = 1;
-        for (AgentCartResult.Cart cart : result.carts()) {
-            String cartJson = artifactJson(cart);
-            artifacts.add(new AgentArtifact(
-                    AgentArtifactType.CART,
-                    ordinal++,
-                    "cart:" + cart.cartId(),
-                    cart.merchantOrigin() == null ? "Cart" : "Cart at " + cart.merchantOrigin(),
-                    null,
-                    null,
-                    null,
-                    cart.cartId(),
-                    null,
-                    null,
-                    cartJson
-            ));
-            for (AgentCartResult.Line line : cart.lines()) {
-                artifacts.add(new AgentArtifact(
-                        AgentArtifactType.CART_LINE,
-                        ordinal++,
-                        "cart-line:" + line.cartLineId(),
-                        line.productTitle(),
-                        line.canonicalProductKey(),
-                        line.offerKey(),
-                        null,
-                        cart.cartId(),
-                        line.cartLineId(),
-                        null,
-                        artifactJson(line)
-                ));
-            }
-        }
-        return List.copyOf(artifacts);
+        return AgentCartArtifacts.from(result, jsonSupport);
     }
 
     private UpdateCartCommand updateCommand(

@@ -35,6 +35,7 @@ import { mergeProductMedia } from './productMapping'
 import { safeProductMessageUrl } from './productMessageUrl'
 import { merchantProductDetailRequest } from './productDetailLoading'
 import { ProductReviewsPanel } from './ProductReviewsPanel'
+import { selectedOfferCartFailure } from './selectedOfferCartFailure'
 import { GroupedOfferSelector, type ProductPurchaseSelection } from './GroupedProductModal'
 import { containModalTabFocus } from './modalFocusTrap'
 import { findSelectedVariant } from './variantSelection'
@@ -654,8 +655,8 @@ export function ProductModal({
           setAdded(false)
           addedTimeoutRef.current = null
         }, 1600)
-      } catch {
-        setAddError('Could not add this exact merchant offer to cart.')
+      } catch (cause) {
+        setAddError(selectedOfferCartFailure(cause).message)
       } finally {
         setAdding(false)
       }
@@ -680,8 +681,8 @@ export function ProductModal({
         setAdded(false)
         addedTimeoutRef.current = null
       }, 1600)
-    } catch {
-      setAddError('Could not add this offer to the merchant cart.')
+    } catch (cause) {
+      setAddError(selectedOfferCartFailure(cause).message)
     } finally {
       setAdding(false)
     }

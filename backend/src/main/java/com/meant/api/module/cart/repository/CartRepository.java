@@ -28,6 +28,19 @@ public interface CartRepository extends JpaRepository<Cart, UUID> {
             Pageable pageable
     );
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select cart from Cart cart
+            where cart.userId = :userId
+              and cart.active = true
+              and (cart.expiresAt is null or cart.expiresAt > :now)
+            order by cart.updatedAt desc, cart.id asc
+            """)
+    List<Cart> findActiveForOwnershipTransfer(
+            @Param("userId") UUID userId,
+            @Param("now") Instant now
+    );
+
     @Query("""
             select cart from Cart cart
             where cart.userId = :userId

@@ -34,6 +34,7 @@ describe('guest conversation transfer state', () => {
       token: 'opaque-token',
       conversationId: 'conversation-1',
       expiresAt: '2026-08-05T12:10:00Z',
+      guestUserId: 'guest-user-1',
     }
     storeGuestConversationTransfer(transfer)
 

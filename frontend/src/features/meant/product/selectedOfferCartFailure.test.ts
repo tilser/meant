@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
+import { ApiError } from '../../../lib/apiError'
 import { selectedOfferCartFailure } from './selectedOfferCartFailure'
 
 describe('selected offer cart failure', () => {
@@ -22,5 +23,18 @@ describe('selected offer cart failure', () => {
 
     expect(failure.kind).toBe('unknown')
     expect(failure.message).not.toContain('provider secret')
+  })
+
+  test('shows the sanitized merchant rejection returned by the API', () => {
+    const failure = selectedOfferCartFailure(
+      new ApiError("The product 'Coffee Maker - Beige' is already sold out.", 400, 'bad_request'),
+    )
+
+    expect(failure).toEqual({
+      kind: 'merchant_rejected',
+      message: "The product 'Coffee Maker - Beige' is already sold out.",
+      refresh: true,
+      research: true,
+    })
   })
 })

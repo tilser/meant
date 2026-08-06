@@ -22,11 +22,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
 
 @Service
 @Validated
+@Slf4j
 @RequiredArgsConstructor
 public class UserCanonicalProductDetailService {
     private final UserCanonicalProductSessionStore sessionStore;
@@ -43,11 +45,26 @@ public class UserCanonicalProductDetailService {
             throw UserException.forbidden("Product detail user does not match authenticated user");
         }
         UserCanonicalProductSessionStore.Entry entry = entry(query.userId(), query.canonicalProductKey())
-                .orElseThrow(() -> UserException.notFound("Canonical product is unknown or expired"));
+                .orElseThrow(() -> {
+                    log.warn(
+                            "Canonical product detail resolution rejected; reason=UNKNOWN_OR_EXPIRED, "
+                                    + "userId={}, canonicalProductKey={}, requestedOfferKey={}",
+                            query.userId(), query.canonicalProductKey(), query.selectedOfferKey()
+                    );
+                    return UserException.notFound("Canonical product is unknown or expired");
+                });
         CanonicalProduct product = entry.product();
         String recommendedOfferKey = product.offers().getFirst().key();
         String selectedOfferKey = query.selectedOfferKey() == null ? recommendedOfferKey : query.selectedOfferKey();
         if (product.offers().stream().noneMatch(offer -> offer.key().equals(selectedOfferKey))) {
+            log.warn(
+                    "Canonical product detail resolution rejected; reason=OFFER_NOT_IN_PRODUCT, userId={}, "
+                            + "canonicalProductKey={}, requestedOfferKey={}, availableOfferKeys={}",
+                    query.userId(),
+                    query.canonicalProductKey(),
+                    selectedOfferKey,
+                    product.offers().stream().map(offer -> offer.key()).toList()
+            );
             throw UserException.notFound("Selected offer does not belong to the canonical product");
         }
 

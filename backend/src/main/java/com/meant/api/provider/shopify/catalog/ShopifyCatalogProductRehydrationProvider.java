@@ -132,18 +132,37 @@ public class ShopifyCatalogProductRehydrationProvider
             );
         }
         try {
-            ShopifyGlobalCatalogProductResult productResult = getProductWithRetry(
-                    new ShopifyGlobalCatalogGetProductRequest(
-                            selection == null
-                                    ? detailIdentifier(reference)
-                                    : reference.externalProductReference().value(),
-                            selectedOptions(reference, selection).stream()
-                                    .map(option -> new ShopifyCatalogSelectedOption(option.name(), option.value()))
-                                    .toList(),
-                            selection == null ? null : selection.preferences(),
-                            shopifyDetailContext(context),
-                            detailFilters(reference)
-                    ), reference);
+            ShopifyGlobalCatalogGetProductRequest request = new ShopifyGlobalCatalogGetProductRequest(
+                    selection == null
+                            ? detailIdentifier(reference)
+                            : reference.externalProductReference().value(),
+                    selectedOptions(reference, selection).stream()
+                            .map(option -> new ShopifyCatalogSelectedOption(option.name(), option.value()))
+                            .toList(),
+                    selection == null ? null : selection.preferences(),
+                    shopifyDetailContext(context),
+                    detailFilters(reference)
+            );
+            ShopifyGlobalCatalogProductResult productResult = getProductWithRetry(request, reference);
+            if (selection != null
+                    && !productResult.catalogResult().successful()
+                    && reference.externalVariantReference() != null
+                    && !reference.externalVariantReference().value().equals(request.id())) {
+                log.warn(
+                        "Shopify product detail lookup by product identity failed; interactionKey={}, "
+                                + "productReference={}, variantReference={}, action=RETRY_WITH_VARIANT",
+                        reference.interactionKey(),
+                        diagnosticIdentifier(reference.externalProductReference()),
+                        diagnosticIdentifier(reference.externalVariantReference())
+                );
+                productResult = getProductWithRetry(new ShopifyGlobalCatalogGetProductRequest(
+                        reference.externalVariantReference().value(),
+                        request.selected(),
+                        request.preferences(),
+                        request.context(),
+                        request.filters()
+                ), reference);
+            }
             CatalogSourceResult sourceResult = productResult.catalogResult();
             if (!sourceResult.successful()) {
                 logExactUpstreamFailure("DETAIL", reference, context, sourceResult, productResult.messages());
@@ -278,7 +297,9 @@ public class ShopifyCatalogProductRehydrationProvider
             ShopifyCatalogReferenceMatcher.Match match = analysis.match();
             if (match != null && priceMatchesContext(match, context)) {
                 results.put(reference, fresh(reference, match));
-            } else if (match != null || sourceResult.truncated()) {
+            } else if (match != null
+                    || sourceResult.truncated()
+                    || analysis.reason() == ShopifyCatalogReferenceMatcher.MismatchReason.NO_CANDIDATES) {
                 if (match != null) {
                     Money observedPrice = match.candidate().offer().price();
                     log.warn(
@@ -295,11 +316,13 @@ public class ShopifyCatalogProductRehydrationProvider
                             sourceResult.truncated()
                     );
                 } else {
-                    logLookupMatchFailure(reference, context, candidates, analysis, true);
+                    logLookupMatchFailure(
+                            reference, context, candidates, analysis, sourceResult.truncated(), true);
                 }
                 results.put(reference, rehydrateExact(reference, context));
             } else {
-                logLookupMatchFailure(reference, context, candidates, analysis, false);
+                logLookupMatchFailure(
+                        reference, context, candidates, analysis, sourceResult.truncated(), false);
                 results.put(reference, failure(
                         reference,
                         CatalogRehydrationStatus.UNAVAILABLE,
@@ -429,7 +452,8 @@ public class ShopifyCatalogProductRehydrationProvider
             CatalogRehydrationContext context,
             List<ProductCandidate> candidates,
             ShopifyCatalogReferenceMatcher.MatchAnalysis analysis,
-            boolean truncated
+            boolean truncated,
+            boolean fallback
     ) {
         log.warn(
                 "Shopify catalog lookup did not yield the exact requested offer; interactionKey={}, reason={}, "
@@ -444,7 +468,7 @@ public class ShopifyCatalogProductRehydrationProvider
                 analysis.exactMatchCount(),
                 truncated,
                 lookupObservationDiagnostics(candidates),
-                truncated ? "FALLBACK_TO_GET_PRODUCT" : "RETURN_NOT_FOUND"
+                fallback ? "FALLBACK_TO_GET_PRODUCT" : "RETURN_NOT_FOUND"
         );
     }
 

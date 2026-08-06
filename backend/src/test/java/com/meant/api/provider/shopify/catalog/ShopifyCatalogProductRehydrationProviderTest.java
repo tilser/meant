@@ -394,6 +394,88 @@ class ShopifyCatalogProductRehydrationProviderTest {
     }
 
     @Test
+    void fallsBackToExactVariantGetProductWhenLookupReturnsNoCandidates() {
+        ShopifyGlobalCatalogProvider global = providerSource(50);
+        CatalogSourceResult emptyLookup = successful(List.of());
+        CatalogSourceResult exactSource = successful(List.of());
+        ShopifyGlobalCatalogProductResult exactResult = new ShopifyGlobalCatalogProductResult(
+                exactSource, rawProduct(), List.of());
+        when(global.lookupCatalog(any())).thenReturn(emptyLookup);
+        when(global.getProductWithDetails(any())).thenReturn(exactResult);
+        CatalogProductReference requested = new CatalogProductReference(
+                "empty-lookup-fallback",
+                SOURCE,
+                null,
+                null,
+                merchant("seller-a"),
+                "seller.example",
+                product("product-1"),
+                variant("variant-m"),
+                List.of(new ProductAttribute("variant-option", "Size", "M"))
+        );
+
+        CatalogProductRehydrationResult result = rehydrator(global, 50).rehydrate(
+                List.of(requested),
+                new CatalogRehydrationContext("US", "en", "USD")
+        ).getFirst();
+
+        assertThat(result.status()).isEqualTo(CatalogRehydrationStatus.FRESH);
+        ArgumentCaptor<ShopifyGlobalCatalogGetProductRequest> request =
+                ArgumentCaptor.forClass(ShopifyGlobalCatalogGetProductRequest.class);
+        verify(global).getProductWithDetails(request.capture());
+        assertThat(request.getValue().id()).isEqualTo("variant-m");
+    }
+
+    @Test
+    void retriesInteractiveProductDetailWithTheExactVariantIdentity() {
+        ShopifyGlobalCatalogProvider global = providerSource(50);
+        CatalogSourceResult malformed = mock(CatalogSourceResult.class);
+        when(malformed.successful()).thenReturn(false);
+        when(malformed.failure()).thenReturn(new CatalogSourceFailure(
+                CatalogSourceFailureKind.MALFORMED_RESPONSE,
+                "Product identity was not resolved",
+                null,
+                null
+        ));
+        CatalogSourceResult recoveredSource = successful(List.of());
+        ShopifyGlobalCatalogProductResult failedResult =
+                new ShopifyGlobalCatalogProductResult(malformed, null, List.of());
+        ShopifyGlobalCatalogProductResult recoveredResult =
+                new ShopifyGlobalCatalogProductResult(recoveredSource, rawProduct(), List.of());
+        when(global.getProductWithDetails(any())).thenReturn(
+                failedResult,
+                recoveredResult
+        );
+        CatalogProductReference requested = new CatalogProductReference(
+                "detail-variant-fallback",
+                SOURCE,
+                null,
+                null,
+                merchant("seller-a"),
+                "seller.example",
+                product("product-1"),
+                variant("variant-m"),
+                List.of(new ProductAttribute("variant-option", "Size", "M"))
+        );
+
+        CatalogProductDetailResult result = rehydrator(global, 50).getDetails(
+                requested,
+                new CatalogProductDetailSelection(
+                        List.of(new ProductAttribute("variant-option", "Size", "M")),
+                        List.of("Size")
+                ),
+                new CatalogRehydrationContext("US", "en", "USD")
+        );
+
+        assertThat(result.rehydration().status()).isEqualTo(CatalogRehydrationStatus.FRESH);
+        ArgumentCaptor<ShopifyGlobalCatalogGetProductRequest> request =
+                ArgumentCaptor.forClass(ShopifyGlobalCatalogGetProductRequest.class);
+        verify(global, times(2)).getProductWithDetails(request.capture());
+        assertThat(request.getAllValues()).extracting(ShopifyGlobalCatalogGetProductRequest::id)
+                .containsExactly("product-1", "variant-m");
+    }
+
+    @Test
     void savedDetailUsesGetProductAndReturnsOnlyTheExactSellersFullVariants() {
         ShopifyGlobalCatalogProvider global = providerSource(50);
         ProductCandidate selected = detailedCandidate(

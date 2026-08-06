@@ -586,6 +586,41 @@ class ShopifyGlobalCatalogProviderTest {
     }
 
     @Test
+    void preservesGetProductNotFoundAsAnApplicationOutcomeWithItsMessage() throws Exception {
+        String notFound = """
+                {
+                  "ucp": {
+                    "version": "2026-04-08",
+                    "status": "error",
+                    "capabilities": {
+                      "dev.ucp.shopping.catalog.lookup": [{"version": "2026-04-08"}],
+                      "dev.shopify.catalog.global": [{"version": "2026-04-08"}]
+                    }
+                  },
+                  "messages": [{
+                    "type": "error",
+                    "code": "not_found",
+                    "content": "Product not found",
+                    "severity": "unrecoverable"
+                  }]
+                }
+                """;
+        ShopifyGlobalCatalogProvider provider = provider(
+                new CapturingClient(response(notFound)), properties(3));
+
+        var result = provider.getProductWithDetails(new ShopifyGlobalCatalogGetProductRequest(
+                "gid://shopify/ProductVariant/missing", List.of(), List.of(), null, null));
+
+        assertThat(result.catalogResult().successful()).isFalse();
+        assertThat(result.catalogResult().failure().kind()).isEqualTo(CatalogSourceFailureKind.INVALID_REQUEST);
+        assertThat(result.product()).isNull();
+        assertThat(result.messages()).singleElement().satisfies(message -> {
+            assertThat(message.code()).isEqualTo("not_found");
+            assertThat(message.severity()).isEqualTo("unrecoverable");
+        });
+    }
+
+    @Test
     void preservesVariantOptionComponentAndSellingPlanIdentity() throws Exception {
         ShopifyGlobalCatalogProvider provider = provider(
                 new CapturingClient(response(configurationResponse())),

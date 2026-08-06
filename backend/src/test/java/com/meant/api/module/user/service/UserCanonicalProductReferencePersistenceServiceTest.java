@@ -42,6 +42,7 @@ import tools.jackson.databind.ObjectMapper;
 
 class UserCanonicalProductReferencePersistenceServiceTest {
     private static final UUID USER_ID = UUID.fromString("10000000-0000-0000-0000-000000000001");
+    private static final UUID TARGET_USER_ID = UUID.fromString("10000000-0000-0000-0000-000000000002");
     private static final ProviderIdentity PROVIDER = new ProviderIdentity("SHOPIFY");
     private static final DiscoverySourceIdentity SOURCE = new DiscoverySourceIdentity(
             PROVIDER,
@@ -148,6 +149,32 @@ class UserCanonicalProductReferencePersistenceServiceTest {
 
         policy.decision = CatalogRetentionDecision.identifiersOnly("policy-v2");
         assertThat(service.findProducts(USER_ID, List.of(first.key(), second.key()))).isEmpty();
+    }
+
+    @Test
+    void copiesApprovedGuestReferencesWithoutReplacingExistingAccountReferences() {
+        UserCanonicalProductReferenceRepository repository = mock(UserCanonicalProductReferenceRepository.class);
+        MutablePolicy policy = new MutablePolicy(CatalogRetentionDecision.identifiersOnly("policy-v1"));
+        UserCanonicalProductReferencePersistenceService service = service(repository, policy);
+        AtomicReference<List<UserCanonicalProductReference>> saved = captureSaved(repository);
+        CanonicalProduct product = product();
+        service.replace(USER_ID, List.of(product));
+        UserCanonicalProductReference source = saved.get().getFirst();
+        when(repository.findByUserIdAndCanonicalProductKeyInOrderByCanonicalProductKeyAscOfferRankAscIdAsc(
+                USER_ID, List.of(product.key()))).thenReturn(List.of(source));
+        when(repository.findByUserIdAndCanonicalProductKeyInOrderByCanonicalProductKeyAscOfferRankAscIdAsc(
+                TARGET_USER_ID, List.of(product.key()))).thenReturn(List.of());
+
+        int copied = service.copyReferences(USER_ID, TARGET_USER_ID, List.of(product.key()));
+
+        assertThat(copied).isEqualTo(1);
+        assertThat(saved.get()).hasSize(2);
+        UserCanonicalProductReference transferred = saved.get().getLast();
+        assertThat(transferred.getUserId()).isEqualTo(TARGET_USER_ID);
+        assertThat(transferred.getCanonicalProductKey()).isEqualTo(product.key());
+        assertThat(transferred.getOfferKey()).isEqualTo(source.getOfferKey());
+        assertThat(transferred.getReferenceVerifiedAt()).isEqualTo(source.getReferenceVerifiedAt());
+        assertThat(transferred.getCreatedAt()).isAfterOrEqualTo(source.getCreatedAt());
     }
 
     private AtomicReference<List<UserCanonicalProductReference>> captureSaved(

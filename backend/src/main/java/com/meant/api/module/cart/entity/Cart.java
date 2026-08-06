@@ -2,7 +2,6 @@ package com.meant.api.module.cart.entity;
 
 import com.meant.api.common.entity.AssignedIdEntity;
 import com.meant.api.module.cart.constant.CartSnapshotPurpose;
-
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -15,8 +14,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.Objects;
+import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -42,7 +41,7 @@ public class Cart extends AssignedIdEntity<UUID> {
     @Column(nullable = false, updatable = false)
     private UUID id = UUID.randomUUID();
 
-    @Column(nullable = false, updatable = false)
+    @Column(nullable = false)
     private UUID userId;
 
     private UUID merchantId;
@@ -133,6 +132,11 @@ public class Cart extends AssignedIdEntity<UUID> {
     @BatchSize(size = 20)
     @OneToMany(mappedBy = "cart", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<CartAppliedCode> appliedCodes = new ArrayList<>();
+
+    public void transferOwnership(UUID targetUserId, Instant transferredAt) {
+        userId = Objects.requireNonNull(targetUserId, "targetUserId");
+        updatedAt = Objects.requireNonNull(transferredAt, "transferredAt");
+    }
 
     public void assignProvider(UUID merchantId, String merchantDomain) {
         assignProvider(merchantId, merchantDomain, merchantDomain);

@@ -1,3 +1,5 @@
+import type { View } from '../types'
+
 export type PendingAccountAction =
   | { type: 'SAVE_PRODUCT'; productId: string }
   | { type: 'REMEMBER_PREFERENCES'; preferenceDraftId: string }
@@ -20,6 +22,40 @@ interface StoredPendingAccountAction {
 }
 
 export const PENDING_ACCOUNT_ACTION_KEY = 'meant.pendingAccountAction.v1'
+
+export interface PendingAccountNavigation {
+  view: View
+  home?: boolean
+}
+
+/** An imported guest chat is the post-login destination; deferred actions may still run in place. */
+export function pendingAccountNavigation(
+  action: PendingAccountAction,
+  preserveImportedConversation: boolean,
+): PendingAccountNavigation | null {
+  if (preserveImportedConversation) return null
+  switch (action.type) {
+    case 'OPEN_SAVED':
+      return { view: 'saved' }
+    case 'OPEN_INVENTORY':
+      return { view: 'inventory' }
+    case 'OPEN_ORDERS':
+      return { view: 'orders' }
+    case 'OPEN_CART':
+      return { view: 'cart' }
+    case 'OPEN_PREFERENCES':
+    case 'REMEMBER_PREFERENCES':
+      return { view: 'preferences' }
+    case 'OPEN_ACCOUNT':
+      return { view: 'account' }
+    case 'START_NEW_CONVERSATION':
+      return { view: 'discover', home: true }
+    case 'OPEN_HISTORY':
+      return { view: 'discover' }
+    default:
+      return null
+  }
+}
 
 function readStored(): StoredPendingAccountAction | null {
   if (typeof window === 'undefined') return null

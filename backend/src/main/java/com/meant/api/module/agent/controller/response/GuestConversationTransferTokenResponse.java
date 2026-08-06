@@ -5,7 +5,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.util.UUID;
 
-@Schema(description = "One-time guest conversation transfer capability.")
+@Schema(description = "One-time capability for transferring a guest conversation and its commerce state.")
 public record GuestConversationTransferTokenResponse(
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String token,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED) UUID conversationId,

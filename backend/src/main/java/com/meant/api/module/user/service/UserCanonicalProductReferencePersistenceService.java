@@ -135,6 +135,38 @@ public class UserCanonicalProductReferencePersistenceService {
         return Collections.unmodifiableMap(products);
     }
 
+    int copyReferences(UUID sourceUserId, UUID targetUserId, List<String> canonicalProductKeys) {
+        if (sourceUserId == null || targetUserId == null || sourceUserId.equals(targetUserId)
+                || canonicalProductKeys == null || canonicalProductKeys.isEmpty()) {
+            return 0;
+        }
+        List<UserCanonicalProductReference> source = repository
+                .findByUserIdAndCanonicalProductKeyInOrderByCanonicalProductKeyAscOfferRankAscIdAsc(
+                        sourceUserId, canonicalProductKeys);
+        if (source.isEmpty()) {
+            return 0;
+        }
+        List<UserCanonicalProductReference> existing = repository
+                .findByUserIdAndCanonicalProductKeyInOrderByCanonicalProductKeyAscOfferRankAscIdAsc(
+                        targetUserId, canonicalProductKeys);
+        Instant now = Instant.now();
+        List<UserCanonicalProductReference> known = new ArrayList<>(existing);
+        List<UserCanonicalProductReference> copies = new ArrayList<>();
+        for (UserCanonicalProductReference reference : source) {
+            if (observation(reference) == null
+                    || known.stream().anyMatch(reference::hasSameReference)) {
+                continue;
+            }
+            UserCanonicalProductReference copy = reference.copyForUser(targetUserId, now);
+            copies.add(copy);
+            known.add(copy);
+        }
+        if (!copies.isEmpty()) {
+            repository.saveAll(copies);
+        }
+        return copies.size();
+    }
+
     private Optional<CanonicalProduct> product(
             String canonicalProductKey,
             List<UserCanonicalProductReference> stored

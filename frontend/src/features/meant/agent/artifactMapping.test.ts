@@ -1220,6 +1220,84 @@ describe('agent artifact mapping', () => {
     expect(blocks.map((block) => block.type)).toEqual(['cart'])
   })
 
+  test('renders a transferred guest cart snapshot that has no original agent run', () => {
+    const message: AgentMessageProfile = {
+      messageId: 'message-guest-transfer-cart',
+      runId: null,
+      sequenceNumber: 3,
+      role: 'TOOL',
+      contentKind: 'TOOL_RESULT',
+      textContent: null,
+      contentJson: null,
+      correlationId: 'guest-transfer:get_active_carts',
+      createdAt,
+    }
+    const cart = artifact({
+      type: 'CART',
+      stableKey: 'cart:guest-transfer-cart',
+      messageId: message.messageId,
+      cartId: 'guest-transfer-cart',
+      payloadJson: JSON.stringify({
+        cartId: 'guest-transfer-cart',
+        merchantOrigin: 'coffee.example',
+        provider: 'SHOPIFY',
+        routingScopeKey: 'shopify:external:coffee',
+        currency: 'USD',
+      }),
+    })
+    const line = artifact({
+      type: 'CART_LINE',
+      stableKey: 'cart-line:guest-transfer-line',
+      messageId: message.messageId,
+      cartId: 'guest-transfer-cart',
+      cartLineId: 'guest-transfer-line',
+      offerKey: 'guest-transfer-offer',
+      ordinal: 2,
+      payloadJson: JSON.stringify({
+        cartLineId: 'guest-transfer-line',
+        productId: 'guest-transfer-product',
+        productTitle: 'Anonymous coffee',
+        productVariantId: 'guest-transfer-variant',
+        quantity: 1,
+        offerKey: 'guest-transfer-offer',
+        currency: 'USD',
+      }),
+    })
+    const conversation: AgentConversationDetailProfile = {
+      conversationId: 'imported-conversation',
+      merchantId: null,
+      title: 'Coffee',
+      status: 'ACTIVE',
+      activeMissionId: null,
+      latestSequence: 3,
+      createdAt,
+      updatedAt: createdAt,
+      rollingSummary: null,
+      summaryVersion: 0,
+      latestCursor: 0,
+      messages: [message],
+      artifacts: [cart, line],
+    }
+
+    expect(discoverMessagesFromAgentConversation(conversation, [])).toMatchObject([
+      {
+        role: 'ai',
+        blocks: [
+          {
+            type: 'cart',
+            lines: [
+              {
+                id: 'guest-transfer-product',
+                cartId: 'guest-transfer-cart',
+                cartLineId: 'guest-transfer-line',
+              },
+            ],
+          },
+        ],
+      },
+    ])
+  })
+
   test('reconstructs a cart replacement from the variant title when product metadata is absent', () => {
     const cart = artifact({
       type: 'CART',
