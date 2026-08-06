@@ -210,36 +210,36 @@ class UserProductSearchCatalogInputBuilderTest {
     }
 
     @Test
-    void rejectsExplicitNonUsdPrice() {
-        assertThatThrownBy(() -> builder.build(
-                        "linen shirt under 100 EUR",
-                        intent("linen shirt under 100 eur"),
-                        settings(new UserLocationResult("France", "FR", "Paris"))))
-                .isInstanceOf(UnsupportedProductSearchCurrencyException.class);
+    void explicitRequestCurrencyOverridesTheAccountPreference() {
+        UserProductSearchCatalogInput input = builder.build(
+                "linen shirt under 100 EUR",
+                intent("linen shirt under 100 eur"),
+                settings(new UserLocationResult("France", "FR", "Paris"))
+        );
+
+        assertThat(input.context().currency()).isEqualTo("EUR");
+        assertThat(input.filters().price().max()).isEqualTo(10_000L);
     }
 
     @Test
-    void rejectsExplicitCzechKorunaPrice() {
-        assertThatThrownBy(() -> builder.build(
-                        "linen shirt under 2 000 Kč",
-                        intent("linen shirt under 2 000 Kč"),
-                        settings(new UserLocationResult("Czechia", "CZ", "Prague"))))
-                .isInstanceOf(UnsupportedProductSearchCurrencyException.class);
+    void parsesCzechMaximumPriceAndUsesCzechKorunaForTheRequest() {
+        UserProductSearchCatalogInput input = builder.build(
+                "Najdi mi tichý kávovar do 5 000 Kč",
+                intent("tichý kávovar do 5 000 Kč"),
+                settings(new UserLocationResult("Czechia", "CZ", "Prague"))
+        );
+
+        assertThat(input.searchQuery()).isEqualTo("tichý kávovar");
+        assertThat(input.context().currency()).isEqualTo("CZK");
+        assertThat(input.filters().price().max()).isEqualTo(500_000L);
     }
 
     @Test
-    void rejectsCanadianAndAustralianDollarPrices() {
-        assertThatThrownBy(() -> builder.build(
-                        "hiking boots under 100 Canadian dollars",
-                        intent("hiking boots under 100 Canadian dollars"),
-                        settings(new UserLocationResult("Canada", "CA", "Toronto"))))
-                .isInstanceOf(UnsupportedProductSearchCurrencyException.class);
-
-        assertThatThrownBy(() -> builder.build(
-                        "hiking boots under 100 Australian dollars",
-                        intent("hiking boots under 100 Australian dollars"),
-                        settings(new UserLocationResult("Australia", "AU", "Sydney"))))
-                .isInstanceOf(UnsupportedProductSearchCurrencyException.class);
+    void acceptsCanadianAndAustralianDollarPrices() {
+        assertThat(builder.resolveSearchCurrency("hiking boots under 100 Canadian dollars", "USD"))
+                .isEqualTo("CAD");
+        assertThat(builder.resolveSearchCurrency("hiking boots under 100 Australian dollars", "USD"))
+                .isEqualTo("AUD");
     }
 
     @Test
@@ -258,45 +258,27 @@ class UserProductSearchCatalogInputBuilderTest {
     }
 
     @Test
-    void rejectsConflictingSuffixAndAdditionalIsoCurrencies() {
-        assertThatThrownBy(() -> builder.build(
-                        "hiking boots under $100 EUR",
-                        intent("hiking boots under $100 EUR"),
-                        settings(new UserLocationResult("United States", "US", "New York"))))
-                .isInstanceOf(UnsupportedProductSearchCurrencyException.class);
-
-        for (String query : List.of(
-                "hiking boots under 100 CHF",
-                "hiking boots under 100 SEK",
-                "hiking boots under 100 INR",
-                "hiking boots under ₹100"
-        )) {
-            assertThatThrownBy(() -> builder.build(
-                            query,
-                            intent(query),
-                            settings(new UserLocationResult("United States", "US", "New York"))))
-                    .isInstanceOf(UnsupportedProductSearchCurrencyException.class);
-        }
+    void acceptsSupportedExplicitCurrenciesInsteadOfTheAccountPreference() {
+        assertThat(builder.resolveSearchCurrency("hiking boots under $100 EUR", "USD")).isEqualTo("EUR");
+        assertThat(builder.resolveSearchCurrency("hiking boots under 100 CHF", "USD")).isEqualTo("CHF");
+        assertThat(builder.resolveSearchCurrency("hiking boots under 100 SEK", "USD")).isEqualTo("SEK");
+        assertThat(builder.resolveSearchCurrency("hiking boots under 100 INR", "USD")).isEqualTo("INR");
+        assertThat(builder.resolveSearchCurrency("hiking boots under ₹100", "USD")).isEqualTo("INR");
     }
 
     @Test
-    void rejectsNonUsdSymbolsAndCurrenciesInConversationalBudgetText() {
-        for (String value : List.of(
-                "under 100€",
-                "my budget is €100",
-                "my budget is 100 EUR",
-                "I can spend CAD 150"
-        )) {
-            assertThatThrownBy(() -> builder.validateSupportedCurrency(value))
-                    .as(value)
-                    .isInstanceOf(UnsupportedProductSearchCurrencyException.class);
-        }
+    void resolvesExplicitCurrenciesInConversationalBudgetText() {
+        assertThat(builder.resolveSearchCurrency("under 100€", "USD")).isEqualTo("EUR");
+        assertThat(builder.resolveSearchCurrency("my budget is €100", "USD")).isEqualTo("EUR");
+        assertThat(builder.resolveSearchCurrency("my budget is 100 EUR", "USD")).isEqualTo("EUR");
+        assertThat(builder.resolveSearchCurrency("I can spend CAD 150", "USD")).isEqualTo("CAD");
 
-        assertThatThrownBy(() -> builder.build(
-                        "linen shirt under 100€",
-                        intent("linen shirt under 100€"),
-                        settings(new UserLocationResult("France", "FR", "Paris"))))
-                .isInstanceOf(UnsupportedProductSearchCurrencyException.class);
+        UserProductSearchCatalogInput input = builder.build(
+                "linen shirt under 100€",
+                intent("linen shirt under 100€"),
+                settings(new UserLocationResult("France", "FR", "Paris"))
+        );
+        assertThat(input.context().currency()).isEqualTo("EUR");
     }
 
     @Test
@@ -480,6 +462,36 @@ class UserProductSearchCatalogInputBuilderTest {
         assertThat(input.filters().price().min()).isEqualTo(5000L);
         assertThat(input.filters().price().max()).isEqualTo(15000L);
         assertThat(input.cacheKey()).contains("language=\n", "currency=USD");
+    }
+
+    @Test
+    void qualifiedPriceCarriesItsExplicitCurrencyIntoCatalogContext() {
+        CatalogDiscoveryFilters qualifiedFilters = new CatalogDiscoveryFilters(
+                true,
+                List.of(),
+                new CatalogDiscoveryLocation("CZ", null, null),
+                List.of(),
+                new CatalogDiscoveryPrice(null, 500_000L, "CZK"),
+                List.of(),
+                List.of(),
+                List.of(),
+                null,
+                List.of()
+        );
+
+        UserProductSearchCatalogInput input = builder.build(
+                "tichý kávovar",
+                intent("tichý kávovar"),
+                settings(new UserLocationResult("Czechia", "CZ", "Prague")),
+                null,
+                null,
+                qualifiedFilters
+        );
+
+        assertThat(input.context().currency()).isEqualTo("CZK");
+        assertThat(input.context().intent()).contains("Hard budget price filter: at most 5000.00 CZK");
+        assertThat(input.filters().price().max()).isEqualTo(500_000L);
+        assertThat(input.cacheKey()).contains("currency=CZK", "priceMax=500000");
     }
 
     @Test

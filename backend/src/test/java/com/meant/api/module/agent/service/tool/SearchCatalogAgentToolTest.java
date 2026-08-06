@@ -21,6 +21,7 @@ import com.meant.api.module.catalog.service.dto.CatalogDiscoveryFilters;
 import com.meant.api.module.user.constant.UserProductSearchDecisionSource;
 import com.meant.api.module.user.constant.UserProductSearchQuestionTarget;
 import com.meant.api.module.user.service.UserGroupedProductSearchService;
+import com.meant.api.module.user.service.UserProductSearchCatalogInputBuilder;
 import com.meant.api.module.user.service.UserSettingsService;
 import com.meant.api.module.user.service.UserSimilarProductSearchService;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
@@ -56,7 +57,7 @@ class SearchCatalogAgentToolTest {
     }
 
     @Test
-    void convertsRequestedPriceUsingTheAccountCurrenciesMinorUnits() {
+    void convertsRequestedPriceUsingTheExplicitRequestCurrencyInsteadOfTheAccountCurrency() {
         AgentJsonSupport json = mock(AgentJsonSupport.class);
         AgentContextProfileService profiles = mock(AgentContextProfileService.class);
         AgentProductSearchQualificationService qualifications =
@@ -66,10 +67,10 @@ class SearchCatalogAgentToolTest {
         EnsureUserProfileCommand profile = new EnsureUserProfileCommand(
                 userId, "shopper@example.test", "Shopper", null);
         SearchCatalogAgentToolInput input = new SearchCatalogAgentToolInput(
-                "watch",
+                "tichý kávovar",
                 null,
                 List.of(),
-                new SearchCatalogAgentToolInput.Price(null, new BigDecimal("100")),
+                new SearchCatalogAgentToolInput.Price(null, new BigDecimal("5000")),
                 List.of(),
                 List.of(),
                 null,
@@ -82,19 +83,25 @@ class SearchCatalogAgentToolTest {
         when(json.write(any())).thenReturn("{}");
         when(profiles.profile(userId)).thenReturn(profile);
         when(qualifications.qualify(any())).thenReturn(new AgentProductSearchQualificationResult(
-                UUID.randomUUID(), "watch", null, Map.of(), List.of(), Set.of(), Set.of()));
+                UUID.randomUUID(), "tichý kávovar", null, Map.of(), List.of(), Set.of(), Set.of()));
         when(searches.search(eq(profile), any(), any(), eq(Set.of()), eq(Set.of())))
-                .thenReturn(emptyResult("watch"));
+                .thenReturn(emptyResult("tichý kávovar"));
 
-        tool(json, profiles, qualifications, searches, "JPY").execute(
+        tool(json, profiles, qualifications, searches, "USD").execute(
                 new AgentToolExecutionContext(
-                        userId, UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "watch under 100 JPY"),
+                        userId,
+                        UUID.randomUUID(),
+                        UUID.randomUUID(),
+                        UUID.randomUUID(),
+                        "Najdi mi tichý kávovar do 5 000 Kč"
+                ),
                 "{}"
         );
 
         ArgumentCaptor<CatalogDiscoveryFilters> filters = ArgumentCaptor.forClass(CatalogDiscoveryFilters.class);
         verify(searches).search(eq(profile), any(), filters.capture(), eq(Set.of()), eq(Set.of()));
-        assertThat(filters.getValue().price().max()).isEqualTo(100L);
+        assertThat(filters.getValue().price().max()).isEqualTo(500_000L);
+        assertThat(filters.getValue().price().currency()).isEqualTo("CZK");
     }
 
     @Test
@@ -172,7 +179,8 @@ class SearchCatalogAgentToolTest {
                 mock(AgentSimilaritySearchQualificationService.class),
                 searches,
                 mock(UserSimilarProductSearchService.class),
-                settings
+                settings,
+                new UserProductSearchCatalogInputBuilder(null)
         );
     }
 

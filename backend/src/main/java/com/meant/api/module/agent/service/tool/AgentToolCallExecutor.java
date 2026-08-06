@@ -1,5 +1,6 @@
 package com.meant.api.module.agent.service.tool;
 
+import com.meant.api.common.exception.ApiException;
 import com.meant.api.module.agent.constant.AgentMutationAdmission;
 import com.meant.api.module.agent.constant.AgentToolInvocationStatus;
 import com.meant.api.module.agent.constant.AgentToolRisk;
@@ -7,8 +8,8 @@ import com.meant.api.module.agent.exception.AgentException;
 import com.meant.api.module.agent.properties.AgentProperties;
 import com.meant.api.module.agent.service.AgentJsonSupport;
 import com.meant.api.module.agent.service.AgentMutationExecutionLane;
-import com.meant.api.module.agent.service.ReferenceIntegrityPolicy;
 import com.meant.api.module.agent.service.AgentRunService;
+import com.meant.api.module.agent.service.ReferenceIntegrityPolicy;
 import com.meant.api.module.agent.service.dto.AgentExecutedToolCall;
 import com.meant.api.module.agent.service.dto.AgentModelToolCall;
 import com.meant.api.module.agent.service.dto.AgentModelToolResult;
@@ -262,8 +263,8 @@ public class AgentToolCallExecutor {
             }
             boolean uncertainMutation = descriptor.riskClass() != AgentToolRisk.READ
                     && !(cause instanceof AgentException);
-            String message = cause instanceof AgentException agentException
-                    ? agentException.getSafeMessage()
+            String message = cause instanceof ApiException apiException
+                    ? apiException.getSafeMessage()
                     : "The tool could not complete. Try again.";
             return failed(
                     context,
@@ -271,7 +272,7 @@ public class AgentToolCallExecutor {
                     reservation.invocationId(),
                     started,
                     uncertainMutation ? AgentToolInvocationStatus.UNCERTAIN : AgentToolInvocationStatus.FAILED,
-                    cause instanceof AgentException ? "domain_error" : "tool_error",
+                    cause instanceof ApiException ? "domain_error" : "tool_error",
                     message,
                     uncertainMutation
             );

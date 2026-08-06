@@ -2,6 +2,7 @@ package com.meant.api.module.user.service.dto;
 
 import com.meant.api.module.user.constant.UserProductCondition;
 import com.meant.api.module.user.constant.UserProductPriceTier;
+import com.meant.api.module.user.constant.UserCurrency;
 import com.meant.api.module.user.constant.UserProductSearchAttributeName;
 import com.meant.api.module.user.constant.UserProductSearchDecisionSource;
 import com.meant.api.module.user.constant.UserProductSearchFilterKind;
@@ -453,15 +454,35 @@ public record UserProductSearchQualificationPlan(
             UserProductSearchFilterState state,
             Long minUsdMinor,
             Long maxUsdMinor,
+            String currency,
             Provenance provenance
     ) {
         public PriceFilter {
             Objects.requireNonNull(state, "Price filter state is required");
+            currency = currency == null || currency.isBlank() ? null : UserCurrency.normalize(currency);
             provenance = provenance == null ? Provenance.none() : provenance;
         }
 
+        public PriceFilter(
+                UserProductSearchFilterState state,
+                Long minUsdMinor,
+                Long maxUsdMinor,
+                Provenance provenance
+        ) {
+            this(state, minUsdMinor, maxUsdMinor, null, provenance);
+        }
+
+        public PriceFilter(
+                UserProductSearchFilterState state,
+                Long minUsdMinor,
+                Long maxUsdMinor,
+                String currency
+        ) {
+            this(state, minUsdMinor, maxUsdMinor, currency, Provenance.none());
+        }
+
         public PriceFilter(UserProductSearchFilterState state, Long minUsdMinor, Long maxUsdMinor) {
-            this(state, minUsdMinor, maxUsdMinor, Provenance.none());
+            this(state, minUsdMinor, maxUsdMinor, null, Provenance.none());
         }
     }
 

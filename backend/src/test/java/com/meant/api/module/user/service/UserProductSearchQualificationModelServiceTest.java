@@ -109,7 +109,7 @@ class UserProductSearchQualificationModelServiceTest {
     }
 
     @Test
-    void suppliesTheAccountCurrencyAsTrustedQualificationContext() {
+    void suppliesTheResolvedSearchCurrencyAsTrustedQualificationContext() {
         FakeOpenRouterChatClient client = new FakeOpenRouterChatClient(combinedQuestionResponse());
         GenerateUserProductSearchQualificationQuery request = new GenerateUserProductSearchQualificationQuery(
                 "blue jeans",
@@ -125,7 +125,7 @@ class UserProductSearchQualificationModelServiceTest {
     }
 
     @Test
-    void convertsModelPriceBoundsUsingTheAccountCurrenciesMinorUnitExponent() {
+    void convertsModelPriceBoundsUsingTheResolvedSearchCurrenciesMinorUnitExponent() {
         FakeOpenRouterChatClient client = new FakeOpenRouterChatClient(
                 missingRatingRepairResponse().replace("100 USD", "100 JPY")
         );
@@ -141,6 +141,7 @@ class UserProductSearchQualificationModelServiceTest {
         UserProductSearchQualificationPlan plan = service(client).generate(query).plan();
 
         assertThat(plan.price().maxUsdMinor()).isEqualTo(100L);
+        assertThat(plan.price().currency()).isEqualTo("JPY");
     }
 
     @Test

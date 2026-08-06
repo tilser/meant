@@ -88,7 +88,7 @@ public class UserProductSearchQualificationPlanMapper {
         if (!hasValue(filter.state())) {
             return null;
         }
-        return new CatalogDiscoveryPrice(filter.minUsdMinor(), filter.maxUsdMinor());
+        return new CatalogDiscoveryPrice(filter.minUsdMinor(), filter.maxUsdMinor(), filter.currency());
     }
 
     private List<CatalogDiscoveryAttributeFilter> attributes(

@@ -26,9 +26,8 @@ public class UnsupportedProductSearchCurrencyException extends RuntimeException 
                 ? "Product search contains mixed currencies"
                 : "Product search currency " + currency + " does not match preferred currency " + preferredCurrency);
         this.safeMessage = mixed
-                ? "Price amounts use different currencies. Use only " + preferredCurrency
-                        + ", or change your currency in Account settings."
-                : "Use " + preferredCurrency + " for prices, or change your currency in Account settings.";
+                ? "Price amounts use different currencies. Use only one currency in a search."
+                : "This currency could not be used for product search.";
     }
 
     public static UnsupportedProductSearchCurrencyException mixed(String preferredCurrency) {

@@ -3,9 +3,11 @@ package com.meant.api.module.agent.service.tool;
 import com.meant.api.module.agent.constant.AgentToolRisk;
 import com.meant.api.module.agent.service.AgentContextProfileService;
 import com.meant.api.module.agent.service.AgentJsonSupport;
-import com.meant.api.module.agent.service.AgentProductSearchQualificationService;
 import com.meant.api.module.agent.service.AgentProductReadResultService;
+import com.meant.api.module.agent.service.AgentProductSearchQualificationService;
 import com.meant.api.module.agent.service.AgentSimilaritySearchQualificationService;
+import com.meant.api.module.agent.service.command.QualifyAgentProductSearchCommand;
+import com.meant.api.module.agent.service.dto.AgentAppliedSearchFilter;
 import com.meant.api.module.agent.service.dto.AgentArtifact;
 import com.meant.api.module.agent.service.dto.AgentProductListResult;
 import com.meant.api.module.agent.service.dto.AgentProductReferenceResult;
@@ -15,8 +17,6 @@ import com.meant.api.module.agent.service.dto.AgentToolDescriptor;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionResult;
 import com.meant.api.module.agent.service.dto.SearchCatalogAgentToolInput;
-import com.meant.api.module.agent.service.command.QualifyAgentProductSearchCommand;
-import com.meant.api.module.agent.service.dto.AgentAppliedSearchFilter;
 import com.meant.api.module.agent.service.query.GetAgentSimilaritySearchQualificationQuery;
 import com.meant.api.module.catalog.service.dto.CanonicalProduct;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryAttributeFilter;
@@ -27,11 +27,12 @@ import com.meant.api.module.catalog.service.dto.CatalogDiscoveryLocation;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryPrice;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryPriceTier;
 import com.meant.api.module.catalog.service.dto.CatalogDiscoveryRating;
+import com.meant.api.module.user.constant.UserCurrency;
 import com.meant.api.module.user.constant.UserProductSearchPagination;
 import com.meant.api.module.user.constant.UserProductSearchDecisionSource;
 import com.meant.api.module.user.constant.UserProductSearchQuestionTarget;
-import com.meant.api.module.user.constant.UserCurrency;
 import com.meant.api.module.user.service.UserGroupedProductSearchService;
+import com.meant.api.module.user.service.UserProductSearchCatalogInputBuilder;
 import com.meant.api.module.user.service.UserSettingsService;
 import com.meant.api.module.user.service.UserSimilarProductSearchService;
 import com.meant.api.module.user.service.command.SearchSimilarUserProductsCommand;
@@ -41,8 +42,8 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Currency;
-import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -92,6 +93,7 @@ public class SearchCatalogAgentTool implements AgentTool {
     private final UserGroupedProductSearchService searchService;
     private final UserSimilarProductSearchService similarProductSearchService;
     private final UserSettingsService settingsService;
+    private final UserProductSearchCatalogInputBuilder catalogInputBuilder;
 
     @Override
     public AgentToolDescriptor descriptor() {
@@ -112,11 +114,15 @@ public class SearchCatalogAgentTool implements AgentTool {
         }
         var profile = profileService.profile(context.userId());
         String preferredCurrency = UserCurrency.normalizeOrDefault(settingsService.get(profile).currency());
-        CatalogDiscoveryFilters requestedFilters = filters(input, preferredCurrency);
         String authoritativeUserText = context.triggeringUserText() == null
                 || context.triggeringUserText().isBlank()
                 ? query
                 : context.triggeringUserText().trim();
+        String searchCurrency = catalogInputBuilder.resolveSearchCurrency(
+                authoritativeUserText,
+                preferredCurrency
+        );
+        CatalogDiscoveryFilters requestedFilters = filters(input, searchCurrency);
         var qualificationCommand = new QualifyAgentProductSearchCommand(
                 profile,
                 context.conversationId(),
@@ -587,7 +593,7 @@ public class SearchCatalogAgentTool implements AgentTool {
         if (min != null && max != null && min > max) {
             throw AgentProductReadToolException.invalid("Minimum price must not exceed maximum price.");
         }
-        return new CatalogDiscoveryPrice(min, max);
+        return new CatalogDiscoveryPrice(min, max, currency);
     }
 
     private CatalogDiscoveryRating rating(SearchCatalogAgentToolInput.Rating input) {

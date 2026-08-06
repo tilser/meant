@@ -8,6 +8,7 @@ import com.meant.api.module.user.service.command.QualifyUserProductSearchCommand
 import com.meant.api.module.user.service.dto.UserProductSearchQualificationModelResult;
 import com.meant.api.module.user.service.dto.UserProductSearchQualificationResult;
 import com.meant.api.module.user.service.dto.UserProductSearchQualificationSnapshot;
+import com.meant.api.module.user.service.dto.UserSettingsResult;
 import com.meant.api.module.user.service.query.GenerateUserProductSearchQualificationQuery;
 import com.meant.api.module.user.service.query.FindUserProductSearchQualificationByRequestQuery;
 import com.meant.api.module.user.service.query.GetUserProductSearchQualificationQuery;
@@ -85,7 +86,16 @@ public class UserProductSearchQualificationService {
         UUID merchantId = previous == null ? command.merchantId() : previous.merchantId();
         var durablePreferences = preferenceService.list(command.userId());
         var settings = userSettingsService.get(profileCommand);
-        catalogInputBuilder.validateSupportedCurrency(command.message(), settings.currency());
+        String previousCurrency = previous == null ? null : previous.plan().price().currency();
+        String originalCurrency = catalogInputBuilder.resolveSearchCurrency(
+                originalQuery,
+                previousCurrency == null ? settings.currency() : previousCurrency
+        );
+        String searchCurrency = catalogInputBuilder.resolveSearchCurrency(
+                command.message(),
+                originalCurrency
+        );
+        UserSettingsResult searchSettings = withCurrency(settings, searchCurrency);
         var tasteProfile = userTasteProfileService.profile(command.userId(), settings);
         log.info(
                 "Product-search qualification invoking model. userId={}, conversationId={}, "
@@ -103,7 +113,7 @@ public class UserProductSearchQualificationService {
                         originalQuery,
                         command.message().trim(),
                         previous == null ? null : previous.plan(),
-                        settings,
+                        searchSettings,
                         durablePreferences,
                         command.conversation(),
                         tasteProfile,
@@ -262,6 +272,22 @@ public class UserProductSearchQualificationService {
     private UUID startingQualificationId(QualifyUserProductSearchCommand command) {
         UUID requestQualificationId = command.requestQualificationId();
         return requestQualificationId == null ? UUID.randomUUID() : requestQualificationId;
+    }
+
+    private UserSettingsResult withCurrency(UserSettingsResult settings, String currency) {
+        return new UserSettingsResult(
+                settings.budget(),
+                currency,
+                settings.clothingFit(),
+                settings.location(),
+                settings.locations(),
+                settings.filters(),
+                settings.availableFilters(),
+                settings.parsedFilterIds(),
+                settings.unmappedPreferences(),
+                settings.createdAt(),
+                settings.updatedAt()
+        );
     }
 
     private UserProductSearchQualificationResult result(UserProductSearchQualificationSnapshot snapshot) {

@@ -38,7 +38,7 @@ class UserProductSearchQualificationPlanCodecTest {
                 new UserProductSearchQualificationPlan.LocationsFilter(
                         UserProductSearchFilterState.ANY, List.of()),
                 new UserProductSearchQualificationPlan.PriceFilter(
-                        UserProductSearchFilterState.VALUE, null, 15_000L),
+                        UserProductSearchFilterState.VALUE, null, 15_000L, "CZK"),
                 new UserProductSearchQualificationPlan.ReferenceFilter(
                         UserProductSearchFilterState.NOT_APPLICABLE, List.of()),
                 new UserProductSearchQualificationPlan.ReferenceFilter(
@@ -68,13 +68,14 @@ class UserProductSearchQualificationPlanCodecTest {
 
         assertThat(decoded).isEqualTo(plan);
         assertThat(decoded.currentSchema()).isTrue();
+        assertThat(decoded.price().currency()).isEqualTo("CZK");
         assertThat(decoded.attributes().values()).singleElement().satisfies(attribute -> {
             assertThat(attribute.state()).isEqualTo(UserProductSearchFilterState.VALUE);
             assertThat(attribute.provenance().source())
                     .isEqualTo(UserProductSearchDecisionSource.CURRENT_USER_TURN);
         });
         assertThat(encoded)
-                .contains("\"schemaVersion\":3", "\"SIZE\"", "\"CURRENT_USER_TURN\"")
+                .contains("\"schemaVersion\":3", "\"currency\":\"CZK\"", "\"SIZE\"", "\"CURRENT_USER_TURN\"")
                 .doesNotContain("javaType");
     }
 

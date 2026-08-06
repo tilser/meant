@@ -8,7 +8,6 @@ import com.meant.api.module.user.constant.UserProductSearchFilterKind;
 import com.meant.api.module.user.constant.UserProductSearchFilterState;
 import com.meant.api.module.user.constant.UserProductSearchQualificationStatus;
 import com.meant.api.module.user.exception.UserException;
-import com.meant.api.module.user.exception.UnsupportedProductSearchCurrencyException;
 import com.meant.api.module.user.properties.UserProductSearchProperties;
 import com.meant.api.module.user.service.command.EnsureUserProfileCommand;
 import com.meant.api.module.user.service.command.PersistUserProductSearchQualificationCommand;
@@ -431,8 +430,12 @@ class UserProductSearchQualificationServiceTest {
     }
 
     @Test
-    void rejectsNonUsdBeforeCallingTheQualificationModel() {
-        FakeModelService modelService = new FakeModelService(null);
+    void explicitRequestCurrencyOverridesTheAccountCurrencyForQualification() {
+        FakeModelService modelService = new FakeModelService(new UserProductSearchQualificationModelResult(
+                plan(UserProductSearchFilterState.ANY),
+                "qualification-model",
+                "qualification-v1"
+        ));
         UserProductSearchQualificationService service = new UserProductSearchQualificationService(
                 new FakeUserSettingsService(settings()),
                 new FakeUserTasteProfileService(tasteProfile()),
@@ -443,10 +446,12 @@ class UserProductSearchQualificationServiceTest {
         );
         EnsureUserProfileCommand profile = profile();
 
-        assertThatThrownBy(() -> service.qualify(profile, new QualifyUserProductSearchCommand(
-                profile.id(), UUID.randomUUID(), null, "running shoes under 100 EUR", null)))
-                .isInstanceOf(UnsupportedProductSearchCurrencyException.class);
-        assertThat(modelService.calls).isZero();
+        var result = service.qualify(profile, new QualifyUserProductSearchCommand(
+                profile.id(), UUID.randomUUID(), null, "running shoes under 100 EUR", null));
+
+        assertThat(result.status()).isEqualTo(UserProductSearchQualificationStatus.READY);
+        assertThat(modelService.calls).isEqualTo(1);
+        assertThat(modelService.lastQuery.settings().currency()).isEqualTo("EUR");
     }
 
     private EnsureUserProfileCommand profile() {

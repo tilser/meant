@@ -85,8 +85,9 @@ public class UserProductSearchQualificationModelService {
             When the previous persisted question asked for multiple targets and explicitly offered a bare “I don’t
             care” answer for all of them, that bare answer resolves every target in that question to ANY. If the user
             names only one target, apply ANY only to that named target.
-            PROFILE may resolve only SHIPS_TO from primaryLocation and TARGET_GENDER from clothing fit; its
-            priceCurrency supplies denomination context but not hard-filter provenance or a price value. Other saved
+            PROFILE may resolve only SHIPS_TO from primaryLocation and TARGET_GENDER from clothing fit. The supplied
+            priceCurrency is the request denomination: an explicit currency in the buyer request overrides the account
+            preference, which is otherwise the fallback. It is context, not hard-filter provenance or a price value. Other saved
             locations are reference context only and must never be used as PROFILE provenance. A stored
             DURABLE_PREFERENCE may resolve only SIZE and only when its scope clearly matches the current product noun.
             When PROFILE resolves SHIPS_TO, copy country, region, and postalCode exactly from primaryLocation.
@@ -104,9 +105,9 @@ public class UserProductSearchQualificationModelService {
             effectiveQuery instead.
 
             Decide CONDITION, SHIPS_TO, SHIPS_FROM, PRICE, RATING, and PRICE_TIER independently. PRICE uses only the
-            profile priceCurrency (USD when absent), and one valid bound is sufficient. Treat an unqualified numeric
-            price bound as denominated in that profile currency. An explicit different currency is rejected before
-            this assessment. The profile supplies only the denomination, never a minimum, maximum, or budget value.
+            supplied request priceCurrency (USD when absent), and one valid bound is sufficient. Treat an unqualified
+            numeric price bound as denominated in that currency. The profile supplies only the fallback denomination,
+            never a minimum, maximum, or budget value.
             A later answer may qualify a numeric bound only from this same pending search, never from an older search
             in the conversation. RATING may contain min, minCount, or both. A missing optional bound does not make an
             otherwise valid filter unresolved. CONDITION supports NEW and SECONDHAND. Location countries use ISO
@@ -633,7 +634,12 @@ public class UserProductSearchQualificationModelService {
             throw invalid("price minimum exceeds maximum");
         }
         return new UserProductSearchQualificationPlan.PriceFilter(
-                state, min, max, provenance(raw.provenance(), "price"));
+                state,
+                min,
+                max,
+                state == UserProductSearchFilterState.VALUE ? currency : null,
+                provenance(raw.provenance(), "price")
+        );
     }
 
     private UserProductSearchQualificationPlan.AttributesFilter attributes(List<RawAttribute> rawAttributes) {

@@ -35,7 +35,7 @@ import org.springframework.stereotype.Service;
 public class UserProductSearchCatalogInputBuilder {
 
     private static final String AMOUNT_NUMBER_PATTERN =
-            "(?:\\d{1,3}(?:[\\s\\.,]\\d{3})+|\\d+)(?:[\\.,]\\d{1,2})?";
+            "(?:\\d{1,3}(?:[\\s\\.,]\\d{3})+|\\d+(?![\\s\\.,]\\d{3}))(?:[\\.,]\\d{1,2})?";
     private static final String CURRENCY_SYMBOLS = "$€£¥₹₩";
     private static final String AMOUNT_PATTERN = "(?:[" + CURRENCY_SYMBOLS + "]\\s*)?"
             + AMOUNT_NUMBER_PATTERN;
@@ -67,13 +67,15 @@ public class UserProductSearchCatalogInputBuilder {
             Pattern.CASE_INSENSITIVE
     );
     private static final Pattern BETWEEN_PRICE_PATTERN = Pattern.compile(
-            "\\b(?:between|from)\\s+(?<min>%s)\\s+(?:and|to|-)\\s+(?<max>%s)\\s*(?<currency>%s)?\\b"
-                    .formatted(AMOUNT_PATTERN, AMOUNT_PATTERN, CURRENCY_PATTERN),
+            ("\\b(?:between|from|mezi|od)\\s+(?<min>%s)\\s+(?:and|to|a|do|-)\\s+(?<max>%s)"
+                    + "\\s*(?<currency>%s)?(?!\\s*(?:%s))(?![\\p{L}\\p{N}])")
+                    .formatted(AMOUNT_PATTERN, AMOUNT_PATTERN, CURRENCY_PATTERN, CURRENCY_PATTERN),
             Pattern.CASE_INSENSITIVE
     );
     private static final Pattern MAX_PRICE_PATTERN = Pattern.compile(
-            "\\b(?:under|below|less than|up to|max(?:imum)?|no more than)\\s+(?<max>%s)\\s*(?<currency>%s)?\\b"
-                    .formatted(AMOUNT_PATTERN, CURRENCY_PATTERN),
+            ("\\b(?:under|below|less than|up to|max(?:imum)?|no more than|do|pod|nejvýše|maximálně)"
+                    + "\\s+(?<max>%s)\\s*(?<currency>%s)?(?!\\s*(?:%s))(?![\\p{L}\\p{N}])")
+                    .formatted(AMOUNT_PATTERN, CURRENCY_PATTERN, CURRENCY_PATTERN),
             Pattern.CASE_INSENSITIVE
     );
     private static final Pattern MAX_PRICE_WITH_PREFIXED_CURRENCY_PATTERN = Pattern.compile(
@@ -82,8 +84,9 @@ public class UserProductSearchCatalogInputBuilder {
             Pattern.CASE_INSENSITIVE
     );
     private static final Pattern MIN_PRICE_PATTERN = Pattern.compile(
-            "\\b(?:over|above|more than|at least|min(?:imum)?|no less than)\\s+(?<min>%s)\\s*(?<currency>%s)?\\b"
-                    .formatted(AMOUNT_PATTERN, CURRENCY_PATTERN),
+            ("\\b(?:over|above|more than|at least|min(?:imum)?|no less than|od|nad|alespoň|minimálně)"
+                    + "\\s+(?<min>%s)\\s*(?<currency>%s)?(?!\\s*(?:%s))(?![\\p{L}\\p{N}])")
+                    .formatted(AMOUNT_PATTERN, CURRENCY_PATTERN, CURRENCY_PATTERN),
             Pattern.CASE_INSENSITIVE
     );
     private static final Pattern MIN_PRICE_WITH_PREFIXED_CURRENCY_PATTERN = Pattern.compile(
@@ -147,10 +150,11 @@ public class UserProductSearchCatalogInputBuilder {
         String preferredCurrency = settings == null
                 ? UserCurrency.DEFAULT
                 : UserCurrency.normalizeOrDefault(settings.currency());
-        validateSupportedCurrency(originalQuery, preferredCurrency);
+        String requestCurrency = resolveSearchCurrency(originalQuery, preferredCurrency);
         ParsedPrice detectedPrice = parsePrice(originalQuery, queryIntent.searchQuery());
-        validateCurrency(detectedPrice, preferredCurrency);
-        detectedPrice = withDefaultCurrency(detectedPrice, preferredCurrency);
+        validateCurrency(detectedPrice);
+        String currency = qualifiedPriceCurrency(qualifiedFilters, requestCurrency);
+        detectedPrice = withDefaultCurrency(detectedPrice, currency);
         boolean qualifiedPriceActive = qualifiedFilters != null && qualifiedFilters.price() != null;
         ParsedPrice parsedPrice = detectedPrice != null
                 && (qualifiedPriceActive
@@ -159,14 +163,13 @@ public class UserProductSearchCatalogInputBuilder {
                 : null;
         ParsedPrice priceFilter = qualifiedFilters == null
                 ? parsedPrice
-                : parsedPrice(qualifiedFilters, preferredCurrency);
+                : parsedPrice(qualifiedFilters, currency);
         String searchQuery = searchQuery(queryIntent.searchQuery(), parsedPrice);
         CatalogDiscoveryLocation contextLocation = contextLocation(
                 settings,
                 qualifiedFilters
         );
         String country = contextLocation == null ? null : contextLocation.country();
-        String currency = preferredCurrency;
         CatalogSearchContext context = context(
                 country,
                 contextLocation == null ? null : contextLocation.region(),
@@ -209,39 +212,42 @@ public class UserProductSearchCatalogInputBuilder {
         return catalogLocation(settings.location());
     }
 
-    /** Rejects prices explicitly stated in a currency other than the account preference. */
+    /** Validates that one request does not contain conflicting explicit currencies. */
     public void validateSupportedCurrency(String value) {
         validateSupportedCurrency(value, UserCurrency.DEFAULT);
     }
 
     public void validateSupportedCurrency(String value, String preferredCurrency) {
+        resolveSearchCurrency(value, preferredCurrency);
+    }
+
+    /** Explicit request currency wins; the account preference is only the fallback. */
+    public String resolveSearchCurrency(String value, String preferredCurrency) {
         String normalizedPreferredCurrency = UserCurrency.normalizeOrDefault(preferredCurrency);
-        rejectExplicitDifferentCurrencyAmount(value, normalizedPreferredCurrency);
+        LinkedHashSet<String> currencies = explicitCurrencies(value);
         ParsedPrice parsedPrice = parsePrice(value);
         if (parsedPrice == null && value != null && !value.isBlank()) {
             parsedPrice = parsePrice("under " + value.trim());
         }
-        validateCurrency(parsedPrice, normalizedPreferredCurrency);
+        if (parsedPrice != null && parsedPrice.currency() != null) {
+            currencies.add(parsedPrice.currency());
+        }
+        if (currencies.contains("MIXED") || currencies.size() > 1) {
+            throw UnsupportedProductSearchCurrencyException.mixed(normalizedPreferredCurrency);
+        }
+        return currencies.stream().findFirst().orElse(normalizedPreferredCurrency);
     }
 
-    private void rejectExplicitDifferentCurrencyAmount(String value, String preferredCurrency) {
-        if (value == null || value.isBlank()) {
-            return;
-        }
+    private LinkedHashSet<String> explicitCurrencies(String value) {
         LinkedHashSet<String> currencies = new LinkedHashSet<>();
+        if (value == null || value.isBlank()) {
+            return currencies;
+        }
         collectCurrencies(PREFIXED_SYMBOL_CURRENCY_AMOUNT_PATTERN.matcher(value), currencies);
         collectCurrencies(SUFFIXED_SYMBOL_CURRENCY_AMOUNT_PATTERN.matcher(value), currencies);
         collectCurrencies(PREFIXED_TEXT_CURRENCY_AMOUNT_PATTERN.matcher(value), currencies);
         collectCurrencies(SUFFIXED_TEXT_CURRENCY_AMOUNT_PATTERN.matcher(value), currencies);
-        if (currencies.size() > 1) {
-            throw UnsupportedProductSearchCurrencyException.mixed(preferredCurrency);
-        }
-        currencies.stream()
-                .filter(currency -> !preferredCurrency.equals(currency))
-                .findFirst()
-                .ifPresent(currency -> {
-                    throw new UnsupportedProductSearchCurrencyException(currency, preferredCurrency);
-                });
+        return currencies;
     }
 
     private void collectCurrencies(Matcher matcher, LinkedHashSet<String> currencies) {
@@ -266,11 +272,20 @@ public class UserProductSearchCatalogInputBuilder {
         if (filters.price() == null) {
             return null;
         }
+        String currency = filters.price().currency() == null
+                ? preferredCurrency
+                : filters.price().currency();
         return new ParsedPrice(
-                majorUnits(filters.price().min(), preferredCurrency),
-                majorUnits(filters.price().max(), preferredCurrency),
-                preferredCurrency
+                majorUnits(filters.price().min(), currency),
+                majorUnits(filters.price().max(), currency),
+                currency
         );
+    }
+
+    private String qualifiedPriceCurrency(CatalogDiscoveryFilters filters, String fallbackCurrency) {
+        return filters == null || filters.price() == null || filters.price().currency() == null
+                ? fallbackCurrency
+                : filters.price().currency();
     }
 
     private ParsedPrice withDefaultCurrency(ParsedPrice price, String preferredCurrency) {
@@ -644,15 +659,12 @@ public class UserProductSearchCatalogInputBuilder {
                 : distinctCurrencies.stream().findFirst().orElse(null);
     }
 
-    private void validateCurrency(ParsedPrice parsedPrice, String preferredCurrency) {
+    private void validateCurrency(ParsedPrice parsedPrice) {
         if (parsedPrice == null || parsedPrice.currency() == null) {
             return;
         }
         if ("MIXED".equals(parsedPrice.currency())) {
-            throw UnsupportedProductSearchCurrencyException.mixed(preferredCurrency);
-        }
-        if (!preferredCurrency.equalsIgnoreCase(parsedPrice.currency())) {
-            throw new UnsupportedProductSearchCurrencyException(parsedPrice.currency(), preferredCurrency);
+            throw UnsupportedProductSearchCurrencyException.mixed(UserCurrency.DEFAULT);
         }
     }
 

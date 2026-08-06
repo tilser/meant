@@ -35,7 +35,7 @@ class UserProductSearchQualificationPlanMapperTest {
                         value(), new UserProductSearchQualificationPlan.Location("US", "CA", "90210")),
                 new UserProductSearchQualificationPlan.LocationsFilter(
                         value(), List.of(new UserProductSearchQualificationPlan.Location("CA", null, null))),
-                new UserProductSearchQualificationPlan.PriceFilter(value(), 5000L, 15000L),
+                new UserProductSearchQualificationPlan.PriceFilter(value(), 5000L, 15000L, "CZK"),
                 new UserProductSearchQualificationPlan.ReferenceFilter(
                         value(), List.of("gid://shopify/Shop/123")),
                 new UserProductSearchQualificationPlan.ReferenceFilter(
@@ -70,6 +70,7 @@ class UserProductSearchQualificationPlanMapperTest {
         assertThat(filters.shipsFrom()).extracting(location -> location.country()).containsExactly("CA");
         assertThat(filters.price().min()).isEqualTo(5000L);
         assertThat(filters.price().max()).isEqualTo(15000L);
+        assertThat(filters.price().currency()).isEqualTo("CZK");
         assertThat(filters.shopIds()).containsExactly("gid://shopify/Shop/123");
         assertThat(filters.categoryIds()).containsExactly("gid://shopify/TaxonomyCategory/aa-8-1");
         assertThat(filters.attributes()).extracting(attribute -> attribute.name())

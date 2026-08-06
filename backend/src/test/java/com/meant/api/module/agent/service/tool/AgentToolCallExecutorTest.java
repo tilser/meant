@@ -25,6 +25,7 @@ import com.meant.api.module.agent.service.dto.AgentToolDescriptor;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionContext;
 import com.meant.api.module.agent.service.dto.AgentToolExecutionResult;
 import com.meant.api.module.agent.service.dto.AgentToolInvocationReservation;
+import com.meant.api.module.user.exception.UnsupportedProductSearchCurrencyException;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
@@ -155,6 +156,66 @@ class AgentToolCallExecutorTest {
                 .contains("\"code\":\"invalid_arguments\"")
                 .contains("$.query is required.")
                 .contains("\"retryable\":true");
+    }
+
+    @Test
+    void readToolDomainErrorsPreserveTheirSafeMessageWithoutInvitingARetry() {
+        AgentTool tool = mock(AgentTool.class);
+        AgentToolDescriptor descriptor = new AgentToolDescriptor(
+                "search_catalog",
+                "Search catalog",
+                "{\"type\":\"object\"}",
+                "v1",
+                AgentToolRisk.READ
+        );
+        when(tool.descriptor()).thenReturn(descriptor);
+        when(tool.execute(any(), anyString()))
+                .thenThrow(UnsupportedProductSearchCurrencyException.mixed("USD"));
+        AgentToolAuthorizationPolicy authorizationPolicy = mock(AgentToolAuthorizationPolicy.class);
+        when(authorizationPolicy.authorized(any(), eq(descriptor))).thenReturn(true);
+        AgentToolInvocationService invocationService = mock(AgentToolInvocationService.class);
+        UUID invocationId = UUID.randomUUID();
+        when(invocationService.reserve(any(), any(), eq(descriptor), anyString(), anyString(), isNull()))
+                .thenReturn(new AgentToolInvocationReservation(
+                        invocationId, true, null, List.of(), false));
+        AgentProperties stableExecutionProperties = properties(Duration.ofSeconds(5));
+        ObjectMapper objectMapper = new ObjectMapper();
+        AgentJsonSupport jsonSupport = new AgentJsonSupport(objectMapper, stableExecutionProperties);
+        executor = new AgentToolCallExecutor(
+                new AgentToolRegistry(List.of(tool)),
+                authorizationPolicy,
+                invocationService,
+                mock(AgentRunService.class),
+                jsonSupport,
+                new AgentToolSchemaValidator(objectMapper),
+                acceptingReferences(),
+                new AgentMutationExecutionLane(new UserMutationExecutionLane()),
+                stableExecutionProperties
+        );
+        AgentToolExecutionContext context = new AgentToolExecutionContext(
+                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "find shoes");
+
+        var result = executor.execute(
+                context,
+                new AgentModelToolCall("call-currency", "search_catalog", "{}")
+        );
+
+        assertThat(result.successful()).isFalse();
+        assertThat(result.modelResult().resultJson())
+                .contains("\"code\":\"domain_error\"")
+                .contains("Price amounts use different currencies. Use only one currency in a search.")
+                .contains("\"retryable\":false");
+        verify(invocationService).fail(
+                eq(context.runId()),
+                eq(invocationId),
+                eq("call-currency"),
+                eq("search_catalog"),
+                eq(AgentToolInvocationStatus.FAILED),
+                eq("domain_error"),
+                eq("Price amounts use different currencies. Use only one currency in a search."),
+                anyLong(),
+                isNull()
+        );
     }
 
     @Test
