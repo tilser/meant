@@ -24,6 +24,9 @@ declare global {
 const SCRIPT_URL = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'
 let scriptPromise: Promise<TurnstileApi> | null = null
 
+export type AuthCaptchaAction =
+  'anonymous-sign-in' | 'password-sign-in' | 'sign-up' | 'magic-link' | 'password-reset'
+
 function loadTurnstile(): Promise<TurnstileApi> {
   if (window.turnstile) return Promise.resolve(window.turnstile)
   if (scriptPromise) return scriptPromise
@@ -50,8 +53,8 @@ function loadTurnstile(): Promise<TurnstileApi> {
   return scriptPromise
 }
 
-/** Runs a managed challenge only when a production Turnstile site key is configured. */
-export async function resolveAnonymousCaptchaToken(): Promise<string | null> {
+/** Runs a fresh managed challenge only when a production Turnstile site key is configured. */
+export async function resolveAuthCaptchaToken(action: AuthCaptchaAction): Promise<string | null> {
   const sitekey = import.meta.env.VITE_TURNSTILE_SITE_KEY?.trim()
   if (!sitekey || typeof window === 'undefined') return null
   const turnstile = await loadTurnstile()
@@ -70,7 +73,7 @@ export async function resolveAnonymousCaptchaToken(): Promise<string | null> {
     }
     widgetId = turnstile.render(container, {
       sitekey,
-      action: 'anonymous-sign-in',
+      action,
       appearance: 'interaction-only',
       theme: 'auto',
       callback: (token) => finish({ token }),

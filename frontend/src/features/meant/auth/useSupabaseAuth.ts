@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 
 import { supabase } from '../../../lib/supabase'
-import { resolveAnonymousCaptchaToken } from './turnstile'
+import { resolveAuthCaptchaToken, type AuthCaptchaAction } from './turnstile'
 
 export type AuthBootstrapStatus =
   'initializing' | 'anonymous' | 'permanent' | 'signed-out' | 'callback' | 'error'
@@ -98,12 +98,27 @@ function callbackError(location: Pick<Location, 'search' | 'hash'>): string | nu
   return parameters.get('error_description') ?? parameters.get('error')
 }
 
+function authActionError(error: unknown): string {
+  return error instanceof Error ? error.message : 'Security verification failed.'
+}
+
+export async function withAuthCaptchaToken<T>(
+  action: AuthCaptchaAction,
+  request: (captchaToken: string | undefined) => Promise<T>,
+  resolveCaptchaToken: (
+    action: AuthCaptchaAction,
+  ) => Promise<string | null> = resolveAuthCaptchaToken,
+): Promise<T> {
+  const captchaToken = await resolveCaptchaToken(action)
+  return request(captchaToken ?? undefined)
+}
+
 const createOrRestoreAnonymousSession = createAnonymousSessionBootstrap(
   () => supabase.auth.getSession(),
-  async () => {
-    const captchaToken = await resolveAnonymousCaptchaToken()
-    return supabase.auth.signInAnonymously(captchaToken ? { options: { captchaToken } } : undefined)
-  },
+  () =>
+    withAuthCaptchaToken('anonymous-sign-in', (captchaToken) =>
+      supabase.auth.signInAnonymously(captchaToken ? { options: { captchaToken } } : undefined),
+    ),
 )
 
 /**
@@ -188,17 +203,36 @@ export function useSupabaseAuth(options: SupabaseAuthOptions = {}): AuthState {
   }, [applySession, bootstrapAnonymous, callback, ensureSession])
 
   const signInWithPassword: AuthActions['signInWithPassword'] = async (email, password) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    return { error: error?.message ?? null }
+    try {
+      const { error } = await withAuthCaptchaToken('password-sign-in', (captchaToken) =>
+        supabase.auth.signInWithPassword({
+          email,
+          password,
+          options: captchaToken ? { captchaToken } : undefined,
+        }),
+      )
+      return { error: error?.message ?? null }
+    } catch (error) {
+      return { error: authActionError(error) }
+    }
   }
 
   const signUp: AuthActions['signUp'] = async (email, password, fullName) => {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: fullName.trim() ? { full_name: fullName.trim() } : undefined },
-    })
-    return { error: error?.message ?? null, needsConfirmation: !error && !data.session }
+    try {
+      const { data, error } = await withAuthCaptchaToken('sign-up', (captchaToken) =>
+        supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: fullName.trim() ? { full_name: fullName.trim() } : undefined,
+            captchaToken,
+          },
+        }),
+      )
+      return { error: error?.message ?? null, needsConfirmation: !error && !data.session }
+    } catch (error) {
+      return { error: authActionError(error), needsConfirmation: false }
+    }
   }
 
   const signInWithOAuth: AuthActions['signInWithOAuth'] = async (provider) => {
@@ -218,11 +252,17 @@ export function useSupabaseAuth(options: SupabaseAuthOptions = {}): AuthState {
   }
 
   const sendMagicLink: AuthActions['sendMagicLink'] = async (email) => {
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: redirectUrl(), shouldCreateUser: true },
-    })
-    return { error: error?.message ?? null }
+    try {
+      const { error } = await withAuthCaptchaToken('magic-link', (captchaToken) =>
+        supabase.auth.signInWithOtp({
+          email,
+          options: { emailRedirectTo: redirectUrl(), shouldCreateUser: true, captchaToken },
+        }),
+      )
+      return { error: error?.message ?? null }
+    } catch (error) {
+      return { error: authActionError(error) }
+    }
   }
 
   const linkEmailIdentity: AuthActions['linkEmailIdentity'] = async (email) => {
@@ -231,10 +271,17 @@ export function useSupabaseAuth(options: SupabaseAuthOptions = {}): AuthState {
   }
 
   const resetPassword: AuthActions['resetPassword'] = async (email) => {
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: redirectUrl('/auth/recovery'),
-    })
-    return { error: error?.message ?? null }
+    try {
+      const { error } = await withAuthCaptchaToken('password-reset', (captchaToken) =>
+        supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: redirectUrl('/auth/recovery'),
+          captchaToken,
+        }),
+      )
+      return { error: error?.message ?? null }
+    } catch (error) {
+      return { error: authActionError(error) }
+    }
   }
 
   const signInAnonymously: AuthActions['signInAnonymously'] = async () => {

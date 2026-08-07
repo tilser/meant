@@ -1,10 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import type { Session } from '@supabase/supabase-js'
 
+import type { AuthCaptchaAction } from './turnstile'
 import {
   createAnonymousSessionBootstrap,
   isAnonymousSession,
   isAuthCallbackLocation,
+  withAuthCaptchaToken,
 } from './useSupabaseAuth'
 
 describe('Supabase auth routing', () => {
@@ -54,5 +56,34 @@ describe('Supabase auth routing', () => {
 
     expect((await bootstrap()).session).toBe(session)
     expect(creations).toBe(0)
+  })
+
+  test('resolves a fresh CAPTCHA token for every protected auth request', async () => {
+    let issuedTokens = 0
+    const receivedTokens: Array<string | undefined> = []
+    const resolveCaptchaToken = async (action: AuthCaptchaAction) => `${action}-${++issuedTokens}`
+    const request = async (captchaToken: string | undefined) => {
+      receivedTokens.push(captchaToken)
+      return captchaToken
+    }
+
+    await withAuthCaptchaToken('password-sign-in', request, resolveCaptchaToken)
+    await withAuthCaptchaToken('password-sign-in', request, resolveCaptchaToken)
+
+    expect(receivedTokens).toEqual(['password-sign-in-1', 'password-sign-in-2'])
+  })
+
+  test('omits the CAPTCHA token when no hosted site key is configured', async () => {
+    let receivedToken: string | undefined = 'unexpected'
+
+    await withAuthCaptchaToken(
+      'password-reset',
+      async (captchaToken) => {
+        receivedToken = captchaToken
+      },
+      async () => null,
+    )
+
+    expect(receivedToken).toBeUndefined()
   })
 })
