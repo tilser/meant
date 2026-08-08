@@ -1,6 +1,31 @@
 import type { AgentShelfContextInput } from '../../../lib/apiClient'
 import { merchantAdjacentDisplayLabel } from '../cart/merchantOrigin'
+import { isLegacyCartShelfSnapshot, shelfBuyerFacingLabel } from './snapshots'
 import type { ShelfItem } from './types'
+
+function cartShelfContext(item: Extract<ShelfItem, { kind: 'message' }>) {
+  const cart = item.snapshot.cart
+  const itemLabel = cart ? `${cart.itemCount} cart item${cart.itemCount === 1 ? '' : 's'}` : null
+  const merchantLabel = cart
+    ? `${cart.merchantCount} ${cart.merchantCount === 1 ? 'merchant' : 'merchants'}`
+    : null
+  const relatedProductNames = (
+    cart ? cart.lines.map((line) => line.name) : item.snapshot.thumbs.map((thumb) => thumb.name)
+  )
+    .map(shelfBuyerFacingLabel)
+    .filter((name): name is string => name !== null)
+  return {
+    kind: 'MESSAGE' as const,
+    title: 'Your cart',
+    text:
+      cart && cart.merchantCount > 0
+        ? `${itemLabel} across ${merchantLabel}.`
+        : cart
+          ? `${itemLabel} saved from chat.`
+          : 'Cart saved from chat.',
+    relatedProductNames,
+  }
+}
 
 export function agentShelfContext(items: readonly ShelfItem[]): AgentShelfContextInput | undefined {
   if (items.length === 0) return undefined
@@ -17,6 +42,9 @@ export function agentShelfContext(items: readonly ShelfItem[]): AgentShelfContex
           ...(detail ? { text: detail } : {}),
           relatedProductNames: [],
         }
+      }
+      if (isLegacyCartShelfSnapshot(item.snapshot)) {
+        return cartShelfContext(item)
       }
       return {
         kind: 'MESSAGE' as const,

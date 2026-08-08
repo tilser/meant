@@ -39,7 +39,7 @@ import { DiscoverChatMessageRow } from '../chat/DiscoverChatMessageRow'
 import { DiscoverShareSheet } from '../chat/DiscoverShareSheet'
 import { DiscoverThreadTabs } from '../chat/DiscoverThreadTabs'
 import { resolveDiscoverFind, shouldAutoScrollChatToBottom } from '../chat/discoverFind'
-import { productsInDiscoverMessage, visibleLatestCartBlockMessageId } from '../chat/utils'
+import { visibleLatestCartBlockMessageId } from '../chat/utils'
 import type {
   AgentActivity,
   DiscoverChatMessage,
@@ -52,16 +52,10 @@ import { PROFILE } from '../data'
 import { accountSessionStorageKey } from '../shared/accountStorage'
 import { useSessionStoredState } from '../shared/storage'
 import { prepareDirectProductPurchase } from '../product/directPurchasePreparation'
-import { productImageUrl } from '../product/productSnapshots'
-import type {
-  ShelfDragPayload,
-  ShelfItem,
-  ShelfMessageSnapshot,
-  ShelfProductSnapshot,
-  ShelfThumb,
-} from '../shelf/types'
+import type { ShelfDragPayload, ShelfItem } from '../shelf/types'
 import { SHELF_DRAG_MIME } from '../shelf/types'
 import { agentShelfContext } from '../shelf/agentShelfContext'
+import { shelfMessageSnapshot, shelfProductSnapshot } from '../shelf/snapshots'
 import { MeantHeartMark, ProductArtwork } from '../shared/ui'
 import { accountStorageKey } from '../shared/accountStorage'
 import { useStoredState } from '../shared/storage'
@@ -123,7 +117,6 @@ import { addChatProductToCart, cartInChatMessage, productOfferAnchorKey } from '
 import { agentRunCandidateIds, preferredAgentRunSnapshot } from './runSelection'
 import { refreshAgentViewAfterSettlement } from './settlementRefresh'
 import { similaritySearchQuery } from './similarAction'
-import { plainAgentText } from './agentText'
 import { agentTurnChatRejectionMessage } from './turnRejection'
 
 const NEWSLETTER_SUBSCRIBED_MESSAGE =
@@ -177,39 +170,6 @@ function mergeAction(
       ...conversation.artifacts,
       ...result.artifacts.filter((artifact) => !artifactIds.has(artifact.artifactId)),
     ],
-  }
-}
-
-function shelfProductSnapshot(product: Product): ShelfProductSnapshot {
-  return {
-    productId: product.id,
-    name: product.name,
-    brand: product.brand,
-    category: product.category,
-    tone: product.tone,
-    priceFrom: product.priceFrom,
-    priceCurrency: product.priceCurrency,
-    merchants: product.merchants,
-    imageUrl: productImageUrl(product),
-  }
-}
-
-function shelfThumb(product: Product): ShelfThumb {
-  return { name: product.name, tone: product.tone, imageUrl: productImageUrl(product) }
-}
-
-function shelfMessageSnapshot(message: DiscoverChatMessage): ShelfMessageSnapshot {
-  const products = productsInDiscoverMessage(message)
-  const sourceText =
-    message.text ??
-    message.blocks?.find((block) => block.type === 'text' || block.type === 'system')?.text ??
-    ''
-  const text = message.role === 'ai' ? plainAgentText(sourceText) : sourceText
-  return {
-    side: message.role === 'you' ? 'you' : 'meant',
-    title: message.role === 'you' ? 'Your message' : products.length ? 'Meant picks' : 'Meant',
-    text,
-    thumbs: products.slice(0, 6).map(shelfThumb),
   }
 }
 
@@ -1861,7 +1821,10 @@ export function AgentDiscoverView({
       kind: 'message',
       conversationId,
       messageId: message.id,
-      snapshot: shelfMessageSnapshot(message),
+      snapshot:
+        message.id === liveCartMessageId
+          ? shelfMessageSnapshot(message, visibleCart, allProducts)
+          : shelfMessageSnapshot(message),
     })
     onOpenShelf()
   }
@@ -1886,7 +1849,10 @@ export function AgentDiscoverView({
         kind: 'message',
         conversationId,
         messageId: message.id,
-        snapshot: shelfMessageSnapshot(message),
+        snapshot:
+          message.id === liveCartMessageId
+            ? shelfMessageSnapshot(message, visibleCart, allProducts)
+            : shelfMessageSnapshot(message),
       } satisfies ShelfDragPayload),
     )
     document.body.classList.add('mt-dragging')

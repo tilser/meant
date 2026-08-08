@@ -10,12 +10,19 @@ import {
 
 import { BookmarkIcon, ChevronIcon, CollapseIcon, OpenIcon, SearchIcon } from '../shared/icons'
 import { merchantAdjacentDisplayLabel } from '../cart/merchantOrigin'
-import { CloseIcon } from '../shared/ui'
+import { CloseIcon, MeantHeartMark } from '../shared/ui'
 import { useStoredState } from '../shared/storage'
 import { productImageUrl } from '../product/productSnapshots'
 import type { Product, ProductId } from '../types'
 import { money } from '../utils'
-import type { ShelfDragPayload, ShelfItem, ShelfThumb } from './types'
+import { isLegacyCartShelfSnapshot, shelfBuyerFacingLabel } from './snapshots'
+import type {
+  ShelfCartSnapshot,
+  ShelfDragPayload,
+  ShelfItem,
+  ShelfMessageSnapshot,
+  ShelfThumb,
+} from './types'
 import { SHELF_DRAG_MIME } from './types'
 
 const SHELF_MIN_WIDTH = 300
@@ -48,6 +55,104 @@ function ShelfThumbs({ thumbs }: Readonly<{ thumbs: readonly ShelfThumb[] }>) {
           {thumb.imageUrl ? <img src={thumb.imageUrl} alt="" loading="lazy" /> : null}
         </span>
       ))}
+    </div>
+  )
+}
+
+function shelfCartMeta(itemCount: number, merchantCount: number): string {
+  const itemLabel = `${itemCount} item${itemCount === 1 ? '' : 's'}`
+  const merchantLabel = `${merchantCount} store${merchantCount === 1 ? '' : 's'}`
+  return merchantCount > 0 ? `${itemLabel} · ${merchantLabel}` : itemLabel
+}
+
+function ShelfCartPreview({ cart }: Readonly<{ cart: ShelfCartSnapshot }>) {
+  const visibleLines = cart.lines.slice(0, 6)
+  const hiddenLineCount = Math.max(0, cart.lines.length - visibleLines.length)
+
+  return (
+    <div className="mt-shelf-cart-preview" aria-label="Cart saved from chat">
+      <div className="mt-shelf-cart-brand">
+        <span className="mt-shelf-cart-mark" aria-hidden>
+          <MeantHeartMark size={18} />
+        </span>
+        <span className="mt-shelf-cart-brand-copy">
+          <strong>
+            Your <em>Meant</em> finds
+          </strong>
+          <span>{shelfCartMeta(cart.itemCount, cart.merchantCount)}</span>
+        </span>
+        {cart.total !== null && cart.priceCurrency ? (
+          <span className="mt-shelf-cart-total">
+            <small>Total</small>
+            <strong>{money(cart.total, cart.priceCurrency)}</strong>
+          </span>
+        ) : null}
+      </div>
+      <div className="mt-shelf-cart-lines">
+        {visibleLines.map((line, index) => (
+          <div className="mt-shelf-cart-line" key={`${line.name}-${line.merchant}-${index}`}>
+            <span className="mt-shelf-cart-media" style={{ background: line.tone }}>
+              {line.imageUrl ? <img src={line.imageUrl} alt="" loading="lazy" /> : null}
+            </span>
+            <span className="mt-shelf-cart-line-copy">
+              <strong>{line.name}</strong>
+              <span className="mt-mono">
+                {line.merchant}
+                {line.delivery ? ` · ${line.delivery}` : ''}
+              </span>
+            </span>
+            <span className="mt-shelf-cart-line-facts">
+              {line.lineTotal !== null && line.priceCurrency ? (
+                <strong>{money(line.lineTotal, line.priceCurrency)}</strong>
+              ) : null}
+              <span>Qty {line.quantity}</span>
+            </span>
+          </div>
+        ))}
+        {hiddenLineCount > 0 ? (
+          <div className="mt-shelf-cart-more">
+            +{hiddenLineCount} more cart {hiddenLineCount === 1 ? 'line' : 'lines'}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function ShelfLegacyCartPreview({
+  snapshot,
+}: Readonly<{
+  snapshot: ShelfMessageSnapshot
+}>) {
+  const safeThumbs = snapshot.thumbs.map((thumb) => ({
+    ...thumb,
+    name: shelfBuyerFacingLabel(thumb.name) ?? 'Cart item',
+  }))
+  const visibleNames = safeThumbs.slice(0, 3).map((thumb) => thumb.name)
+  const hiddenNameCount = Math.max(0, safeThumbs.length - visibleNames.length)
+
+  return (
+    <div className="mt-shelf-cart-preview legacy" aria-label="Cart saved from chat">
+      <div className="mt-shelf-cart-brand">
+        <span className="mt-shelf-cart-mark" aria-hidden>
+          <MeantHeartMark size={18} />
+        </span>
+        <span className="mt-shelf-cart-brand-copy">
+          <strong>
+            Your <em>Meant</em> finds
+          </strong>
+          <span>Saved from chat</span>
+        </span>
+      </div>
+      <ShelfThumbs thumbs={safeThumbs} />
+      {visibleNames.length > 0 ? (
+        <p className="mt-shelf-cart-legacy-names">
+          {visibleNames.join(' · ')}
+          {hiddenNameCount > 0 ? ` · +${hiddenNameCount} more` : ''}
+        </p>
+      ) : (
+        <p className="mt-shelf-cart-legacy-names">Open the chat to see the saved cart.</p>
+      )}
     </div>
   )
 }
@@ -205,11 +310,17 @@ function ShelfCard({
   }
 
   const snapshot = item.snapshot
+  const cartLike = isLegacyCartShelfSnapshot(snapshot)
+  const cartMeta = snapshot.cart
+    ? shelfCartMeta(snapshot.cart.itemCount, snapshot.cart.merchantCount)
+    : 'Saved cart from chat'
   return (
     <DustingContainer dusting={dusting} onGone={() => onRemove(item.uid)}>
-      <div className={`mt-shelf-card ${snapshot.side}`}>
+      <div className={`mt-shelf-card ${snapshot.side} ${cartLike ? 'cart' : ''}`}>
         <div className="mt-shelf-card-head">
-          <span className="mt-shelf-kind mt-mono">{snapshot.title}</span>
+          <span className="mt-shelf-kind mt-mono">
+            {cartLike ? 'Cart from chat' : snapshot.title}
+          </span>
           {tools}
         </div>
         {item.collapsed ? (
@@ -218,19 +329,33 @@ function ShelfCard({
             type="button"
             onClick={() => onToggleCollapse(item.uid)}
           >
-            {snapshot.thumbs[0] ? (
+            {cartLike ? (
+              <span className="mt-shelf-cart-collapsed-mark" aria-hidden>
+                <MeantHeartMark size={16} />
+              </span>
+            ) : snapshot.thumbs[0] ? (
               <span className="mt-shelf-thumb" style={{ background: snapshot.thumbs[0].tone }}>
                 {snapshot.thumbs[0].imageUrl ? (
                   <img src={snapshot.thumbs[0].imageUrl} alt="" loading="lazy" />
                 ) : null}
               </span>
             ) : null}
-            <span className="mt-shelf-collapsed-name">{snapshot.text || snapshot.title}</span>
+            <span className="mt-shelf-collapsed-name">
+              {cartLike ? cartMeta : snapshot.text || snapshot.title}
+            </span>
           </button>
         ) : (
           <>
-            {snapshot.text ? <p className="mt-shelf-text">{snapshot.text}</p> : null}
-            <ShelfThumbs thumbs={snapshot.thumbs} />
+            {snapshot.cart ? (
+              <ShelfCartPreview cart={snapshot.cart} />
+            ) : cartLike ? (
+              <ShelfLegacyCartPreview snapshot={snapshot} />
+            ) : (
+              <>
+                {snapshot.text ? <p className="mt-shelf-text">{snapshot.text}</p> : null}
+                <ShelfThumbs thumbs={snapshot.thumbs} />
+              </>
+            )}
           </>
         )}
         <button

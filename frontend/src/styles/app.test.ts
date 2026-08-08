@@ -117,3 +117,20 @@ describe('inline cart styles', () => {
     )
   })
 })
+
+describe('Shelf cart styles', () => {
+  test('keeps read-only cart facts readable in the narrow Shelf layout', () => {
+    expect(styles).toMatch(
+      /\.mt-shelf-cart-line\s*\{[^}]*grid-template-columns: 42px minmax\(0, 1fr\) auto;[^}]*\}/,
+    )
+    expect(styles).toMatch(
+      /\.mt-shelf-cart-line-copy > span\s*\{[^}]*color: var\(--ink-soft\);[^}]*font-size: 9\.5px;[^}]*\}/,
+    )
+    expect(styles).toMatch(
+      /\.mt-shelf-cart-line-facts > span\s*\{[^}]*color: var\(--ink-soft\);[^}]*font-size: 10px;[^}]*white-space: nowrap;[^}]*\}/,
+    )
+    expect(styles).toMatch(
+      /\.mt-shelf-cart-total small\s*\{[^}]*color: var\(--ink-soft\);[^}]*font-size: 9px;[^}]*\}/,
+    )
+  })
+})

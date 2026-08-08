@@ -8,11 +8,32 @@ export interface ShelfThumb {
   imageUrl?: string | null
 }
 
+export interface ShelfCartLineSnapshot {
+  name: string
+  merchant: string
+  quantity: number
+  lineTotal: number | null
+  priceCurrency: string | null
+  tone: string
+  imageUrl?: string | null
+  delivery?: string | null
+}
+
+export interface ShelfCartSnapshot {
+  lines: readonly ShelfCartLineSnapshot[]
+  itemCount: number
+  merchantCount: number
+  total: number | null
+  priceCurrency: string | null
+}
+
 export interface ShelfMessageSnapshot {
   side: 'you' | 'meant'
   title: string
   text: string
   thumbs: readonly ShelfThumb[]
+  /** Optional for backwards compatibility with message snapshots saved before cart cards existed. */
+  cart?: ShelfCartSnapshot
 }
 
 export interface ShelfProductSnapshot {
