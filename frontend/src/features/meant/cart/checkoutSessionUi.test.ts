@@ -8,6 +8,7 @@ import {
   checkoutNeedsHandoff,
   checkoutRequiresMerchantRedirect,
   checkoutReadyForPayment,
+  checkoutShouldRefreshAfterDetails,
   checkoutShouldOfferSavedDetails,
   checkoutUsesEmbeddedCheckout,
   merchantCheckoutUrl,
@@ -109,6 +110,57 @@ describe('checkout session UCP actions', () => {
     expect(checkoutAssistantPrompt(checkout)).not.toContain('Send them here in one message')
     expect(checkoutShouldOfferSavedDetails(checkout, false)).toBe(true)
     expect(checkoutShouldOfferSavedDetails(checkout, true)).toBe(false)
+  })
+
+  test('refreshes an accepted details update that is still in a transitional checkout state', () => {
+    expect(
+      checkoutShouldRefreshAfterDetails(
+        session({
+          nextAction: 'UPDATE_CHECKOUT',
+          messages: [],
+        }).profile,
+      ),
+    ).toBe(true)
+    expect(
+      checkoutShouldRefreshAfterDetails(
+        session({
+          nextAction: 'UNKNOWN',
+          messages: [],
+        }).profile,
+      ),
+    ).toBe(true)
+  })
+
+  test('does not refresh while details need correction or checkout is already actionable', () => {
+    expect(
+      checkoutShouldRefreshAfterDetails(
+        session({
+          nextAction: 'UPDATE_CHECKOUT',
+          messages: [
+            {
+              code: 'delivery_address_invalid',
+              content: 'Enter a valid delivery address.',
+            },
+          ],
+        }).profile,
+      ),
+    ).toBe(false)
+    expect(
+      checkoutShouldRefreshAfterDetails(
+        session({
+          nextAction: 'OPEN_EMBEDDED_CHECKOUT',
+          messages: [],
+        }).profile,
+      ),
+    ).toBe(false)
+    expect(
+      checkoutShouldRefreshAfterDetails(
+        session({
+          nextAction: 'HANDOFF',
+          messages: [],
+        }).profile,
+      ),
+    ).toBe(false)
   })
 
   test('hands off after only the buyer interaction requirement remains', () => {

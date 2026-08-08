@@ -52,6 +52,7 @@ import { CartPopover } from './cart/CartPopover'
 import { cartCountSummary, formatCartCount } from './cart/cartCounts'
 import { resolveLiveCartItem } from './cart/cartPartition'
 import type { ActiveCheckoutSession, CheckoutAssistantContext } from './cart/checkoutTypes'
+import { checkoutShouldRefreshAfterDetails } from './cart/checkoutSessionUi'
 import { resolveCartableOffer } from './cart/cartOfferResolver'
 import { merchantDisplayOrigin, merchantOriginFromItems } from './cart/merchantOrigin'
 import type { MerchantCartSnapshot, MerchantCartStateReplacement } from './cart/types'
@@ -3330,7 +3331,7 @@ export function MeantApp() {
     setCheckoutFlowBusy(true)
     setCheckoutFlowError(null)
     try {
-      const result: CheckoutAssistantResult = context?.savedCheckoutDetails
+      let result: CheckoutAssistantResult = context?.savedCheckoutDetails
         ? {
             reply: 'I applied your saved contact and delivery details to this checkout.',
             checkoutUpdated: true,
@@ -3348,6 +3349,27 @@ export function MeantApp() {
             history,
             expectedUserId: requestedUserId,
           })
+      if (
+        result.checkoutUpdated &&
+        checkoutShouldRefreshAfterDetails(result.checkout) &&
+        activeUserIdRef.current === requestedUserId &&
+        checkoutOperationRef.current?.token === checkoutOperationToken &&
+        activeCheckoutSequenceRef.current === checkoutSessionSequence &&
+        activeCheckoutRef.current === checkoutSession
+      ) {
+        try {
+          result = {
+            ...result,
+            checkout: await getCartCheckout({
+              cartId: checkoutSession.cartId,
+              refresh: true,
+              expectedUserId: requestedUserId,
+            }),
+          }
+        } catch {
+          // The accepted update remains authoritative if the follow-up merchant refresh fails.
+        }
+      }
       if (
         activeUserIdRef.current !== requestedUserId ||
         checkoutOperationRef.current?.token !== checkoutOperationToken ||

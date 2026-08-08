@@ -116,6 +116,15 @@ export function checkoutShouldOfferSavedDetails(
   )
 }
 
+export function checkoutShouldRefreshAfterDetails(
+  profile: CheckoutProfile | null | undefined,
+): boolean {
+  if (profile?.nextAction !== 'UPDATE_CHECKOUT' && profile?.nextAction !== 'UNKNOWN') {
+    return false
+  }
+  return !checkoutHasBuyerDetailMessages(profile) && !checkoutNeedsMerchantInput(profile, null)
+}
+
 export function checkoutReadyForPayment(session: ActiveCheckoutSession): boolean {
   const nextAction = session.profile.nextAction
   if (nextAction) {
