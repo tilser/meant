@@ -141,34 +141,31 @@ export function InlineCartBlock({
               key={cartItemIdentity(line)}
             >
               <button
-                className="mt-ct-cart-media"
+                className="mt-ct-cart-product"
                 type="button"
                 aria-label={`Open ${line.product.name} product details`}
                 onClick={() => onOpenProduct(line.product)}
               >
-                <ProductArtwork
-                  product={line.product}
-                  label={line.product.category.toLowerCase()}
-                />
-              </button>
-              <button
-                className="mt-ct-cart-info"
-                type="button"
-                aria-label={`Open ${line.product.name} product details`}
-                onClick={() => onOpenProduct(line.product)}
-              >
-                <div className="mt-ct-cart-name">{line.product.name}</div>
-                <div className="mt-mono mt-ct-cart-meta">
-                  {merchantDisplayOrigin(line.merchantOrigin)} · {line.delivery}
-                </div>
-                {line.syncing || line.syncError ? (
-                  <div
-                    className={`mt-mono mt-ct-cart-sync${line.syncError ? ' is-error' : ''}`}
-                    role="status"
-                  >
-                    {line.syncError ?? 'Saving…'}
-                  </div>
-                ) : null}
+                <span className="mt-ct-cart-media">
+                  <ProductArtwork
+                    product={line.product}
+                    label={line.product.category.toLowerCase()}
+                  />
+                </span>
+                <span className="mt-ct-cart-info">
+                  <span className="mt-ct-cart-name">{line.product.name}</span>
+                  <span className="mt-mono mt-ct-cart-meta">
+                    {merchantDisplayOrigin(line.merchantOrigin)} · {line.delivery}
+                  </span>
+                  {line.syncing || line.syncError ? (
+                    <span
+                      className={`mt-mono mt-ct-cart-sync${line.syncError ? ' is-error' : ''}`}
+                      role="status"
+                    >
+                      {line.syncError ?? 'Saving…'}
+                    </span>
+                  ) : null}
+                </span>
               </button>
               <div className="mt-ct-cart-actions">
                 <div className="mt-qty" aria-label={`Quantity for ${line.product.name}`}>

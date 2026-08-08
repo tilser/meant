@@ -153,7 +153,10 @@ describe('inline cart styles', () => {
 
   test('keeps cart rows useful on mobile and motion accessible', () => {
     expect(styles).toMatch(
-      /@media \(max-width: 720px\)\s*\{[\s\S]*?\.mt-ct-cart \.mt-ct-cart-row\s*\{[^}]*grid-template-columns: 52px minmax\(0, 1fr\);[^}]*\}/,
+      /@media \(max-width: 720px\)\s*\{[\s\S]*?\.mt-ct-cart \.mt-ct-cart-row\s*\{[^}]*grid-template-columns: minmax\(0, 1fr\);[^}]*\}/,
+    )
+    expect(styles).toMatch(
+      /@media \(max-width: 720px\)\s*\{[\s\S]*?\.mt-ct-cart \.mt-ct-cart-product\s*\{[^}]*width: 100%;[^}]*\}/,
     )
     expect(styles).toMatch(
       /@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\.mt-ct-cart \.mt-ct-cart-row\.is-syncing::after\s*\{[^}]*animation: none;[^}]*\}/,
