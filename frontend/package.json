@@ -24,6 +24,7 @@
     "@tanstack/react-router-devtools": "^1.167.1",
     "@tanstack/react-start": "^1.168.36",
     "openapi-fetch": "^0.17.0",
+    "posthog-js": "^1.412.2",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-markdown": "^10.1.0",

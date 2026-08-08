@@ -68,7 +68,15 @@ export function claimCampaignBriefLoaded(brief: string): boolean {
 
 export function storedCampaignAttribution(): CampaignAttribution | null {
   try {
-    return JSON.parse(window.sessionStorage.getItem(CAMPAIGN_ATTRIBUTION_KEY) ?? 'null')
+    const value = JSON.parse(window.sessionStorage.getItem(CAMPAIGN_ATTRIBUTION_KEY) ?? 'null')
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+    const stored = value as Record<string, unknown>
+    return {
+      utmSource: typeof stored.utmSource === 'string' ? clean(stored.utmSource, 200) : null,
+      utmMedium: typeof stored.utmMedium === 'string' ? clean(stored.utmMedium, 200) : null,
+      utmCampaign: typeof stored.utmCampaign === 'string' ? clean(stored.utmCampaign, 200) : null,
+      utmContent: typeof stored.utmContent === 'string' ? clean(stored.utmContent, 200) : null,
+    }
   } catch {
     return null
   }

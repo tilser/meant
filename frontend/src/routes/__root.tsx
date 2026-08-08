@@ -2,6 +2,7 @@ import { HeadContent, Outlet, Scripts, createRootRoute } from '@tanstack/react-r
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
 import type { ReactNode } from 'react'
 
+import { PostHogAnalytics } from '../features/meant/posthog/PostHogBridge'
 import appCss from '../styles/app.css?url'
 
 export const Route = createRootRoute({
@@ -13,7 +14,7 @@ export const Route = createRootRoute({
       {
         httpEquiv: 'Content-Security-Policy',
         content:
-          "default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; font-src 'self' data:; connect-src 'self' https: wss: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*; frame-src https:; child-src https:; worker-src 'self' blob:; form-action 'self' https:",
+          "default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com https://*.posthog.com; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; font-src 'self' data:; connect-src 'self' https: wss: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*; frame-src https:; child-src https:; worker-src 'self' blob: data:; form-action 'self' https:",
       },
       { title: 'Meant | FOR YOU' },
     ],
@@ -41,6 +42,7 @@ function RootDocument({ children }: Readonly<{ children: ReactNode }>) {
         <HeadContent />
       </head>
       <body>
+        <PostHogAnalytics />
         {children}
         <div className="mt-router-devtools">
           <TanStackRouterDevtools position="bottom-right" />

@@ -153,10 +153,20 @@ VITE_SUPABASE_ANON_KEY=<publishable-or-anon-key>
 VITE_TURNSTILE_SITE_KEY=<public-turnstile-site-key>
 VITE_EMBEDDED_CHECKOUT_ENABLED=true
 VITE_CHECKOUT_KIT_DEBUG=false
+VITE_POSTHOG_ENABLED=true
+VITE_POSTHOG_PROJECT_TOKEN=<public-eu-project-token>
+VITE_POSTHOG_HOST=https://eu.i.posthog.com
+VITE_POSTHOG_SESSION_REPLAY_ENABLED=false
+VITE_POSTHOG_SESSION_REPLAY_SAMPLE_RATE=0.05
 ```
 
 Every variable prefixed with `VITE_` is included in browser code. Never put a database password,
 Supabase `service_role` key, provider credential, or other secret in a `VITE_` variable.
+
+Create the analytics project in PostHog EU Cloud. The browser project token is public; personal API
+keys are not. Keep replay disabled until Meant has an approved consent approach. Configuration,
+privacy defaults, identity behavior, and verification steps are documented in
+[`posthog-analytics.md`](posthog-analytics.md).
 
 Add the production custom domain, then update the matching Supabase redirect URLs and Railway CORS
 origin. Keep preview deployments disconnected from production data until a separate staging

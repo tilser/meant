@@ -986,10 +986,6 @@ export function MeantApp() {
     if (campaignEntry.brief && claimCampaignBriefLoaded(campaignEntry.brief)) {
       trackMeantEvent('campaign_brief_loaded', {
         anonymous: isAnonymous,
-        utm_source: campaignEntry.attribution.utmSource,
-        utm_medium: campaignEntry.attribution.utmMedium,
-        utm_campaign: campaignEntry.attribution.utmCampaign,
-        utm_content: campaignEntry.attribution.utmContent,
       })
     }
   }, [campaignEntry, isAnonymous])
