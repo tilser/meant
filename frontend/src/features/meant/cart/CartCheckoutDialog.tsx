@@ -10,6 +10,7 @@ import { MerchantCheckoutLink } from './MerchantCheckoutLink'
 import { SavedCheckoutDetailsPrompt } from './SavedCheckoutDetailsPrompt'
 import { merchantDeliveryCoverageSummary, minorUnitsToMajor, money } from '../utils'
 import type { ActiveCheckoutSession, CheckoutAssistantHandler } from './checkoutTypes'
+import { CheckoutExitConfirmation } from './CheckoutExitConfirmation'
 import { savedCheckoutDetails } from './savedCheckoutDetails'
 import {
   checkoutAssistantPrompt,
@@ -62,6 +63,7 @@ export function CartCheckoutDialog({
   const [input, setInput] = useState('')
   const [assistantBusy, setAssistantBusy] = useState(false)
   const [savedDetailsDismissed, setSavedDetailsDismissed] = useState(false)
+  const [exitConfirmationOpen, setExitConfirmationOpen] = useState(false)
   const promptedPhaseRef = useRef<string | null>(null)
   const sessionCartIdRef = useRef<string | null>(null)
   const logRef = useRef<HTMLDivElement | null>(null)
@@ -75,7 +77,10 @@ export function CartCheckoutDialog({
   const merchantDisplay = merchantDisplayOrigin(session.merchantOrigin)
 
   const requestClose = useCallback(() => {
-    if (embedded && !window.confirm('Close checkout? Your merchant cart will be preserved.')) return
+    if (embedded) {
+      setExitConfirmationOpen(true)
+      return
+    }
     onClose()
   }, [embedded, onClose])
 
@@ -86,6 +91,7 @@ export function CartCheckoutDialog({
       setMessages([])
       setInput('')
       setSavedDetailsDismissed(false)
+      setExitConfirmationOpen(false)
     }
     const nextPhase = `${session.cartId}:${checkoutPhase(session)}`
     if (promptedPhaseRef.current === nextPhase) {
@@ -105,12 +111,12 @@ export function CartCheckoutDialog({
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        requestClose()
+        if (!exitConfirmationOpen) requestClose()
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [requestClose])
+  }, [exitConfirmationOpen, requestClose])
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -261,6 +267,14 @@ export function CartCheckoutDialog({
           )}
         </div>
       </section>
+      <CheckoutExitConfirmation
+        open={exitConfirmationOpen}
+        onKeepOpen={() => setExitConfirmationOpen(false)}
+        onCloseCheckout={() => {
+          setExitConfirmationOpen(false)
+          onClose()
+        }}
+      />
     </div>
   )
 }

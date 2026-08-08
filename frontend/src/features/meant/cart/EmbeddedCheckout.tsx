@@ -22,6 +22,7 @@ import {
 } from './embeddedCheckoutPolicy'
 import { merchantContinueUrl } from './checkoutSessionUi'
 import type { ActiveCheckoutSession } from './checkoutTypes'
+import { CheckoutExitConfirmation } from './CheckoutExitConfirmation'
 import { EmbeddedCheckoutView, type EmbeddedCheckoutPhase } from './EmbeddedCheckoutView'
 
 const START_TIMEOUT_MS = 30_000
@@ -48,6 +49,7 @@ export function EmbeddedCheckout({
   const [phase, setPhase] = useState<EmbeddedCheckoutPhase>('preparing')
   const [descriptor, setDescriptor] = useState<EmbeddedCheckoutBootstrapProfile | null>(null)
   const [message, setMessage] = useState('Preparing a secure merchant checkout...')
+  const [exitConfirmationOpen, setExitConfirmationOpen] = useState(false)
   const handleRef = useRef<CheckoutKitHandle | null>(null)
   const descriptorRef = useRef<EmbeddedCheckoutBootstrapProfile | null>(null)
   const generationRef = useRef(0)
@@ -404,14 +406,7 @@ export function EmbeddedCheckout({
     }, START_TIMEOUT_MS)
   }
 
-  const confirmCancel = () => {
-    if (
-      typeof window !== 'undefined' &&
-      !window.confirm('Close embedded checkout? Your cart will be preserved.')
-    )
-      return
-    void cancelActive()
-  }
+  const confirmCancel = () => setExitConfirmationOpen(true)
 
   const reconcile = async () => {
     const generation = generationRef.current
@@ -432,25 +427,35 @@ export function EmbeddedCheckout({
   const fallbackUrl = safeExternalCheckoutUrl(descriptor?.fallbackContinueUrl) ?? sessionFallbackUrl
 
   return (
-    <EmbeddedCheckoutView
-      phase={phase}
-      message={message}
-      fallbackUrl={fallbackUrl}
-      actionButtonRef={actionButtonRef}
-      onOpen={openCheckout}
-      onFocus={() => handleRef.current?.focus()}
-      onCancel={confirmCancel}
-      onPrepare={() => void prepare()}
-      onReconcile={() => void reconcile()}
-      onFallback={() => {
-        trackCheckoutLifecycleEvent('embedded_checkout_fallback', {
-          surface,
-          result: 'attempted',
-          reason: descriptor ? fallbackReason(descriptor) : 'BOOTSTRAP_FAILED',
-        })
-        void cancelSession(descriptor)
-        onSessionReleasedRef.current?.('handoff')
-      }}
-    />
+    <>
+      <EmbeddedCheckoutView
+        phase={phase}
+        message={message}
+        fallbackUrl={fallbackUrl}
+        actionButtonRef={actionButtonRef}
+        onOpen={openCheckout}
+        onFocus={() => handleRef.current?.focus()}
+        onCancel={confirmCancel}
+        onPrepare={() => void prepare()}
+        onReconcile={() => void reconcile()}
+        onFallback={() => {
+          trackCheckoutLifecycleEvent('embedded_checkout_fallback', {
+            surface,
+            result: 'attempted',
+            reason: descriptor ? fallbackReason(descriptor) : 'BOOTSTRAP_FAILED',
+          })
+          void cancelSession(descriptor)
+          onSessionReleasedRef.current?.('handoff')
+        }}
+      />
+      <CheckoutExitConfirmation
+        open={exitConfirmationOpen}
+        onKeepOpen={() => setExitConfirmationOpen(false)}
+        onCloseCheckout={() => {
+          setExitConfirmationOpen(false)
+          void cancelActive()
+        }}
+      />
+    </>
   )
 }
