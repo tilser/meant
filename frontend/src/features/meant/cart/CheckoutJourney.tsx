@@ -27,7 +27,10 @@ export function CheckoutJourney({
   const deliveryComplete = stage === 'secure'
 
   return (
-    <div className={`mt-checkout-journey${compact ? ' compact' : ''}`}>
+    <div
+      className={`mt-checkout-journey${compact ? ' compact' : ''} stage-${stage}`}
+      data-stage={stage}
+    >
       <div className="mt-checkout-journey-copy">
         <div className="mt-mono mt-checkout-journey-eyebrow">
           {stage === 'delivery' ? 'Meant together' : 'Almost Meant to be'}
@@ -69,13 +72,13 @@ export function CheckoutJourney({
       </div>
 
       <div className="mt-checkout-steps" aria-label="Checkout progress">
-        <div className="done">
+        <div className="mt-checkout-step matched done">
           <span aria-hidden>✓</span>
           <strong>Matched</strong>
         </div>
         <i aria-hidden />
         <div
-          className={deliveryComplete ? 'done' : 'active'}
+          className={`mt-checkout-step delivery ${deliveryComplete ? 'done' : 'active'}`}
           aria-current={!deliveryComplete ? 'step' : undefined}
         >
           <span aria-hidden>{deliveryComplete ? '✓' : '2'}</span>
@@ -83,7 +86,7 @@ export function CheckoutJourney({
         </div>
         <i aria-hidden />
         <div
-          className={deliveryComplete ? 'active' : ''}
+          className={`mt-checkout-step secure${deliveryComplete ? ' active' : ''}`}
           aria-current={deliveryComplete ? 'step' : undefined}
         >
           <span aria-hidden>3</span>

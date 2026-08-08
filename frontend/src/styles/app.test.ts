@@ -80,4 +80,17 @@ describe('inline checkout styles', () => {
       /@media \(max-width: 640px\)\s*\{[\s\S]*?\.mt-ct-checkout \.mt-ct-cogroup-head\s*\{[^}]*flex-flow: row wrap;[^}]*\}/,
     )
   })
+
+  test('animates checkout progress without remounting the journey', () => {
+    expect(styles).toMatch(
+      /\.mt-checkout-steps > i::after\s*\{[^}]*transform: scaleX\(0\);[^}]*transition: transform 720ms[^}]*\}/,
+    )
+    expect(styles).toMatch(
+      /\.mt-checkout-steps > div\.done \+ i::after\s*\{[^}]*transform: scaleX\(1\);[^}]*\}/,
+    )
+    expect(styles).toContain('@keyframes mt-checkout-progress-runner')
+    expect(styles).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\.mt-checkout-steps > i::before\s*\{[^}]*display: none;[^}]*\}/,
+    )
+  })
 })

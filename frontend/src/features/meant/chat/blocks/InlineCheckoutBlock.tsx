@@ -269,7 +269,6 @@ export function InlineCheckoutBlock({
     return (
       <div className="mt-ct-checkout-agent">
         <CheckoutJourney
-          key={needsAddress ? 'delivery' : 'secure'}
           session={session}
           stage={needsAddress ? 'delivery' : 'secure'}
           merchantDisplay={merchantDisplay}

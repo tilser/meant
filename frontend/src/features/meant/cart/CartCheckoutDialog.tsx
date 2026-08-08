@@ -172,7 +172,6 @@ export function CartCheckoutDialog({
         </div>
 
         <CheckoutJourney
-          key={needsAddress ? 'delivery' : 'secure'}
           session={session}
           stage={needsAddress ? 'delivery' : 'secure'}
           merchantDisplay={merchantDisplay}
