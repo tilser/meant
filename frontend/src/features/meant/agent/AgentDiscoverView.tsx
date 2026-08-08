@@ -107,7 +107,7 @@ import {
   isProductPinNotice,
   shouldAutoDismissEmptyCartMessage,
 } from './autoDismissNotices'
-import { checkoutInChatMessage } from './checkoutPreparation'
+import { checkoutInChatBlock } from './checkoutPreparation'
 import { withProjectedAgentMessages } from './messageProjection'
 import { mergeAnchoredLocalMessages, type AnchoredLocalMessage } from './localMessageOrdering'
 import { AgentWorkingIndicator } from './AgentWorkingIndicator'
@@ -330,6 +330,8 @@ export function AgentDiscoverView({
   const [localMessagesByConversationId, setLocalMessagesByConversationId] = useState<
     Record<string, AnchoredLocalMessage[]>
   >({})
+  const [inlineCheckoutMessageIdByConversationId, setInlineCheckoutMessageIdByConversationId] =
+    useState<Record<string, string>>({})
   const [dismissedMessageIds, setDismissedMessageIds] = useStoredState<Record<string, string[]>>(
     accountStorageKey('meant.agentDismissedMessages', expectedUserId),
     {},
@@ -1639,16 +1641,18 @@ export function AgentDiscoverView({
       undefined,
       sourceItem,
     )
-  const openCheckoutInChat = () => {
+  const openCheckoutInChat = (messageId: string) => {
     const targetConversationId = activeConversationIdRef.current
     if (!targetConversationId) return
-    const message = checkoutInChatMessage(uniqueRequestId('checkout'), onReadAgentCart())
-    if (!message) {
+    if (!checkoutInChatBlock(onReadAgentCart())) {
       setError('Your merchant cart must be ready before checkout can start.')
       return
     }
     setError(null)
-    appendLocalMessage(message, targetConversationId)
+    setInlineCheckoutMessageIdByConversationId((current) => ({
+      ...current,
+      [targetConversationId]: messageId,
+    }))
   }
 
   const returnHome = useCallback(() => {
@@ -1958,10 +1962,19 @@ export function AgentDiscoverView({
     onOpenShelf()
   }
 
-  const checkoutHostMessageId =
+  const persistedCheckoutHostMessageId =
     [...messages]
       .reverse()
       .find((message) => message.blocks?.some((block) => block.type === 'checkout'))?.id ?? null
+  const requestedInlineCheckoutMessageId = activeConversationId
+    ? (inlineCheckoutMessageIdByConversationId[activeConversationId] ?? null)
+    : null
+  const inlineCheckoutMessageId = messages.some(
+    (message) => message.id === requestedInlineCheckoutMessageId,
+  )
+    ? requestedInlineCheckoutMessageId
+    : null
+  const checkoutHostMessageId = inlineCheckoutMessageId ?? persistedCheckoutHostMessageId
   const conversationCheckout =
     activeCheckout?.threadId === activeConversationId ? activeCheckout : null
 
@@ -2143,7 +2156,8 @@ export function AgentDiscoverView({
               onCheckoutAssistant={onCheckoutAssistant}
               onRefreshCheckout={onRefreshCheckout}
               onReleaseCheckout={onReleaseCheckout}
-              onCheckoutHere={openCheckoutInChat}
+              checkoutInPlace={message.id === inlineCheckoutMessageId}
+              onCheckoutHere={() => openCheckoutInChat(message.id)}
               newsletter={newsletter}
               newsletterPending={newsletterPending}
               onNewsletterSignup={() => void subscribeToNewsletter()}

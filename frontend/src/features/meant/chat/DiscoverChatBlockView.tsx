@@ -113,6 +113,7 @@ export function DiscoverChatBlockView({
   onCheckoutAssistant,
   onRefreshCheckout,
   onReleaseCheckout,
+  checkoutInPlace = false,
   onCheckoutHere,
   newsletter,
   newsletterPending,
@@ -184,6 +185,7 @@ export function DiscoverChatBlockView({
   onCheckoutAssistant: CheckoutAssistantHandler
   onRefreshCheckout: () => Promise<void> | void
   onReleaseCheckout?: CheckoutReleaseHandler
+  checkoutInPlace?: boolean
   onCheckoutHere: () => void
   newsletter: boolean
   newsletterPending: boolean
@@ -681,6 +683,25 @@ export function DiscoverChatBlockView({
     )
   }
   if (block.type === 'cart') {
+    if (checkoutInPlace) {
+      return (
+        <InlineCheckoutBlock
+          threadId={threadId}
+          cart={cart}
+          products={cartProducts}
+          onCheckout={onCheckout}
+          autoStartCheckout={autoStartCheckout}
+          activeCheckout={activeCheckout}
+          checkoutBusy={checkoutBusy}
+          checkoutError={checkoutError}
+          onCheckoutAssistant={onCheckoutAssistant}
+          onRefreshCheckout={onRefreshCheckout}
+          onReleaseCheckout={onReleaseCheckout}
+          onOpenCart={onOpenCart}
+          onOpenOrders={onOpenOrders}
+        />
+      )
+    }
     return (
       <InlineCartBlock
         cart={cartItemsForChatBlock(cart, block.lines, immutable, useLiveCart)}

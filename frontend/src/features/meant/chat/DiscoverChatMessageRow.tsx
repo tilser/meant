@@ -265,6 +265,7 @@ export function DiscoverChatMessageRow({
   onCheckoutAssistant,
   onRefreshCheckout,
   onReleaseCheckout,
+  checkoutInPlace = false,
   onCheckoutHere,
   newsletter,
   newsletterPending,
@@ -344,6 +345,7 @@ export function DiscoverChatMessageRow({
   onCheckoutAssistant: CheckoutAssistantHandler
   onRefreshCheckout: () => Promise<void> | void
   onReleaseCheckout?: CheckoutReleaseHandler
+  checkoutInPlace?: boolean
   onCheckoutHere: () => void
   newsletter: boolean
   newsletterPending: boolean
@@ -363,7 +365,12 @@ export function DiscoverChatMessageRow({
 }>) {
   const onShelf = shelfMessageSet.has(message.id)
   const copyMessage = () => copyTextToClipboard(discoverChatMessageCopyText(message))
-  const containsCheckoutBlock = message.blocks?.some((block) => block.type === 'checkout') ?? false
+  const inlineCheckoutBlockIndex = checkoutInPlace
+    ? (message.blocks?.findIndex((block) => block.type === 'cart') ?? -1)
+    : -1
+  const containsCheckoutBlock =
+    inlineCheckoutBlockIndex >= 0 ||
+    (message.blocks?.some((block) => block.type === 'checkout') ?? false)
   const containsProductBlock = message.blocks?.some((block) => block.type === 'products') ?? false
   const messageProducts = productsInDiscoverMessage(message)
   const openMessageProduct = (product: Product) =>
@@ -485,6 +492,7 @@ export function DiscoverChatMessageRow({
                   onCheckoutAssistant={onCheckoutAssistant}
                   onRefreshCheckout={onRefreshCheckout}
                   onReleaseCheckout={onReleaseCheckout}
+                  checkoutInPlace={index === inlineCheckoutBlockIndex}
                   onCheckoutHere={onCheckoutHere}
                   newsletter={newsletter}
                   newsletterPending={newsletterPending}

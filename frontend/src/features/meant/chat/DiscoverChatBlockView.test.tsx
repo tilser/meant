@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import type { ComponentProps } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 
-import type { Product } from '../types'
+import type { CartItem, Product } from '../types'
 import { DiscoverChatBlockView } from './DiscoverChatBlockView'
 import type { DiscoverChatBlock } from './types'
 
@@ -147,5 +147,36 @@ describe('DiscoverChatBlockView merchant display identity', () => {
     expect(markup).toContain('data-product-id="trail-shoe"')
     expect(markup).toContain('src="https://cdn.example/grounded-trail-shoe.jpg"')
     expect(markup).not.toContain('href=')
+  })
+
+  test('replaces the existing cart block with checkout without creating another message', () => {
+    const cart: CartItem[] = [
+      {
+        id: product.id,
+        merchant: technicalSeller,
+        merchantOrigin: 'merchant.example',
+        qty: 1,
+        cartId: 'cart-1',
+        productVariantId: 'variant-1',
+        cartLineId: 'line-1',
+        unitPriceAmount: '119',
+        orderCurrency: 'USD',
+      },
+    ]
+    const block: DiscoverChatBlock = { type: 'cart', lines: cart }
+    const markup = renderToStaticMarkup(
+      <DiscoverChatBlockView
+        {...baseProps}
+        block={block}
+        cart={cart}
+        cartProducts={[product]}
+        checkoutInPlace
+      />,
+    )
+
+    expect(markup).toContain('Checkout in chat')
+    expect(markup).toContain('<em>Meant</em> together')
+    expect(markup).toContain('Start checkout in chat')
+    expect(markup).not.toContain('Cart in chat')
   })
 })
