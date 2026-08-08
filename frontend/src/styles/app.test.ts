@@ -123,6 +123,19 @@ describe('inline checkout styles', () => {
       /@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\.mt-checkout-steps > i::before\s*\{[^}]*display: none;[^}]*\}/,
     )
   })
+
+  test('wraps checkout copy and progress labels to the journey width', () => {
+    expect(styles).toMatch(
+      /\.mt-checkout-journey\s*\{[^}]*container-name: checkout-journey;[^}]*container-type: inline-size;[^}]*\}/,
+    )
+    expect(styles).toMatch(/\.mt-checkout-journey-copy\s*\{[^}]*min-width: 0;[^}]*\}/)
+    expect(styles).toMatch(
+      /@container checkout-journey \(max-width: 330px\)\s*\{[\s\S]*?\.mt-checkout-steps\s*\{[^}]*grid-template-columns:[^}]*minmax\(0, 1fr\);[^}]*\}/,
+    )
+    expect(styles).toMatch(
+      /@container checkout-journey \(max-width: 330px\)\s*\{[\s\S]*?\.mt-checkout-steps > div\s*\{[^}]*min-width: 0;[^}]*flex-direction: column;[^}]*\}/,
+    )
+  })
 })
 
 describe('inline cart styles', () => {

@@ -15717,6 +15717,8 @@ body.mt-ins-resizing .mt-ins {
 
 .mt-checkout-journey {
   position: relative;
+  container-name: checkout-journey;
+  container-type: inline-size;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-areas:
@@ -15758,6 +15760,7 @@ body.mt-ins-resizing .mt-ins {
 .mt-checkout-journey-copy {
   z-index: 1;
   grid-area: copy;
+  min-width: 0;
 }
 
 .mt-checkout-journey.stage-secure .mt-checkout-journey-copy {
@@ -15790,11 +15793,13 @@ body.mt-ins-resizing .mt-ins {
 }
 
 .mt-checkout-journey p {
+  width: 100%;
   max-width: 520px;
   margin: 11px 0 0;
   color: var(--muted);
   font-size: 14px;
   line-height: 1.48;
+  overflow-wrap: break-word;
   text-wrap: pretty;
 }
 
@@ -16020,6 +16025,40 @@ body.mt-ins-resizing .mt-ins {
 
 .mt-checkout-journey.compact .mt-checkout-steps {
   padding-top: 12px;
+}
+
+@container checkout-journey (max-width: 330px) {
+  .mt-checkout-journey p {
+    max-width: 100%;
+    text-wrap: wrap;
+  }
+
+  .mt-checkout-steps {
+    grid-template-columns:
+      minmax(0, 1fr) minmax(8px, 0.35fr) minmax(0, 1fr) minmax(8px, 0.35fr)
+      minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .mt-checkout-steps > div {
+    min-width: 0;
+    flex-direction: column;
+    gap: 6px;
+    text-align: center;
+  }
+
+  .mt-checkout-steps strong {
+    width: 100%;
+    max-width: none;
+    line-height: 1.15;
+    overflow-wrap: normal;
+  }
+
+  .mt-checkout-steps > i {
+    width: 100%;
+    min-width: 0;
+    margin: 11px 0 0;
+  }
 }
 
 @keyframes mt-checkout-journey-in {
