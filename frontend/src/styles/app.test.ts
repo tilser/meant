@@ -33,6 +33,36 @@ describe('discover chat layout styles', () => {
     expect(styles).toMatch(/\.mt-feed\.mt-ct-feed\s*\{[^}]*padding-bottom: 0;[^}]*\}/)
   })
 
+  test('reveals compact conversation controls by scroll direction only on phones', () => {
+    expect(styles).toMatch(
+      /@media \(max-width: 720px\)\s*\{[\s\S]*?\.mt-ct-tabs\s*\{[^}]*position: fixed;[^}]*opacity: 0;[^}]*pointer-events: none;[^}]*visibility: hidden;[^}]*\}/,
+    )
+    expect(styles).toMatch(
+      /\.mt-ct-tabs\.mt-ct-tabs-mobile-visible\s*\{[^}]*opacity: 1;[^}]*pointer-events: auto;[^}]*visibility: visible;[^}]*\}/,
+    )
+  })
+
+  test('centers and snaps complete chat messages only in a mobile conversation', () => {
+    expect(styles).toMatch(
+      /@media \(max-width: 720px\)\s*\{[\s\S]*?\.mt-ct-msg\s*\{[^}]*justify-content: center;[^}]*\}/,
+    )
+    expect(styles).toMatch(
+      /html\.mt-mobile-conversation-snap\s*\{[^}]*scroll-snap-type: y mandatory;[^}]*\}/,
+    )
+    expect(styles).toMatch(
+      /html\.mt-mobile-conversation-snap \.mt-feed\.mt-ct-feed\s*\{[^}]*animation: none;[^}]*\}/,
+    )
+    expect(styles).toMatch(
+      /html\.mt-mobile-conversation-snap \.mt-ct-msg\s*\{[^}]*scroll-snap-align: start;[^}]*scroll-snap-stop: always;[^}]*\}/,
+    )
+    expect(styles).toMatch(
+      /html\.mt-mobile-conversation-snap\.mt-mobile-conversation-controls-visible\s*\{[^}]*scroll-padding-top: 190px;[^}]*\}/,
+    )
+    expect(styles).toMatch(
+      /html\.mt-mobile-conversation-snap \.mt-ct-bottom-sentinel\s*\{[^}]*scroll-snap-align: end;[^}]*\}/,
+    )
+  })
+
   test('turns grounded agent product mentions into responsive visual previews', () => {
     expect(styles).toMatch(
       /\.mt-agent-markdown \.mt-agent-product-link\s*\{[^}]*display: inline-grid;[^}]*grid-template-columns: 52px minmax\(0, 1fr\);[^}]*\}/,

@@ -374,6 +374,12 @@ export function AgentDiscoverView({
     visibleCartRef.current = cart
   }, [cart])
 
+  useEffect(() => {
+    const root = document.documentElement
+    root.classList.toggle('mt-mobile-conversation-snap', Boolean(activeConversationId))
+    return () => root.classList.remove('mt-mobile-conversation-snap')
+  }, [activeConversationId])
+
   const queueAutoRemoval = useCallback((messageKey: string, delayMs: number) => {
     if (autoDismissTimeoutsRef.current.has(messageKey)) return
     const timeout = window.setTimeout(() => {

@@ -4150,15 +4150,35 @@
   }
 
   .mt-ct-tabs {
+    position: fixed;
     top: 86px;
+    right: 0;
+    left: 0;
     align-items: stretch;
     flex-direction: column;
     gap: 7px;
-    margin-bottom: 18px;
+    width: 100%;
+    max-width: 900px;
+    margin: 0 auto;
     padding-top: 8px;
     padding-bottom: 10px;
     background: color-mix(in srgb, var(--bg) 97%, var(--surface));
     box-shadow: 0 10px 28px -24px rgba(20, 24, 28, 0.44);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(calc(-100% - 12px));
+    transition:
+      opacity var(--motion-quick) var(--ease-out),
+      transform var(--motion-medium) var(--ease-out);
+    visibility: hidden;
+    will-change: opacity, transform;
+  }
+
+  .mt-ct-tabs.mt-ct-tabs-mobile-visible {
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+    visibility: visible;
   }
 
   .mt-ct-tabs-strip {
@@ -4236,10 +4256,12 @@
 
   .mt-ct-msg {
     min-width: 0;
+    justify-content: center;
   }
 
   .mt-ct-meant {
     gap: 9px;
+    transform-origin: center top;
   }
 
   .mt-ct-meant-inner {
@@ -4267,6 +4289,43 @@
     padding: 10px 13px 11px;
     font-size: 15px;
     line-height: 1.45;
+  }
+
+  .mt-ct-you {
+    transform-origin: center bottom;
+  }
+
+  .mt-dustwrap.side-you {
+    max-width: min(100%, 680px);
+  }
+
+  .mt-dustwrap.side-meant {
+    width: 100%;
+    max-width: 680px;
+    flex: 0 1 680px;
+  }
+
+  html.mt-mobile-conversation-snap {
+    scroll-padding-top: 96px;
+    scroll-padding-bottom: calc(92px + env(safe-area-inset-bottom));
+    scroll-snap-type: y mandatory;
+  }
+
+  html.mt-mobile-conversation-snap.mt-mobile-conversation-controls-visible {
+    scroll-padding-top: 190px;
+  }
+
+  html.mt-mobile-conversation-snap .mt-feed.mt-ct-feed {
+    animation: none;
+  }
+
+  html.mt-mobile-conversation-snap .mt-ct-msg {
+    scroll-snap-align: start;
+    scroll-snap-stop: always;
+  }
+
+  html.mt-mobile-conversation-snap .mt-ct-bottom-sentinel {
+    scroll-snap-align: end;
   }
 
   .mt-agent-markdown .mt-agent-product-link {
@@ -16653,6 +16712,10 @@ body.mt-ins-resizing .mt-ins {
 }
 
 @media (max-width: 430px) {
+  html.mt-mobile-conversation-snap.mt-mobile-conversation-controls-visible {
+    scroll-padding-top: 230px;
+  }
+
   .mt-ct-mini2-grid {
     grid-template-columns: 1fr;
   }
@@ -16693,6 +16756,12 @@ body.mt-ins-resizing .mt-ins {
     width: 28px;
     height: 28px;
     background: color-mix(in srgb, var(--surface) 94%, transparent);
+  }
+}
+
+@media (max-width: 720px) and (prefers-reduced-motion: reduce) {
+  .mt-ct-tabs {
+    transition: none;
   }
 }
 .mt-grouped-offer-selector {

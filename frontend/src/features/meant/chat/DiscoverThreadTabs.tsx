@@ -2,7 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { ChevronIcon, PlusIcon, ShareIcon } from '../shared/icons'
 import { CloseIcon, SparkMark } from '../shared/ui'
+import { useMediaQuery } from '../shared/useMediaQuery'
 import { DiscoverThreadHistoryButton } from './DiscoverThreadHistoryButton'
+import {
+  mobileConversationControlsGestureState,
+  type MobileConversationControlsGestureState,
+} from './mobileConversationControls'
 import type { DiscoverChatThread } from './types'
 
 export function DiscoverThreadTabs({
@@ -35,7 +40,17 @@ export function DiscoverThreadTabs({
   const [tabsOverflow, setTabsOverflow] = useState(false)
   const [canScrollTabsLeft, setCanScrollTabsLeft] = useState(false)
   const [canScrollTabsRight, setCanScrollTabsRight] = useState(false)
+  const [mobileControlsVisible, setMobileControlsVisible] = useState(false)
   const tabsScrollRef = useRef<HTMLDivElement | null>(null)
+  const mobileGestureStateRef = useRef<MobileConversationControlsGestureState>({
+    direction: null,
+    travel: 0,
+    visible: false,
+  })
+  const lastTouchPointRef = useRef<{ x: number; y: number } | null>(null)
+  const isPhone = useMediaQuery('(max-width: 720px)')
+  const mobileControlsHidden = isPhone && !mobileControlsVisible
+  const mobileControlsShown = isPhone && mobileControlsVisible
 
   const updateTabsScrollState = useCallback(() => {
     const element = tabsScrollRef.current
@@ -120,8 +135,79 @@ export function DiscoverThreadTabs({
     window.requestAnimationFrame(updateTabsScrollState)
   }, [activeId, updateTabsScrollState])
 
+  useEffect(() => {
+    if (!isPhone) {
+      mobileGestureStateRef.current = { direction: null, travel: 0, visible: true }
+      setMobileControlsVisible(true)
+      return undefined
+    }
+
+    mobileGestureStateRef.current = { direction: null, travel: 0, visible: false }
+    lastTouchPointRef.current = null
+    setMobileControlsVisible(false)
+
+    const updateVisibility = (deltaY: number) => {
+      if (document.querySelector('.mt-ct-history-pop, .mt-ct-tab-edit')) return
+      const next = mobileConversationControlsGestureState(mobileGestureStateRef.current, deltaY)
+      mobileGestureStateRef.current = next
+      setMobileControlsVisible((current) => (current === next.visible ? current : next.visible))
+    }
+
+    const handleWheel = (event: WheelEvent) => {
+      if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
+        updateVisibility(event.deltaY)
+      }
+    }
+    const handleTouchStart = (event: TouchEvent) => {
+      const touch = event.touches[0]
+      lastTouchPointRef.current = touch ? { x: touch.clientX, y: touch.clientY } : null
+      mobileGestureStateRef.current = {
+        ...mobileGestureStateRef.current,
+        direction: null,
+        travel: 0,
+      }
+    }
+    const handleTouchMove = (event: TouchEvent) => {
+      const touch = event.touches[0]
+      const previous = lastTouchPointRef.current
+      if (!touch || !previous) return
+      const deltaX = previous.x - touch.clientX
+      const deltaY = previous.y - touch.clientY
+      lastTouchPointRef.current = { x: touch.clientX, y: touch.clientY }
+      if (Math.abs(deltaY) > Math.abs(deltaX)) {
+        updateVisibility(deltaY)
+      }
+    }
+    const handleTouchEnd = () => {
+      lastTouchPointRef.current = null
+    }
+
+    window.addEventListener('wheel', handleWheel, { passive: true })
+    window.addEventListener('touchstart', handleTouchStart, { passive: true })
+    window.addEventListener('touchmove', handleTouchMove, { passive: true })
+    window.addEventListener('touchend', handleTouchEnd, { passive: true })
+    window.addEventListener('touchcancel', handleTouchEnd, { passive: true })
+    return () => {
+      window.removeEventListener('wheel', handleWheel)
+      window.removeEventListener('touchstart', handleTouchStart)
+      window.removeEventListener('touchmove', handleTouchMove)
+      window.removeEventListener('touchend', handleTouchEnd)
+      window.removeEventListener('touchcancel', handleTouchEnd)
+    }
+  }, [activeId, isPhone])
+
+  useEffect(() => {
+    const root = document.documentElement
+    root.classList.toggle('mt-mobile-conversation-controls-visible', mobileControlsShown)
+    return () => root.classList.remove('mt-mobile-conversation-controls-visible')
+  }, [mobileControlsShown])
+
   return (
-    <div className="mt-ct-tabs">
+    <div
+      className={`mt-ct-tabs ${mobileControlsShown ? 'mt-ct-tabs-mobile-visible' : ''}`}
+      aria-hidden={mobileControlsHidden || undefined}
+      inert={mobileControlsHidden || undefined}
+    >
       <div
         className={`mt-ct-tabs-strip ${tabsOverflow ? 'overflowing' : ''} ${
           canScrollTabsLeft ? 'can-left' : ''
