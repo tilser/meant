@@ -4,7 +4,7 @@ import { trackMeantEvent } from '../analytics'
 
 export function MerchantCheckoutLink({
   session,
-  label = 'Continue on merchant site',
+  label = 'Continue securely on merchant site',
   className,
 }: Readonly<{
   session: ActiveCheckoutSession

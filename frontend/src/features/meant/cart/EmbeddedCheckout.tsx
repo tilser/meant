@@ -48,7 +48,9 @@ export function EmbeddedCheckout({
 }>) {
   const [phase, setPhase] = useState<EmbeddedCheckoutPhase>('preparing')
   const [descriptor, setDescriptor] = useState<EmbeddedCheckoutBootstrapProfile | null>(null)
-  const [message, setMessage] = useState('Preparing a secure merchant checkout...')
+  const [message, setMessage] = useState(
+    'Preparing your secure Merchant checkout — what’s Meant for you is close.',
+  )
   const [exitConfirmationOpen, setExitConfirmationOpen] = useState(false)
   const handleRef = useRef<CheckoutKitHandle | null>(null)
   const descriptorRef = useRef<EmbeddedCheckoutBootstrapProfile | null>(null)
@@ -123,7 +125,7 @@ export function EmbeddedCheckout({
       terminalRef.current = 'verifying'
       clearStartTimer()
       setPhase('verifying')
-      setMessage('Verifying the completed order with the merchant...')
+      setMessage('The match looks official. Meant is confirming your order with the Merchant...')
       try {
         const checkout = await completeEmbeddedCheckout({
           cartId: session.cartId,
@@ -134,7 +136,7 @@ export function EmbeddedCheckout({
         terminalRef.current = 'completed'
         destroyHandle()
         setPhase('completed')
-        setMessage('Purchase complete. The merchant confirmed your checkout.')
+        setMessage('Your purchase is confirmed. It really was Meant to be.')
         trackCheckoutLifecycleEvent('embedded_checkout_complete', {
           surface,
           result: 'succeeded',
@@ -168,7 +170,7 @@ export function EmbeddedCheckout({
       await cancelSession(current)
       if (generation !== generationRef.current) return
       setPhase('cancelled')
-      setMessage('Embedded checkout closed. Your merchant cart and checkout remain available.')
+      setMessage('Your cart and secure checkout will be right here when the timing feels Meant.')
       trackCheckoutLifecycleEvent('embedded_checkout_cancel', {
         surface,
         result: 'succeeded',
@@ -190,7 +192,7 @@ export function EmbeddedCheckout({
     setDescriptor(null)
     if (previous?.sessionId) void cancelSession(previous)
     setPhase('preparing')
-    setMessage('Preparing a secure merchant checkout...')
+    setMessage('Preparing your secure Merchant checkout — what’s Meant for you is close.')
     prepareStartedAtRef.current = performance.now()
     trackCheckoutLifecycleEvent('embedded_bootstrap', {
       surface,
@@ -234,7 +236,7 @@ export function EmbeddedCheckout({
     const decision = resolveEmbeddedCheckoutBootstrap(current, embeddedCheckoutEnabled())
     if (decision.mode === 'COMPLETED') {
       setPhase('completed')
-      setMessage('This checkout is already complete.')
+      setMessage('This purchase is already complete. It was Meant to be.')
       await onReconciledRef.current()
       onSessionReleasedRef.current?.('completed')
       return
@@ -269,7 +271,9 @@ export function EmbeddedCheckout({
           onReady: () => {
             if (generation !== generationRef.current) return
             setPhase('ready')
-            setMessage('Secure checkout is ready to open in a merchant window.')
+            setMessage(
+              'Open the secure Merchant checkout to pay. Your product is only one step away.',
+            )
             trackCheckoutLifecycleEvent('checkout_kit_ready', {
               surface,
               result: 'succeeded',
@@ -281,7 +285,9 @@ export function EmbeddedCheckout({
             if (generation !== generationRef.current) return
             clearStartTimer()
             setPhase('active')
-            setMessage('Checkout is active in the secure merchant window.')
+            setMessage(
+              'Complete payment in the secure Merchant window, then Meant will confirm everything here.',
+            )
             trackCheckoutLifecycleEvent('embedded_checkout_start', {
               surface,
               result: 'succeeded',
@@ -383,7 +389,7 @@ export function EmbeddedCheckout({
       return
     }
     setPhase('opening')
-    setMessage('Opening the secure merchant checkout...')
+    setMessage('Opening your secure Merchant checkout...')
     trackCheckoutLifecycleEvent('embedded_checkout_start', {
       surface,
       result: 'attempted',

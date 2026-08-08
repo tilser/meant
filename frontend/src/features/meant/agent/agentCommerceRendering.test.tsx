@@ -1099,6 +1099,8 @@ describe('agent commerce artifacts reuse the established components', () => {
     expect(cartMarkup).toContain('Quantity for Grounded trail shoe')
     expect(cartMarkup).toContain('Checkout here')
     expect(checkoutMarkup).toContain('Checkout in chat')
+    expect(checkoutMarkup).toContain('<em>Meant</em> together')
+    expect(checkoutMarkup.match(/Estimated total/g)).toHaveLength(1)
     expect(checkoutMarkup).toContain('>Merchant<')
     expect(checkoutMarkup).not.toContain('Running Shop')
     expect(checkoutMarkup).toContain('Start checkout in chat')

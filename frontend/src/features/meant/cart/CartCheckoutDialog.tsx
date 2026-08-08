@@ -2,7 +2,8 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 
 import type { CheckoutAssistantMessage, CheckoutProfile } from '../../../lib/apiClient'
 import { sanitizeBuyerVisibleText } from '../agent/buyerVisibleText'
-import { CloseIcon, SparkMark } from '../shared/ui'
+import { CloseIcon, MeantHeartMark, SparkMark } from '../shared/ui'
+import { CheckoutJourney } from './CheckoutJourney'
 import { EmbeddedCheckout } from './EmbeddedCheckout'
 import { merchantDisplayOrigin } from './merchantOrigin'
 import { MerchantCheckoutHandoff } from './MerchantCheckoutHandoff'
@@ -13,10 +14,8 @@ import type { ActiveCheckoutSession, CheckoutAssistantHandler } from './checkout
 import { CheckoutExitConfirmation } from './CheckoutExitConfirmation'
 import { savedCheckoutDetails } from './savedCheckoutDetails'
 import {
-  checkoutAssistantPrompt,
   checkoutNeedsAddress,
   checkoutNeedsHandoff,
-  checkoutPhase,
   checkoutRequiresMerchantRedirect,
   checkoutShouldOfferSavedDetails,
   checkoutUsesEmbeddedCheckout,
@@ -64,9 +63,7 @@ export function CartCheckoutDialog({
   const [assistantBusy, setAssistantBusy] = useState(false)
   const [savedDetailsDismissed, setSavedDetailsDismissed] = useState(false)
   const [exitConfirmationOpen, setExitConfirmationOpen] = useState(false)
-  const promptedPhaseRef = useRef<string | null>(null)
   const sessionCartIdRef = useRef<string | null>(null)
-  const logRef = useRef<HTMLDivElement | null>(null)
   const merchantUrl = merchantCheckoutUrl(session)
   const handoff = checkoutNeedsHandoff(session)
   const merchantRedirect = checkoutRequiresMerchantRedirect(session.profile)
@@ -87,26 +84,12 @@ export function CartCheckoutDialog({
   useEffect(() => {
     if (sessionCartIdRef.current !== session.cartId) {
       sessionCartIdRef.current = session.cartId
-      promptedPhaseRef.current = null
       setMessages([])
       setInput('')
       setSavedDetailsDismissed(false)
       setExitConfirmationOpen(false)
     }
-    const nextPhase = `${session.cartId}:${checkoutPhase(session)}`
-    if (promptedPhaseRef.current === nextPhase) {
-      return
-    }
-    promptedPhaseRef.current = nextPhase
-    setMessages((current) => [
-      ...current,
-      { role: 'assistant', content: checkoutAssistantPrompt(session) },
-    ])
   }, [session])
-
-  useEffect(() => {
-    logRef.current?.scrollTo({ top: logRef.current.scrollHeight })
-  }, [messages, assistantBusy])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -170,9 +153,13 @@ export function CartCheckoutDialog({
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="mt-checkout-head">
-          <div>
-            <div className="mt-checkout-eyebrow">Checkout</div>
-            <h2 id="mt-cart-checkout-title">{merchantDisplay}</h2>
+          <div className="mt-checkout-brand">
+            <span className="mt-checkout-brand-mark" aria-hidden>
+              <MeantHeartMark size={21} />
+            </span>
+            <span className="mt-mono">
+              <em>Meant</em> checkout · {merchantDisplay}
+            </span>
           </div>
           <button
             className="mt-checkout-close"
@@ -183,6 +170,14 @@ export function CartCheckoutDialog({
             <CloseIcon size={14} />
           </button>
         </div>
+
+        <CheckoutJourney
+          key={needsAddress ? 'delivery' : 'secure'}
+          session={session}
+          stage={needsAddress ? 'delivery' : 'secure'}
+          merchantDisplay={merchantDisplay}
+          titleId="mt-cart-checkout-title"
+        />
 
         <div className="mt-checkout-summary">
           <div>
@@ -200,21 +195,6 @@ export function CartCheckoutDialog({
         </div>
 
         <div className="mt-checkout-assistant">
-          <div className="mt-checkout-assistant-log" ref={logRef}>
-            {messages.map((message, index) => (
-              <div
-                className={`mt-checkout-assistant-message ${message.role}`}
-                key={`cart-checkout-message-${index}`}
-              >
-                <span>{message.content}</span>
-              </div>
-            ))}
-            {assistantBusy ? (
-              <div className="mt-checkout-assistant-message assistant pending">
-                <span>Checking with the merchant...</span>
-              </div>
-            ) : null}
-          </div>
           {error ? <div className="mt-checkout-error">{error}</div> : null}
           {embedded ? (
             <EmbeddedCheckout session={session} surface="cart" onReconciled={onRefresh} />
@@ -249,19 +229,22 @@ export function CartCheckoutDialog({
             />
           ) : (
             <form className="mt-checkout-assistant-input" onSubmit={submit}>
+              <span className="mt-checkout-composer-spark" aria-hidden>
+                <SparkMark size={15} />
+              </span>
               <input
                 className="mt-input"
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
                 placeholder={
                   needsAddress
-                    ? 'Reply with shipping address and contact details...'
-                    : 'Tell the checkout agent what to adjust...'
+                    ? 'Address, name, email and phone — all in one message'
+                    : 'Anything you’d like Meant to adjust?'
                 }
                 disabled={assistantBusy || busy}
               />
               <button type="submit" disabled={assistantBusy || busy || !input.trim()}>
-                {assistantBusy ? 'Sending...' : 'Send'}
+                {assistantBusy ? 'Sending...' : 'Send to Meant'}
               </button>
             </form>
           )}

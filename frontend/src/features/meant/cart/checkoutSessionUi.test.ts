@@ -106,8 +106,9 @@ describe('checkout session UCP actions', () => {
       },
     })
 
-    expect(checkoutAssistantPrompt(checkout)).toContain('reuse your saved details')
-    expect(checkoutAssistantPrompt(checkout)).not.toContain('Send them here in one message')
+    expect(checkoutAssistantPrompt(checkout)).toContain('saved address below')
+    expect(checkoutAssistantPrompt(checkout)).toContain('Meant together')
+    expect(checkoutAssistantPrompt(checkout)).not.toContain('everything in one message')
     expect(checkoutShouldOfferSavedDetails(checkout, false)).toBe(true)
     expect(checkoutShouldOfferSavedDetails(checkout, true)).toBe(false)
   })
@@ -183,13 +184,9 @@ describe('checkout session UCP actions', () => {
 
     expect(checkoutNeedsAddress(checkout)).toBe(false)
     expect(checkoutNeedsHandoff(checkout)).toBe(true)
-    expect(checkoutAssistantPrompt(checkout)).toContain(
-      'requires additional interaction in its checkout',
-    )
+    expect(checkoutAssistantPrompt(checkout)).toContain('secure interaction in its checkout')
     expect(checkoutAssistantPrompt(checkout)).not.toContain('final secure step')
-    expect(merchantHandoffReason(checkout)).toContain(
-      'requires additional interaction in its checkout',
-    )
+    expect(merchantHandoffReason(checkout)).toContain('secure interaction')
   })
 
   test('uses the explicit direct-completion action without inferring a handoff from status', () => {
@@ -211,7 +208,7 @@ describe('checkout session UCP actions', () => {
 
     expect(checkoutRequiresMerchantRedirect(checkout.profile)).toBe(false)
     expect(checkoutNeedsHandoff(checkout)).toBe(false)
-    expect(checkoutAssistantPrompt(checkout)).toContain('ready for direct completion')
+    expect(checkoutAssistantPrompt(checkout)).toContain('one secure step away inside Meant')
   })
 
   test('keeps an explicit unknown action authoritative instead of inferring from status', () => {
@@ -245,7 +242,7 @@ describe('checkout session UCP actions', () => {
 
     expect(checkoutNeedsHandoff(checkout)).toBe(false)
     expect(checkoutUsesEmbeddedCheckout(checkout)).toBe(true)
-    expect(checkoutAssistantPrompt(checkout)).toContain('embedded checkout')
+    expect(checkoutAssistantPrompt(checkout)).toContain('open the secure Merchant checkout')
   })
 
   test('uses the merchant continue URL when the provider explicitly requires redirect checkout', () => {
@@ -277,9 +274,7 @@ describe('checkout session UCP actions', () => {
     expect(checkoutNeedsHandoff(checkout)).toBe(true)
     expect(checkoutUsesEmbeddedCheckout(checkout)).toBe(false)
     expect(merchantCheckoutUrl(checkout)).toBe('https://merchant.example/continue')
-    expect(checkoutAssistantPrompt(checkout)).toContain(
-      'Checkout inside Meant is not available for this Merchant',
-    )
+    expect(checkoutAssistantPrompt(checkout)).toContain('handles the final secure payment step')
     expect(checkoutAssistantPrompt(checkout)).not.toContain('I have the checkout details I need')
   })
 
@@ -303,8 +298,8 @@ describe('checkout session UCP actions', () => {
     expect(checkoutRequiresMerchantRedirect(checkout.profile)).toBe(false)
     expect(checkoutNeedsHandoff(checkout)).toBe(false)
     expect(checkoutUsesEmbeddedCheckout(checkout)).toBe(true)
-    expect(checkoutAssistantPrompt(checkout)).toContain('supports embedded checkout')
-    expect(checkoutAssistantPrompt(checkout)).not.toContain('not available for this Merchant')
+    expect(checkoutAssistantPrompt(checkout)).toContain('open the secure Merchant checkout')
+    expect(checkoutAssistantPrompt(checkout)).not.toContain('handles the final secure payment step')
   })
 
   test('keeps a terminal action authoritative over redirect fallback inference', () => {
@@ -361,7 +356,7 @@ describe('checkout session UCP actions', () => {
     for (const checkout of [incomplete, missingUrl]) {
       expect(checkoutNeedsHandoff(checkout)).toBe(false)
       expect(checkoutUsesEmbeddedCheckout(checkout)).toBe(true)
-      expect(checkoutAssistantPrompt(checkout)).toContain('supports embedded checkout')
+      expect(checkoutAssistantPrompt(checkout)).toContain('open the secure Merchant checkout')
     }
   })
 
@@ -393,6 +388,6 @@ describe('checkout session UCP actions', () => {
     })
 
     expect(checkoutNeedsHandoff(checkout)).toBe(true)
-    expect(merchantHandoffReason(checkout)).toContain('not authorized')
+    expect(merchantHandoffReason(checkout)).toContain('final secure payment step')
   })
 })

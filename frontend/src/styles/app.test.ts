@@ -57,3 +57,27 @@ describe('compare verdict styles', () => {
     )
   })
 })
+
+describe('inline checkout styles', () => {
+  test('keeps the checkout card compact and aligned with the conversation', () => {
+    expect(styles).toMatch(
+      /\.mt-ct-checkout\s*\{[^}]*align-self: flex-start;[^}]*width: 100%;[^}]*max-width: none;[^}]*padding: 13px;[^}]*\}/,
+    )
+    expect(styles).toMatch(
+      /\.mt-ct-cogroup-actions > \.mt-ct-cobtn\s*\{[^}]*width: auto;[^}]*min-height: 34px;[^}]*margin: 0;[^}]*\}/,
+    )
+    expect(styles).toMatch(
+      /\.mt-ct-checkout-brand-copy > strong\s*\{[^}]*font-size: 19px;[^}]*line-height: 1\.2;[^}]*\}/,
+    )
+    expect(styles).not.toContain('.mt-checkout-assistant-log')
+  })
+
+  test('stacks only the compact card header on small screens', () => {
+    expect(styles).toMatch(
+      /@media \(max-width: 640px\)\s*\{[\s\S]*?\.mt-ct-checkout-head\s*\{[^}]*flex-direction: column;[^}]*\}/,
+    )
+    expect(styles).toMatch(
+      /@media \(max-width: 640px\)\s*\{[\s\S]*?\.mt-ct-checkout \.mt-ct-cogroup-head\s*\{[^}]*flex-flow: row wrap;[^}]*\}/,
+    )
+  })
+})

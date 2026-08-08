@@ -39,13 +39,15 @@ test('renders the saved checkout summary and explicit reuse choices', () => {
     />,
   )
 
-  expect(markup).toContain('Use your saved contact and delivery details for this checkout?')
+  expect(markup).toContain('Meant knows the way')
+  expect(markup).toContain('Is this where your')
+  expect(markup).toContain('match should find you?')
   expect(markup).toContain('Ada Lovelace')
   expect(markup).toContain('1 Market St')
   expect(markup).toContain('San Francisco, CA 94105')
   expect(markup).toContain('ada@example.com')
-  expect(markup).toContain('Use saved details')
-  expect(markup).toContain('Enter different details')
+  expect(markup).toContain('Yes, send it here')
+  expect(markup).toContain('Use another address')
   expect(markup).not.toContain(details.updatedAt)
 })
 
@@ -138,8 +140,10 @@ test('offers the same saved-details prompt in cart and chat checkout surfaces', 
   for (const markup of [cartMarkup, chatMarkup]) {
     expect(markup).toContain('nycfactory.com')
     expect(markup).not.toContain('sollys-online-grocery.myshopify.com')
-    expect(markup).toContain('Use your saved contact and delivery details for this checkout?')
-    expect(markup).toContain('Use saved details')
-    expect(markup).toContain('Enter different details')
+    expect(markup).toContain('Meant knows the way')
+    expect(markup).toContain('match should find you?')
+    expect(markup).toContain('Yes, send it here')
+    expect(markup).toContain('Use another address')
+    expect(markup).not.toContain('mt-checkout-assistant-log')
   }
 })

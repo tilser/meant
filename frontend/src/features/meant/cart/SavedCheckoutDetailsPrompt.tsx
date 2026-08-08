@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import type { CheckoutProfile } from '../../../lib/apiClient'
+import { MeantHeartMark } from '../shared/ui'
 import type { CheckoutAssistantHandler } from './checkoutTypes'
 import {
   savedCheckoutAddressLines,
@@ -65,8 +66,16 @@ export function SavedCheckoutDetailsPrompt({
 
   return (
     <div className="mt-checkout-saved-details">
-      <div className="mt-checkout-saved-question">
-        Use your saved contact and delivery details for this checkout?
+      <div className="mt-checkout-saved-head">
+        <span className="mt-checkout-saved-mark" aria-hidden>
+          <MeantHeartMark size={23} />
+        </span>
+        <span>
+          <span className="mt-mono mt-checkout-saved-eyebrow">Meant knows the way</span>
+          <strong className="mt-checkout-saved-question">
+            Is this where your <em>Meant</em> match should find you?
+          </strong>
+        </span>
       </div>
       <div className="mt-checkout-saved-summary">
         {recipient ? <strong>{recipient}</strong> : null}
@@ -85,10 +94,10 @@ export function SavedCheckoutDetailsPrompt({
       ) : null}
       <div className="mt-checkout-saved-actions">
         <button type="button" className="primary" disabled={disabled} onClick={useSavedDetails}>
-          {submitting ? 'Using saved details...' : 'Use saved details'}
+          {submitting ? 'Making the match...' : 'Yes, send it here'}
         </button>
         <button type="button" disabled={disabled} onClick={onManual}>
-          Enter different details
+          Use another address
         </button>
       </div>
     </div>

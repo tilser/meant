@@ -10,12 +10,11 @@ import type {
 } from '../../cart/checkoutTypes'
 import { merchantDisplayOrigin } from '../../cart/merchantOrigin'
 import { liveCheckoutGroupFor } from '../../cart/checkoutGroupResolution'
+import { CheckoutJourney } from '../../cart/CheckoutJourney'
 import { EmbeddedCheckout } from '../../cart/EmbeddedCheckout'
 import {
-  checkoutAssistantPrompt,
   checkoutNeedsAddress,
   checkoutNeedsHandoff,
-  checkoutPhase,
   checkoutRequiresMerchantRedirect,
   checkoutShouldOfferSavedDetails,
   checkoutUsesEmbeddedCheckout,
@@ -26,7 +25,7 @@ import { MerchantCheckoutHandoff } from '../../cart/MerchantCheckoutHandoff'
 import { MerchantCheckoutLink } from '../../cart/MerchantCheckoutLink'
 import { SavedCheckoutDetailsPrompt } from '../../cart/SavedCheckoutDetailsPrompt'
 import { savedCheckoutDetails } from '../../cart/savedCheckoutDetails'
-import { SparkMark } from '../../shared/ui'
+import { MeantHeartMark, SparkMark } from '../../shared/ui'
 import type { CartItem, CheckoutPayload, Product } from '../../types'
 import {
   merchantCheckoutStartBlocked,
@@ -97,10 +96,8 @@ export function InlineCheckoutBlock({
   const [releasedCheckouts, setReleasedCheckouts] = useState<
     ReadonlyMap<string, CheckoutReleaseOutcome>
   >(new Map())
-  const promptedPhaseRef = useRef<string | null>(null)
   const activeCartIdRef = useRef<string | null>(null)
   const autoStartedCartIdRef = useRef<string | null>(null)
-  const assistantLogRef = useRef<HTMLDivElement | null>(null)
   const lines = cartLines(cart, products)
   const groups = cartGroups(lines)
   const currencies = new Set(
@@ -115,7 +112,6 @@ export function InlineCheckoutBlock({
 
   useEffect(() => {
     if (!activeCheckout) {
-      promptedPhaseRef.current = null
       activeCartIdRef.current = null
       setAssistantMessages([])
       setAssistantInput('')
@@ -124,25 +120,11 @@ export function InlineCheckoutBlock({
     }
     if (activeCartIdRef.current !== activeCheckout.cartId) {
       activeCartIdRef.current = activeCheckout.cartId
-      promptedPhaseRef.current = null
       setAssistantMessages([])
       setAssistantInput('')
       setSavedDetailsDismissed(false)
     }
-    const nextPhase = `${activeCheckout.cartId}:${checkoutPhase(activeCheckout)}`
-    if (promptedPhaseRef.current === nextPhase) {
-      return
-    }
-    promptedPhaseRef.current = nextPhase
-    setAssistantMessages((current) => [
-      ...current,
-      { role: 'assistant', content: checkoutAssistantPrompt(activeCheckout) },
-    ])
   }, [activeCheckout])
-
-  useEffect(() => {
-    assistantLogRef.current?.scrollTo({ top: assistantLogRef.current.scrollHeight })
-  }, [assistantMessages, assistantBusy])
 
   const payGroup = useCallback(
     async (displayGroup: CartGroup, actionGroup: CartGroup) => {
@@ -283,23 +265,16 @@ export function InlineCheckoutBlock({
     const needsAddress = checkoutNeedsAddress(session)
     const savedDetails = savedCheckoutDetails(session.profile)
     const offerSavedDetails = checkoutShouldOfferSavedDetails(session, savedDetailsDismissed)
+    const merchantDisplay = merchantDisplayOrigin(session.merchantOrigin)
     return (
       <div className="mt-ct-checkout-agent">
-        <div className="mt-checkout-assistant-log" ref={assistantLogRef}>
-          {assistantMessages.map((message, index) => (
-            <div
-              className={`mt-checkout-assistant-message ${message.role}`}
-              key={`checkout-agent-${index}`}
-            >
-              <span>{message.content}</span>
-            </div>
-          ))}
-          {assistantBusy ? (
-            <div className="mt-checkout-assistant-message assistant pending">
-              <span>Checking with the merchant...</span>
-            </div>
-          ) : null}
-        </div>
+        <CheckoutJourney
+          key={needsAddress ? 'delivery' : 'secure'}
+          session={session}
+          stage={needsAddress ? 'delivery' : 'secure'}
+          merchantDisplay={merchantDisplay}
+          compact
+        />
         {checkoutError ? <div className="mt-cart-inline-error">{checkoutError}</div> : null}
         {embedded ? (
           <EmbeddedCheckout
@@ -317,7 +292,7 @@ export function InlineCheckoutBlock({
                 onRefresh={onRefreshCheckout}
               />
               <button
-                className="mt-ct-cobtn"
+                className="mt-ct-cobtn secondary"
                 type="button"
                 onClick={() => releaseCheckout(session.cartId, 'dismissed')}
               >
@@ -343,7 +318,7 @@ export function InlineCheckoutBlock({
                 </button>
               )}
               <button
-                className="mt-ct-cobtn"
+                className="mt-ct-cobtn secondary"
                 type="button"
                 onClick={() => releaseCheckout(session.cartId, 'dismissed')}
               >
@@ -362,7 +337,7 @@ export function InlineCheckoutBlock({
               onRefresh={onRefreshCheckout}
             />
             <button
-              className="mt-ct-cobtn"
+              className="mt-ct-cobtn secondary"
               type="button"
               onClick={() => releaseCheckout(session.cartId, 'dismissed')}
             >
@@ -372,14 +347,17 @@ export function InlineCheckoutBlock({
         ) : (
           <>
             <form className="mt-checkout-assistant-input" onSubmit={submitAssistant}>
+              <span className="mt-checkout-composer-spark" aria-hidden>
+                <SparkMark size={15} />
+              </span>
               <input
                 className="mt-input"
                 value={assistantInput}
                 onChange={(event) => setAssistantInput(event.target.value)}
                 placeholder={
                   needsAddress
-                    ? 'Reply with shipping address and contact details...'
-                    : 'Tell the checkout agent what to adjust...'
+                    ? 'Address, name, email and phone — all in one message'
+                    : 'Anything you’d like Meant to adjust?'
                 }
                 disabled={assistantBusy || checkoutBusy}
               />
@@ -387,11 +365,11 @@ export function InlineCheckoutBlock({
                 type="submit"
                 disabled={assistantBusy || checkoutBusy || !assistantInput.trim()}
               >
-                {assistantBusy ? 'Sending...' : 'Send'}
+                {assistantBusy ? 'Sending...' : 'Send to Meant'}
               </button>
             </form>
             <button
-              className="mt-ct-cobtn"
+              className="mt-ct-cobtn secondary"
               type="button"
               onClick={() => releaseCheckout(session.cartId, 'dismissed')}
             >
@@ -405,20 +383,48 @@ export function InlineCheckoutBlock({
 
   return (
     <div className="mt-ct-block mt-ct-checkout">
-      <div className="mt-ct-block-head">
-        <div className="mt-mono mt-ct-block-key">Checkout in chat</div>
-        <span className="mt-ct-code-save mt-mono">
-          {groups.length} merchant{groups.length === 1 ? '' : 's'}
-        </span>
+      <div className="mt-ct-checkout-head">
+        <div className="mt-ct-checkout-brand">
+          <span className="mt-ct-checkout-mark" aria-hidden>
+            <MeantHeartMark size={20} />
+          </span>
+          <div className="mt-ct-checkout-brand-copy">
+            <div className="mt-mono mt-ct-block-key">Checkout in chat</div>
+            <strong>
+              <em>Meant</em> together
+            </strong>
+            <span>
+              {groups.length} merchant{groups.length === 1 ? '' : 's'} · stays in this chat
+            </span>
+          </div>
+        </div>
+        <div className="mt-ct-checkout-head-actions">
+          {groups.length > 0 ? (
+            <div className="mt-ct-checkout-total">
+              <span>Estimated total</span>
+              <strong>{totalCurrency ? money(total, totalCurrency) : 'Per merchant'}</strong>
+            </div>
+          ) : null}
+          <button
+            className="mt-ct-cart-openfull mt-ct-checkout-cartlink"
+            type="button"
+            onClick={onOpenCart}
+          >
+            <span>Open full cart</span>
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden>
+              <path
+                d="M3.5 8h9m-3.4-3.4L12.5 8l-3.4 3.4"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        </div>
       </div>
       {groups.length > 0 ? (
         <>
-          <div className="mt-ct-checkout-total">
-            <span>Estimated total</span>
-            <strong>
-              {totalCurrency ? money(total, totalCurrency) : 'Calculated per merchant'}
-            </strong>
-          </div>
           {alerts.some((alert) => alert.kind === 'warn') ? (
             <div className="mt-ct-checkout-warn">
               Review compatibility warnings before checkout. You can still continue from here.
@@ -472,19 +478,38 @@ export function InlineCheckoutBlock({
                           : releasedOutcome === 'handoff'
                             ? 'Open merchant checkout again'
                             : 'Start checkout in chat'
+              const groupItemCount = group.items.reduce((sum, line) => sum + line.qty, 0)
               return (
-                <div className="mt-ct-cogroup" key={group.merchantKey}>
+                <div
+                  className={`mt-ct-cogroup${groupIsActive ? ' is-active' : ''}`}
+                  key={group.merchantKey}
+                >
                   <div className="mt-ct-cogroup-head">
-                    <div>
+                    <div className="mt-ct-cogroup-merchant">
                       <div className="mt-ct-cogroup-name">
                         {merchantDisplayOrigin(merchantOrigin)}
                       </div>
                       <div className="mt-mono mt-ct-cogroup-meta">
-                        {group.items.reduce((sum, line) => sum + line.qty, 0)} items · Estimated{' '}
-                        {money(group.total, group.currency)}
+                        {groupItemCount} item{groupItemCount === 1 ? '' : 's'} · ready for checkout
                       </div>
                     </div>
-                    <strong>{money(group.total, group.currency)}</strong>
+                    <div className="mt-ct-cogroup-actions">
+                      <strong className="mt-ct-cogroup-price">
+                        {money(group.total, group.currency)}
+                      </strong>
+                      {!groupIsActive && releasedOutcome !== 'completed' ? (
+                        <button
+                          className="mt-ct-cobtn"
+                          type="button"
+                          disabled={checkoutBusy || checkoutBlocked || !actionGroup}
+                          onClick={() => {
+                            if (actionGroup) void payGroup(group, actionGroup)
+                          }}
+                        >
+                          {checkoutLabel}
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                   {checkoutStartError?.merchantKey === group.merchantKey &&
                   payingMerchant === null ? (
@@ -516,18 +541,7 @@ export function InlineCheckoutBlock({
                       <SparkMark size={13} />
                       <span>Checkout completed for this merchant.</span>
                     </div>
-                  ) : (
-                    <button
-                      className="mt-ct-cobtn"
-                      type="button"
-                      disabled={checkoutBusy || checkoutBlocked || !actionGroup}
-                      onClick={() => {
-                        if (actionGroup) void payGroup(group, actionGroup)
-                      }}
-                    >
-                      {checkoutLabel}
-                    </button>
-                  )}
+                  ) : null}
                 </div>
               )
             })}
@@ -542,9 +556,6 @@ export function InlineCheckoutBlock({
           </button>
         </div>
       )}
-      <button className="mt-ct-cart-openfull" type="button" onClick={onOpenCart}>
-        Open full cart
-      </button>
     </div>
   )
 }

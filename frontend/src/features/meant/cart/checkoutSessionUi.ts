@@ -185,33 +185,33 @@ export function checkoutAssistantPrompt(session: ActiveCheckoutSession): string 
   const coverage = merchantDeliveryCoverageSummary(merchantDisplay)
   if (checkoutRequiresMerchantRedirect(session.profile)) {
     return continueUrl
-      ? 'Checkout inside Meant is not available for this Merchant. Please continue to Merchant checkout below.'
-      : 'Checkout inside Meant is not available for this Merchant, but it has not returned a checkout link yet.'
+      ? `Your match is ready. ${merchantDisplay} handles the final secure payment step, so continue below when you’re ready.`
+      : `Your match is ready, but ${merchantDisplay} has not returned its secure checkout link yet.`
   }
   if (checkoutNeedsAddress(session)) {
     if (savedCheckoutDetails(session.profile)) {
-      return `I need shipping and contact details before I can continue with ${merchantDisplay}. You can reuse your saved details below or enter different details.`
+      return `We knew you and this find were Meant together. Before we continue with ${merchantDisplay}, should we send it to your saved address below?`
     }
     return [
-      `I need shipping and contact details before I can continue with ${merchantDisplay}.`,
+      `We knew you two were Meant together. Now tell me where to send what’s Meant for you, along with your name, email and phone.`,
       coverage,
-      'Send them here in one message, for example: "Ship to 1531 Hyde St, San Francisco, CA 94109, US, John Novak, john.novak@gmail.com, +1 415 555 0137".',
+      'You can send everything in one message, for example: “1531 Hyde St, San Francisco, CA 94109, US — John Novak, john.novak@gmail.com, +1 415 555 0137”.',
     ].join(' ')
   }
   if (session.profile.nextAction === 'OPEN_EMBEDDED_CHECKOUT') {
-    return 'This merchant supports embedded checkout. The checkout is ready to continue on the embedded rail.'
+    return 'Your details are set. What’s Meant for you is close — open the secure Merchant checkout below to complete payment.'
   }
   if (session.profile.nextAction === 'COMPLETE_CHECKOUT') {
-    return 'This checkout is authorized and ready for direct completion inside Meant.'
+    return 'Everything is ready. What’s Meant for you is one secure step away inside Meant.'
   }
   if (checkoutNeedsHandoff(session)) {
     return merchantUrl
       ? checkoutHasExtensionInteraction(session.profile)
-        ? 'The merchant requires additional interaction in its checkout. I prepared the details available through UCP; continue below.'
-        : 'The merchant requires you to continue in its checkout. I prepared the details available through UCP; continue below.'
-      : 'The merchant requires checkout interaction, but it has not returned a checkout link yet.'
+        ? `Everything we can prepare is ready. ${merchantDisplay} needs one more secure interaction in its checkout; continue below.`
+        : `Everything we can prepare is ready. Continue securely with ${merchantDisplay} to make this match yours.`
+      : `${merchantDisplay} needs one more checkout interaction, but its secure link is not ready yet.`
   }
-  return 'I have the checkout details I need. Keep replying here if anything is missing or needs to change.'
+  return 'I have everything this match needs. Tell Meant here if you would like to change any detail.'
 }
 
 export function merchantHandoffReason(session: ActiveCheckoutSession): string {
@@ -223,16 +223,16 @@ export function merchantHandoffReason(session: ActiveCheckoutSession): string {
     reasons.has('TIER_NOT_GRANTED') ||
     reasons.has('MISSING_SCOPES')
   ) {
-    return 'Direct completion is not authorized for this checkout, so Meant selected the merchant handoff.'
+    return 'Everything is prepared. Meant will take you to the Merchant for the final secure payment step.'
   }
   if (reasons.has('ROLLOUT_DISABLED')) {
-    return 'Checkout completion inside Meant is not enabled for this merchant yet.'
+    return 'This match finishes securely with the Merchant because checkout inside Meant is not enabled here yet.'
   }
   if (session.profile.nextAction === 'HANDOFF' && checkoutReadyForPayment(session)) {
-    return 'Everything is prepared — only the secure payment step remains with the merchant.'
+    return 'Everything is prepared — only the secure payment step remains with the Merchant.'
   }
   if (checkoutHasExtensionInteraction(session.profile)) {
-    return `${merchantDisplay} requires additional interaction in its checkout before the order can be completed.`
+    return `${merchantDisplay} needs one more secure interaction before this match can be completed.`
   }
-  return `Continue in ${merchantDisplay}'s checkout to finish the order.`
+  return `Continue securely in ${merchantDisplay}’s checkout to make this match yours.`
 }

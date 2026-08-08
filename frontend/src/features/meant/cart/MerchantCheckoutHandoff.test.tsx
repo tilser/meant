@@ -90,13 +90,14 @@ test('renders a compact merchant checkout CTA without exposing the raw URL as co
   )
 
   expect(markup).toContain('class="mt-embedded-checkout merchant-handoff"')
-  expect(markup).toContain('Checkout inside Meant is not available for this Merchant')
-  expect(markup).toContain('Please continue to Merchant checkout to finish your order.')
-  expect(markup).toContain('Open Merchant checkout')
+  expect(markup).toContain('Secure Merchant handoff')
+  expect(markup).toContain('One last step with nycfactory.com.')
+  expect(markup).toContain('finish the secure payment step')
+  expect(markup).toContain('Continue securely')
   expect(markup).toContain(`href="${continueUrl}"`)
   expect(markup).toContain('target="_blank"')
   expect(markup).toContain('rel="noopener noreferrer"')
-  expect(markup).toContain('aria-label="Open Merchant checkout (opens in a new tab)"')
+  expect(markup).toContain('aria-label="Continue securely (opens in a new tab)"')
   expect(markup).not.toContain(`>${continueUrl}</a>`)
 })
 
@@ -118,7 +119,7 @@ test('does not substitute a generic checkout URL when continue_url is unavailabl
     />,
   )
 
-  expect(markup).toContain('Get Merchant checkout link')
+  expect(markup).toContain('Prepare secure checkout')
   expect(markup).not.toContain(`href="${checkoutUrl}"`)
 })
 
@@ -152,10 +153,11 @@ test('uses the same merchant handoff panel in cart and chat without entering emb
   for (const markup of [cartMarkup, chatMarkup]) {
     expect(markup).toContain('nycfactory.com')
     expect(markup).not.toContain('sollys-online-grocery.myshopify.com')
-    expect(markup).toContain('Checkout inside Meant is not available for this Merchant')
-    expect(markup).toContain('Open Merchant checkout')
+    expect(markup).toContain('Secure Merchant handoff')
+    expect(markup).toContain('Continue securely')
     expect(markup).not.toContain('Open secure checkout')
-    expect(markup).not.toContain('Tell the checkout agent what to adjust')
+    expect(markup).not.toContain('Anything you’d like Meant to adjust?')
+    expect(markup).not.toContain('mt-checkout-assistant-log')
   }
 })
 
@@ -179,10 +181,9 @@ test('keeps non-redirect merchant handoffs on their existing reason-aware UI', (
     />,
   )
 
-  expect(markup).toContain('Direct completion is not authorized for this checkout')
-  expect(markup).toContain('Continue on merchant site')
-  expect(markup).not.toContain('not available for this Merchant')
-  expect(markup).not.toContain('Open Merchant checkout')
+  expect(markup).toContain('final secure payment step')
+  expect(markup).toContain('Continue securely on merchant site')
+  expect(markup).not.toContain('Secure Merchant handoff')
 })
 
 test('keeps embedded checkout mounted despite stale merchant redirect metadata', () => {
@@ -224,9 +225,8 @@ test('keeps embedded checkout mounted despite stale merchant redirect metadata',
 
   for (const markup of [cartMarkup, chatMarkup]) {
     expect(markup).toContain('Checkout inside Meant')
-    expect(markup).not.toContain('not available for this Merchant')
-    expect(markup).not.toContain('Open Merchant checkout')
-    expect(markup).not.toContain('Continue on merchant site')
+    expect(markup).not.toContain('Secure Merchant handoff')
+    expect(markup).not.toContain('Continue securely on merchant site')
     expect(markup).not.toContain(`href="${continueUrl}"`)
   }
 })
