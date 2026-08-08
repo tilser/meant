@@ -94,3 +94,26 @@ describe('inline checkout styles', () => {
     )
   })
 })
+
+describe('inline cart styles', () => {
+  test('uses a branded full-width cart shell with one clear checkout action', () => {
+    expect(styles).toMatch(
+      /\.mt-ct-cart\s*\{[^}]*display: flex;[^}]*width: 100%;[^}]*flex-direction: column;[^}]*border-radius: 18px;[^}]*\}/,
+    )
+    expect(styles).toMatch(
+      /\.mt-ct-cart-brand-copy > strong\s*\{[^}]*font-family: var\(--serif\);[^}]*font-size: 19px;[^}]*line-height: 1\.2;[^}]*\}/,
+    )
+    expect(styles).toMatch(
+      /\.mt-ct-cart \.mt-ct-cart-checkout\s*\{[^}]*min-height: 39px;[^}]*background: var\(--ink\);[^}]*\}/,
+    )
+  })
+
+  test('keeps cart rows useful on mobile and motion accessible', () => {
+    expect(styles).toMatch(
+      /@media \(max-width: 720px\)\s*\{[\s\S]*?\.mt-ct-cart \.mt-ct-cart-row\s*\{[^}]*grid-template-columns: 52px minmax\(0, 1fr\);[^}]*\}/,
+    )
+    expect(styles).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\.mt-ct-cart \.mt-ct-cart-row\.is-syncing::after\s*\{[^}]*animation: none;[^}]*\}/,
+    )
+  })
+})

@@ -1,4 +1,4 @@
-import { CloseIcon, ProductArtwork } from '../../shared/ui'
+import { CloseIcon, MeantHeartMark, ProductArtwork, SparkMark } from '../../shared/ui'
 import type { CartItem, Product, ProductId } from '../../types'
 import { cartGroups, cartLines, computeSmartAlerts, money } from '../../utils'
 import { merchantDisplayOrigin } from '../../cart/merchantOrigin'
@@ -49,6 +49,9 @@ export function InlineCartBlock({
     groups.map((group) => group.currency).filter((value): value is string => Boolean(value)),
   )
   const totalCurrency = currencies.size === 1 ? currencies.values().next().value : null
+  const cartMeta = showInitialLoading
+    ? 'Adding your find…'
+    : `${itemCount} item${itemCount === 1 ? '' : 's'} · ${groups.length} merchant${groups.length === 1 ? '' : 's'}`
   const productById = new Map(products.map((product) => [product.id, product]))
   const cartAfterQty = (target: CartItem, qty: number) =>
     qty <= 0
@@ -61,11 +64,39 @@ export function InlineCartBlock({
 
   return (
     <div className="mt-ct-block mt-ct-cart">
-      <div className="mt-ct-block-head">
-        <div className="mt-mono mt-ct-block-key">Cart in chat</div>
-        <span className="mt-ct-code-save mt-mono">
-          {showInitialLoading ? 'Adding item…' : `${itemCount} item${itemCount === 1 ? '' : 's'}`}
-        </span>
+      <div className="mt-ct-cart-head">
+        <div className="mt-ct-cart-brand">
+          <span className="mt-ct-cart-brand-mark" aria-hidden>
+            <MeantHeartMark size={20} />
+          </span>
+          <div className="mt-ct-cart-brand-copy">
+            <div className="mt-mono mt-ct-block-key">Cart in chat</div>
+            <strong>
+              Your <em>Meant</em> finds
+            </strong>
+            <span>{cartMeta}</span>
+          </div>
+        </div>
+        <div className="mt-ct-cart-head-actions">
+          {!showInitialLoading && lines.length > 0 ? (
+            <div className="mt-ct-cart-total">
+              <span>Cart total</span>
+              <strong>{totalCurrency ? money(total, totalCurrency) : 'Per merchant'}</strong>
+            </div>
+          ) : null}
+          <button className="mt-ct-cart-openfull" type="button" onClick={onOpenCart}>
+            <span>Full cart</span>
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden>
+              <path
+                d="M3.5 8h9m-3.4-3.4L12.5 8l-3.4 3.4"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        </div>
       </div>
       {alerts.length > 0 ? (
         <div className="mt-ct-cart-signals">
@@ -103,8 +134,16 @@ export function InlineCartBlock({
       ) : lines.length > 0 ? (
         <div className="mt-ct-cart-list">
           {lines.map((line) => (
-            <div className="mt-ct-cart-row" key={cartItemIdentity(line)}>
-              <button className="mt-ct-cart-media" type="button" onClick={() => onOpenCart()}>
+            <div
+              className={`mt-ct-cart-row${line.syncing ? ' is-syncing' : ''}${line.syncError ? ' has-error' : ''}`}
+              key={cartItemIdentity(line)}
+            >
+              <button
+                className="mt-ct-cart-media"
+                type="button"
+                aria-label={`Open ${line.product.name} in full cart`}
+                onClick={() => onOpenCart()}
+              >
                 <ProductArtwork
                   product={line.product}
                   label={line.product.category.toLowerCase()}
@@ -186,31 +225,39 @@ export function InlineCartBlock({
           ))}
         </div>
       ) : (
-        <p className="mt-ct-cart-empty">Your cart is empty.</p>
+        <div className="mt-ct-cart-empty">
+          <span className="mt-ct-cart-empty-mark" aria-hidden>
+            <MeantHeartMark size={19} />
+          </span>
+          <span>
+            <strong>Nothing Meant for your cart yet.</strong>
+            <small>When a find clicks, it’ll wait for you here.</small>
+          </span>
+        </div>
       )}
-      {!showInitialLoading ? (
+      {!showInitialLoading && lines.length > 0 ? (
         <div className="mt-ct-cart-foot">
-          <div>
-            <span className="mt-mono mt-ct-cart-foot-label">
-              {groups.length} merchant{groups.length === 1 ? '' : 's'}
+          <div className="mt-ct-cart-ready">
+            <span className="mt-ct-cart-ready-mark" aria-hidden>
+              <SparkMark size={14} color="#4d99e8" />
             </span>
-            <strong>
-              {totalCurrency ? money(total, totalCurrency) : 'Calculated per merchant'}
-            </strong>
+            <span>
+              <strong>Ready when you are.</strong>
+              <small>Checkout continues right here in chat.</small>
+            </span>
           </div>
-          <div className="mt-ct-cart-foot-actions">
-            <button className="mt-ct-cart-openfull" type="button" onClick={onOpenCart}>
-              Full cart
-            </button>
-            <button
-              className="mt-ct-cart-checkout"
-              type="button"
-              disabled={lines.length === 0}
-              onClick={onCheckoutHere}
-            >
-              Checkout here
-            </button>
-          </div>
+          <button className="mt-ct-cart-checkout" type="button" onClick={onCheckoutHere}>
+            <span>Checkout in chat</span>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
+              <path
+                d="M3.5 8h9m-3.4-3.4L12.5 8l-3.4 3.4"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
         </div>
       ) : null}
     </div>

@@ -992,15 +992,29 @@ describe('agent commerce artifacts reuse the established components', () => {
         loading
       />,
     )
+    const emptyMarkup = renderToStaticMarkup(
+      <InlineCartBlock
+        cart={[]}
+        products={[first]}
+        onQty={() => undefined}
+        onRemove={() => undefined}
+        onAddCart={() => undefined}
+        onOpenCart={() => undefined}
+        onCheckoutHere={() => undefined}
+      />,
+    )
 
     expect(loadingMarkup).toContain('role="status"')
     expect(loadingMarkup).toContain('Adding item to cart…')
     expect(loadingMarkup).toContain('Confirming availability with the merchant.')
     expect(loadingMarkup).not.toContain('Your cart is empty.')
-    expect(loadingMarkup).not.toContain('Checkout here')
+    expect(loadingMarkup).not.toContain('Checkout in chat')
     expect(loadedMarkup).toContain('Quantity for Grounded trail shoe')
     expect(loadedMarkup).toContain('1 item')
     expect(loadedMarkup).not.toContain('Adding item to cart…')
+    expect(emptyMarkup).toContain('Nothing Meant for your cart yet.')
+    expect(emptyMarkup).toContain('When a find clicks')
+    expect(emptyMarkup).not.toContain('Checkout in chat')
   })
 
   test('renders comparison, cart, and checkout artifacts through their existing blocks', () => {
@@ -1096,8 +1110,11 @@ describe('agent commerce artifacts reuse the established components', () => {
     expect(busyCompareMarkup).toContain('class="mt-ct-addbtn solid" type="button" disabled=""')
     expect(busyCompareMarkup).toContain('class="mt-ct-mini-full" type="button" disabled=""')
     expect(cartMarkup).toContain('Cart in chat')
+    expect(cartMarkup).toContain('Your <em>Meant</em> finds')
+    expect(cartMarkup).toContain('Cart total')
     expect(cartMarkup).toContain('Quantity for Grounded trail shoe')
-    expect(cartMarkup).toContain('Checkout here')
+    expect(cartMarkup).toContain('Ready when you are.')
+    expect(cartMarkup).toContain('Checkout in chat')
     expect(checkoutMarkup).toContain('Checkout in chat')
     expect(checkoutMarkup).toContain('<em>Meant</em> together')
     expect(checkoutMarkup.match(/Estimated total/g)).toHaveLength(1)
