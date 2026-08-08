@@ -195,6 +195,7 @@ export interface AgentDiscoverViewProps {
   shelf: readonly ShelfItem[]
   shelfFlashMessageId: string | null
   productDetailChatRequest: ProductDetailChatRequest | null
+  cartInChatRequestId: string | null
   discoverFindRequest: DiscoverFindRequest | null
   homeRequestId: number
   agentRunSettlementRevision: number
@@ -236,6 +237,7 @@ export interface AgentDiscoverViewProps {
     submittedCartRevision: AgentCartPartitionFingerprints | undefined,
   ) => void
   onProductDetailChatRequestHandled: (requestId: string) => void
+  onCartInChatRequestHandled: (requestId: string) => void
   onFlashMessage: (messageId: string) => void
 }
 
@@ -261,6 +263,7 @@ export function AgentDiscoverView({
   shelf,
   shelfFlashMessageId,
   productDetailChatRequest,
+  cartInChatRequestId,
   discoverFindRequest,
   homeRequestId,
   agentRunSettlementRevision,
@@ -291,6 +294,7 @@ export function AgentDiscoverView({
   onUpdateCartQuantity,
   onAgentRunSubmitted,
   onProductDetailChatRequestHandled,
+  onCartInChatRequestHandled,
   onFlashMessage,
 }: Readonly<AgentDiscoverViewProps>) {
   const [conversations, setConversations] = useState<AgentConversationSummaryProfile[]>([])
@@ -366,6 +370,7 @@ export function AgentDiscoverView({
   const handledAgentRunSettlementRevisionRef = useRef(agentRunSettlementRevision)
   const handledFindRequestRef = useRef<string | null>(null)
   const handledProductRequestRef = useRef<string | null>(null)
+  const handledCartInChatRequestRef = useRef<string | null>(null)
   const automaticBriefAttemptRef = useRef<string | null>(null)
   eventStateRef.current = eventState
   activeConversationIdRef.current = activeConversationId
@@ -1019,6 +1024,19 @@ export function AgentDiscoverView({
     [],
   )
 
+  const ensureCartInChat = useCallback(
+    (conversationId: string): string => {
+      const existingMessageId = liveCartMessageIdRef.current
+      if (existingMessageId) return existingMessageId
+
+      const messageId = uniqueRequestId('cart')
+      liveCartMessageIdRef.current = messageId
+      appendLocalMessage(cartInChatMessage(messageId), conversationId)
+      return messageId
+    },
+    [appendLocalMessage],
+  )
+
   const appendUnavailableFeatureMessage = useCallback(() => {
     appendLocalMessage(comingSoonMessage(uniqueRequestId('coming-soon')))
   }, [appendLocalMessage])
@@ -1484,11 +1502,7 @@ export function AgentDiscoverView({
           ...current,
           [conversationId]: (current[conversationId] ?? 0) + 1,
         }))
-        if (!liveCartMessageIdRef.current) {
-          const messageId = uniqueRequestId('cart')
-          liveCartMessageIdRef.current = messageId
-          appendLocalMessage(cartInChatMessage(messageId), conversationId)
-        }
+        ensureCartInChat(conversationId)
       },
     )
       .then((result) => {
@@ -1715,6 +1729,68 @@ export function AgentDiscoverView({
     onProductDetailChatRequestHandled(request.id)
     void submit(`About ${request.product.name}: ${request.question}`)
   }, [onProductDetailChatRequestHandled, productDetailChatRequest, submit])
+
+  useEffect(() => {
+    if (!cartInChatRequestId || handledCartInChatRequestRef.current === cartInChatRequestId) {
+      return
+    }
+
+    const requestId = cartInChatRequestId
+    handledCartInChatRequestRef.current = requestId
+    let cancelled = false
+    let renderFrame: number | null = null
+    let settleFrame: number | null = null
+
+    const revealCart = async () => {
+      setError(null)
+      let conversationId = activeConversationIdRef.current
+      if (!conversationId) {
+        try {
+          const created = await createAgentConversation({ expectedUserId })
+          if (cancelled) return
+          conversationId = created.conversationId
+          setConversations((current) => [
+            created,
+            ...current.filter((item) => item.conversationId !== created.conversationId),
+          ])
+          updateActiveConversationId(conversationId)
+          updateConversationState(() => emptyConversationFromSummary(created))
+        } catch (caught) {
+          if (cancelled) return
+          setError(caught instanceof Error ? caught.message : 'Could not open the cart in chat.')
+          onCartInChatRequestHandled(requestId)
+          return
+        }
+      }
+
+      const messageId = ensureCartInChat(conversationId)
+      renderFrame = window.requestAnimationFrame(() => {
+        settleFrame = window.requestAnimationFrame(() => {
+          const target = document.querySelector<HTMLElement>(
+            `[data-mid="${CSS.escape(messageId)}"]`,
+          )
+          target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          onFlashMessage(messageId)
+          onCartInChatRequestHandled(requestId)
+        })
+      })
+    }
+
+    void revealCart()
+    return () => {
+      cancelled = true
+      if (renderFrame !== null) window.cancelAnimationFrame(renderFrame)
+      if (settleFrame !== null) window.cancelAnimationFrame(settleFrame)
+    }
+  }, [
+    cartInChatRequestId,
+    ensureCartInChat,
+    expectedUserId,
+    onCartInChatRequestHandled,
+    onFlashMessage,
+    updateActiveConversationId,
+    updateConversationState,
+  ])
 
   useEffect(() => {
     if (!discoverFindRequest || handledFindRequestRef.current === discoverFindRequest.id) return

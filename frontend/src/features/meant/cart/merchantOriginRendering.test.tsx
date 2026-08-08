@@ -89,8 +89,6 @@ test('renders only the trusted merchant origin across full-cart surfaces', () =>
         onAdd={() => undefined}
         onApplyCode={async () => ({ ok: true })}
         onRemoveCode={async () => ({ ok: true })}
-        onDeliveryAddress={() => true}
-        onDeliveryOption={() => true}
         onCheckout={() => undefined}
         agentBusy={false}
         checkoutMerchantKey={null}
@@ -143,8 +141,6 @@ test('renders a merchant-native cart amount with its own currency instead of the
         onAdd={() => undefined}
         onApplyCode={async () => ({ ok: true })}
         onRemoveCode={async () => ({ ok: true })}
-        onDeliveryAddress={() => true}
-        onDeliveryOption={() => true}
         onCheckout={() => undefined}
         agentBusy={false}
         checkoutMerchantKey={null}

@@ -10,6 +10,7 @@ export function InlineCartBlock({
   onQty,
   onRemove,
   onAddCart,
+  onOpenProduct,
   onOpenCart,
   onCheckoutHere,
   loading = false,
@@ -34,6 +35,7 @@ export function InlineCartBlock({
     sourceItem?: CartItem,
   ) => void
   onAddCart: (product: Product) => void
+  onOpenProduct: (product: Product) => void
   onOpenCart: () => void
   onCheckoutHere: () => void
   loading?: boolean
@@ -141,15 +143,20 @@ export function InlineCartBlock({
               <button
                 className="mt-ct-cart-media"
                 type="button"
-                aria-label={`Open ${line.product.name} in full cart`}
-                onClick={() => onOpenCart()}
+                aria-label={`Open ${line.product.name} product details`}
+                onClick={() => onOpenProduct(line.product)}
               >
                 <ProductArtwork
                   product={line.product}
                   label={line.product.category.toLowerCase()}
                 />
               </button>
-              <div className="mt-ct-cart-info">
+              <button
+                className="mt-ct-cart-info"
+                type="button"
+                aria-label={`Open ${line.product.name} product details`}
+                onClick={() => onOpenProduct(line.product)}
+              >
                 <div className="mt-ct-cart-name">{line.product.name}</div>
                 <div className="mt-mono mt-ct-cart-meta">
                   {merchantDisplayOrigin(line.merchantOrigin)} · {line.delivery}
@@ -162,7 +169,7 @@ export function InlineCartBlock({
                     {line.syncError ?? 'Saving…'}
                   </div>
                 ) : null}
-              </div>
+              </button>
               <div className="mt-ct-cart-actions">
                 <div className="mt-qty" aria-label={`Quantity for ${line.product.name}`}>
                   <button

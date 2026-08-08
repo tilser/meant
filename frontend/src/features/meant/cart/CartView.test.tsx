@@ -84,8 +84,6 @@ function renderCart(qty: number, confirmedQty: number, syncing: boolean): string
       onAdd={() => undefined}
       onApplyCode={async () => ({ ok: true })}
       onRemoveCode={async () => ({ ok: true })}
-      onDeliveryAddress={() => true}
-      onDeliveryOption={() => true}
       onCheckout={() => undefined}
       agentBusy={false}
       checkoutMerchantKey={null}
@@ -136,5 +134,49 @@ describe('cart quantity synchronization totals', () => {
     expect(confirmed).toContain('<span>Delivery</span><span>Free</span>')
     expect(confirmed).toContain('<span>Total</span><span>$24.99</span>')
     expect(confirmed).not.toContain('Pending')
+  })
+})
+
+describe('cart delivery flow', () => {
+  test('defers the address and delivery option steps until checkout', () => {
+    const item = {
+      ...cartItem(1, 1, false),
+      deliveryGroups: [
+        {
+          id: 'delivery-group-1',
+          deliveryOptions: [
+            {
+              handle: 'standard',
+              title: 'Standard delivery',
+              selected: false,
+            },
+          ],
+        },
+      ],
+    }
+
+    const markup = renderToStaticMarkup(
+      <CartView
+        cart={[item]}
+        products={[product]}
+        cartSnapshots={{ [merchantKey]: snapshot(1) }}
+        deliveryLocations={[]}
+        onRemove={() => undefined}
+        onQty={() => undefined}
+        onAdd={() => undefined}
+        onApplyCode={async () => ({ ok: true })}
+        onRemoveCode={async () => ({ ok: true })}
+        onCheckout={() => undefined}
+        agentBusy={false}
+        checkoutMerchantKey={null}
+        checkoutError={null}
+      />,
+    )
+
+    expect(markup).toContain('Calculated at checkout')
+    expect(markup).toContain('Checkout with Merchant')
+    expect(markup).not.toContain('Delivery options')
+    expect(markup).not.toContain('Postal code')
+    expect(markup).not.toContain('Standard delivery')
   })
 })

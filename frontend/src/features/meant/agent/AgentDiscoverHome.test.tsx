@@ -31,6 +31,7 @@ const props = {
   shelf: [],
   shelfFlashMessageId: null,
   productDetailChatRequest: null,
+  cartInChatRequestId: null,
   discoverFindRequest: null,
   homeRequestId: 0,
   agentRunSettlementRevision: 0,
@@ -59,6 +60,7 @@ const props = {
   onAgentCartSnapshot: () => [],
   onUpdateCartQuantity: () => undefined,
   onProductDetailChatRequestHandled: () => undefined,
+  onCartInChatRequestHandled: () => undefined,
   onFlashMessage: () => undefined,
 } satisfies AgentDiscoverViewProps
 

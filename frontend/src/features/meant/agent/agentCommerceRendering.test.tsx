@@ -916,6 +916,7 @@ describe('agent commerce artifacts reuse the established components', () => {
           onQty={() => undefined}
           onRemove={() => undefined}
           onAddCart={() => undefined}
+          onOpenProduct={() => undefined}
           onOpenCart={() => undefined}
           onCheckoutHere={() => undefined}
         />
@@ -975,6 +976,7 @@ describe('agent commerce artifacts reuse the established components', () => {
         onQty={() => undefined}
         onRemove={() => undefined}
         onAddCart={() => undefined}
+        onOpenProduct={() => undefined}
         onOpenCart={() => undefined}
         onCheckoutHere={() => undefined}
         loading
@@ -987,6 +989,7 @@ describe('agent commerce artifacts reuse the established components', () => {
         onQty={() => undefined}
         onRemove={() => undefined}
         onAddCart={() => undefined}
+        onOpenProduct={() => undefined}
         onOpenCart={() => undefined}
         onCheckoutHere={() => undefined}
         loading
@@ -999,6 +1002,7 @@ describe('agent commerce artifacts reuse the established components', () => {
         onQty={() => undefined}
         onRemove={() => undefined}
         onAddCart={() => undefined}
+        onOpenProduct={() => undefined}
         onOpenCart={() => undefined}
         onCheckoutHere={() => undefined}
       />,
@@ -1010,6 +1014,7 @@ describe('agent commerce artifacts reuse the established components', () => {
     expect(loadingMarkup).not.toContain('Your cart is empty.')
     expect(loadingMarkup).not.toContain('Checkout in chat')
     expect(loadedMarkup).toContain('Quantity for Grounded trail shoe')
+    expect(loadedMarkup).toContain('aria-label="Open Grounded trail shoe product details"')
     expect(loadedMarkup).toContain('1 item')
     expect(loadedMarkup).not.toContain('Adding item to cart…')
     expect(emptyMarkup).toContain('Nothing Meant for your cart yet.')
@@ -1053,6 +1058,7 @@ describe('agent commerce artifacts reuse the established components', () => {
         onQty={() => undefined}
         onRemove={() => undefined}
         onAddCart={() => undefined}
+        onOpenProduct={() => undefined}
         onOpenCart={() => undefined}
         onCheckoutHere={() => undefined}
       />,

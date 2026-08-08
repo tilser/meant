@@ -688,6 +688,7 @@ export function DiscoverChatBlockView({
         onQty={onCartQty}
         onRemove={onCartRemove}
         onAddCart={onAddCart}
+        onOpenProduct={openProduct}
         onOpenCart={onOpenCart}
         onCheckoutHere={onCheckoutHere}
         loading={useLiveCart && cartAdditionPending}

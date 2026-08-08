@@ -790,6 +790,7 @@ export function MeantApp() {
   const [discoverHomeRequestId, setDiscoverHomeRequestId] = useState(0)
   const [productDetailChatRequest, setProductDetailChatRequest] =
     useState<ProductDetailChatRequest | null>(null)
+  const [cartInChatRequestId, setCartInChatRequestId] = useState<string | null>(null)
   const [savedIds, setSavedIds] = useState<ProductId[]>([])
   const [savedProducts, setSavedProducts] = useState<Product[]>([])
   const [savePendingIds, setSavePendingIds] = useState<ProductId[]>([])
@@ -1059,6 +1060,7 @@ export function MeantApp() {
     setNavProducts([])
     setDiscoverFindRequest(null)
     setProductDetailChatRequest(null)
+    setCartInChatRequestId(null)
     setSearchSuggestions([])
     setMerchants([])
     setMerchantsLoading(false)
@@ -1213,8 +1215,6 @@ export function MeantApp() {
     updateQty,
     applyCartCode,
     removeCartCode,
-    updateDeliveryAddress,
-    updateDeliveryOption,
   } = useCartController(allKnownProducts, userId, claimedGuestCartOwnerId)
   const replaceMerchantCartStatesRef = useRef(replaceMerchantCartStates)
   replaceMerchantCartStatesRef.current = replaceMerchantCartStates
@@ -1303,20 +1303,6 @@ export function MeantApp() {
       return runCommerceMutation(() => removeCartCode(...args))
     },
     [removeCartCode, runCommerceMutation],
-  )
-
-  const updateDeliveryAddressGuarded = useCallback(
-    (...args: Parameters<typeof updateDeliveryAddress>) => {
-      return runCommerceMutation(() => updateDeliveryAddress(...args))
-    },
-    [runCommerceMutation, updateDeliveryAddress],
-  )
-
-  const updateDeliveryOptionGuarded = useCallback(
-    (...args: Parameters<typeof updateDeliveryOption>) => {
-      return runCommerceMutation(() => updateDeliveryOption(...args))
-    },
-    [runCommerceMutation, updateDeliveryOption],
   )
 
   const addProductOfferToCartResolved = useCallback(
@@ -3580,8 +3566,6 @@ export function MeantApp() {
             onAdd={addToCartGuarded}
             onApplyCode={applyCartCodeGuarded}
             onRemoveCode={removeCartCodeGuarded}
-            onDeliveryAddress={updateDeliveryAddressGuarded}
-            onDeliveryOption={updateDeliveryOptionGuarded}
             onCheckout={checkout}
             agentBusy={false}
             checkoutMerchantKey={checkoutMerchantKey}
@@ -3676,6 +3660,7 @@ export function MeantApp() {
             shelf={shelf}
             shelfFlashMessageId={shelfFlashMessageId}
             productDetailChatRequest={currentProductDetailChatRequest}
+            cartInChatRequestId={cartInChatRequestId}
             discoverFindRequest={currentDiscoverFindRequest}
             homeRequestId={discoverHomeRequestId}
             agentRunSettlementRevision={agentRunSettlementRevision}
@@ -3709,6 +3694,9 @@ export function MeantApp() {
             onAgentRunSubmitted={registerAgentCartRun}
             onProductDetailChatRequestHandled={(requestId) => {
               setProductDetailChatRequest((current) => (current?.id === requestId ? null : current))
+            }}
+            onCartInChatRequestHandled={(requestId) => {
+              setCartInChatRequestId((current) => (current === requestId ? null : current))
             }}
             onFlashMessage={flashShelfMessage}
           />
@@ -3814,6 +3802,14 @@ export function MeantApp() {
             onCompare={handleProductCompare}
             onAddToCart={addProductOfferToCartResolved}
             onAddOfferKey={addSelectedOfferToCartGuarded}
+            onAddedToCart={() => {
+              setActiveProduct(null)
+              setActiveProductResearchQuery(null)
+              setCartInChatRequestId(
+                `detail-cart-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+              )
+              nav('discover')
+            }}
             onRefreshProduct={refreshSavedProductForOpen}
             researchQuery={activeProductResearchQuery}
             onAskInChat={sendProductQuestionToDiscover}

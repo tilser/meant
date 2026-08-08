@@ -1,34 +1,20 @@
-import { type FormEvent, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 
-import { LOCATIONS } from '../data'
 import { deliveryLocationSummary } from '../shared/locations'
 import { CartIcon, CloseIcon, EmptyState, ProductArtwork, SparkMark, ViewHead } from '../shared/ui'
-import type {
-  CartDeliveryGroup,
-  CartDeliveryOption,
-  CartItem,
-  CheckoutPayload,
-  Product,
-  ProductId,
-  UserLocation,
-} from '../types'
+import type { CartItem, CheckoutPayload, Product, ProductId, UserLocation } from '../types'
 import {
   canMerchantShip,
-  cartDeliveryOptions,
   cartGroups,
   cartItemIdentity,
   cartLines,
   computeSmartAlerts,
   money,
-  selectedCartDeliveryOption,
 } from '../utils'
 import type {
   AppliedCartCode,
   AppliedCartCodeType,
   ApplyCartCodeInput,
-  DeliveryAddressDraft,
-  DeliveryAddressPayload,
-  DeliveryOptionPayload,
   MerchantCartSnapshot,
   RemoveCartCodeInput,
 } from './types'
@@ -42,179 +28,7 @@ import {
   cartSnapshotTotal,
   cartSummaryDelivery,
   deliveryGroupSummary,
-  deliveryOptionCost,
-  deliveryOptionSpeed,
-  deliveryOptionTitle,
-  emptyDeliveryAddressDraft,
 } from './utils'
-
-function MerchantDeliveryPanel({
-  merchantKey,
-  merchantDisplay,
-  cartId,
-  deliveryGroups,
-  currency,
-  draft,
-  busy,
-  error,
-  onDraft,
-  onSubmitAddress,
-  onSelectOption,
-}: Readonly<{
-  merchantKey: string
-  merchantDisplay: string
-  cartId?: string | null
-  deliveryGroups: readonly CartDeliveryGroup[]
-  currency?: string | null
-  draft: DeliveryAddressDraft
-  busy: boolean
-  error: string | null
-  onDraft: (patch: Partial<DeliveryAddressDraft>) => void
-  onSubmitAddress: () => void
-  onSelectOption: (group: CartDeliveryGroup, option: CartDeliveryOption) => void
-}>) {
-  const deliveryOptionCount = deliveryGroups.reduce(
-    (sum, group) => sum + cartDeliveryOptions(group).length,
-    0,
-  )
-  const hasOptions = deliveryOptionCount > 0
-  const canSubmit = Boolean(
-    cartId && draft.countryCode.trim() && draft.city.trim() && draft.postalCode.trim(),
-  )
-
-  const submit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (canSubmit && !busy) {
-      onSubmitAddress()
-    }
-  }
-
-  return (
-    <div className="mt-delivery-panel">
-      <div className="mt-delivery-head">
-        <div>
-          <div className="mt-delivery-title">Delivery options</div>
-          <div className="mt-mono mt-delivery-privacy">City, postal code and country only</div>
-        </div>
-        {hasOptions ? (
-          <span className="mt-mono mt-delivery-count">{deliveryOptionCount} options</span>
-        ) : null}
-      </div>
-      <form className="mt-delivery-address" onSubmit={submit}>
-        <label className="mt-field">
-          <span className="mt-field-label">Country</span>
-          <select
-            className="mt-select"
-            value={draft.countryCode}
-            onChange={(event) => onDraft({ countryCode: event.target.value })}
-          >
-            {LOCATIONS.map((location) => (
-              <option key={location.code} value={location.code}>
-                {location.country}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="mt-field">
-          <span className="mt-field-label">City</span>
-          <input
-            className="mt-input"
-            value={draft.city}
-            onChange={(event) => onDraft({ city: event.target.value })}
-            autoComplete="address-level2"
-          />
-        </label>
-        <label className="mt-field">
-          <span className="mt-field-label">Postal code</span>
-          <input
-            className="mt-input"
-            value={draft.postalCode}
-            onChange={(event) => onDraft({ postalCode: event.target.value })}
-            autoComplete="postal-code"
-          />
-        </label>
-        <label className="mt-field">
-          <span className="mt-field-label">Region</span>
-          <input
-            className="mt-input"
-            value={draft.provinceCode}
-            onChange={(event) => onDraft({ provinceCode: event.target.value })}
-            autoComplete="address-level1"
-          />
-        </label>
-        <button className="mt-delivery-refresh" type="submit" disabled={!canSubmit || busy}>
-          {busy ? 'Updating...' : 'Get options'}
-        </button>
-      </form>
-      {error ? <div className="mt-mono mt-delivery-error">{error}</div> : null}
-      {hasOptions ? (
-        <div className="mt-delivery-groups">
-          {deliveryGroups.map((group, index) => {
-            const selected = selectedCartDeliveryOption(group)
-            const options = cartDeliveryOptions(group)
-            return (
-              <div
-                className="mt-delivery-group"
-                key={group.id ?? group.handle ?? `${merchantKey}-${index}`}
-              >
-                {deliveryGroups.length > 1 ? (
-                  <div className="mt-mono mt-delivery-group-title">Shipment {index + 1}</div>
-                ) : null}
-                <div className="mt-delivery-options">
-                  {options.length > 0 ? (
-                    options.map((option, optionIndex) => {
-                      const optionSelected =
-                        selected?.handle && option.handle
-                          ? selected.handle === option.handle
-                          : option.selected === true
-                      const speed = deliveryOptionSpeed(option)
-                      return (
-                        <button
-                          className={`mt-delivery-option ${optionSelected ? 'selected' : ''}`}
-                          key={
-                            option.handle ??
-                            option.title ??
-                            `${merchantKey}-${index}-${optionIndex}`
-                          }
-                          type="button"
-                          disabled={busy || !option.handle}
-                          aria-pressed={optionSelected}
-                          onClick={() => onSelectOption(group, option)}
-                        >
-                          <span className="mt-delivery-option-main">
-                            <span className="mt-delivery-option-title">
-                              {deliveryOptionTitle(option)}
-                            </span>
-                            {speed ? (
-                              <span className="mt-mono mt-delivery-option-speed">{speed}</span>
-                            ) : null}
-                          </span>
-                          <span className="mt-mono mt-delivery-option-cost">
-                            {deliveryOptionCost(option, currency)}
-                          </span>
-                        </button>
-                      )
-                    })
-                  ) : (
-                    <div className="mt-mono mt-delivery-empty">
-                      No options available for this shipment.
-                    </div>
-                  )}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      ) : (
-        <div className="mt-mono mt-delivery-empty">
-          {cartId
-            ? `No delivery options loaded for ${merchantDisplay}.`
-            : 'Merchant cart is syncing.'}
-        </div>
-      )}
-    </div>
-  )
-}
 
 export function CartView({
   cart,
@@ -226,8 +40,6 @@ export function CartView({
   onAdd,
   onApplyCode,
   onRemoveCode,
-  onDeliveryAddress,
-  onDeliveryOption,
   onCheckout,
   agentBusy,
   checkoutMerchantKey,
@@ -242,8 +54,6 @@ export function CartView({
   onAdd: (id: ProductId, merchant: string) => void
   onApplyCode: (input: ApplyCartCodeInput) => Promise<{ ok: boolean; message?: string }>
   onRemoveCode: (input: RemoveCartCodeInput) => Promise<{ ok: boolean; message?: string }>
-  onDeliveryAddress: (payload: DeliveryAddressPayload) => Promise<boolean> | boolean
-  onDeliveryOption: (payload: DeliveryOptionPayload) => Promise<boolean> | boolean
   onCheckout: (payload: CheckoutPayload) => Promise<void> | void
   agentBusy: boolean
   checkoutMerchantKey: string | null
@@ -257,11 +67,6 @@ export function CartView({
     {},
   )
   const [codeErrors, setCodeErrors] = useState<Record<string, string | null>>({})
-  const [addressDrafts, setAddressDrafts] = useState<Record<string, DeliveryAddressDraft>>({})
-  const [deliveryBusyByMerchant, setDeliveryBusyByMerchant] = useState<Record<string, number>>({})
-  const [deliveryErrorsByMerchant, setDeliveryErrorsByMerchant] = useState<Record<string, string>>(
-    {},
-  )
 
   useEffect(() => {
     setScanning(true)
@@ -383,102 +188,6 @@ export function CartView({
     }))
   }
 
-  const addressDraft = (merchantKey: string) =>
-    addressDrafts[merchantKey] ?? emptyDeliveryAddressDraft(deliveryLocations)
-
-  const updateAddressDraft = (merchantKey: string, patch: Partial<DeliveryAddressDraft>) => {
-    setAddressDrafts((current) => ({
-      ...current,
-      [merchantKey]: {
-        ...(current[merchantKey] ?? emptyDeliveryAddressDraft(deliveryLocations)),
-        ...patch,
-      },
-    }))
-  }
-
-  const beginDeliveryBusy = (merchantKey: string) => {
-    setDeliveryBusyByMerchant((current) => ({
-      ...current,
-      [merchantKey]: (current[merchantKey] ?? 0) + 1,
-    }))
-  }
-
-  const endDeliveryBusy = (merchantKey: string) => {
-    setDeliveryBusyByMerchant((current) => {
-      const next = { ...current }
-      const count = (next[merchantKey] ?? 0) - 1
-      if (count > 0) {
-        next[merchantKey] = count
-      } else {
-        delete next[merchantKey]
-      }
-      return next
-    })
-  }
-
-  const setDeliveryErrorForMerchant = (merchantKey: string, message: string | null) => {
-    setDeliveryErrorsByMerchant((current) => {
-      const next = { ...current }
-      if (message) {
-        next[merchantKey] = message
-      } else {
-        delete next[merchantKey]
-      }
-      return next
-    })
-  }
-
-  const submitDeliveryAddress = async (
-    merchantKey: string,
-    merchant: string,
-    cartId: string | null | undefined,
-    draft: DeliveryAddressDraft,
-  ) => {
-    if (agentBusy) return
-    if (!cartId) {
-      setDeliveryErrorForMerchant(merchantKey, 'Merchant cart is still syncing.')
-      return
-    }
-    beginDeliveryBusy(merchantKey)
-    setDeliveryErrorForMerchant(merchantKey, null)
-    try {
-      const ok = await onDeliveryAddress({ cartId, merchantKey, merchant, ...draft })
-      if (!ok) {
-        setDeliveryErrorForMerchant(merchantKey, 'Could not load delivery options.')
-      }
-    } catch {
-      setDeliveryErrorForMerchant(merchantKey, 'Could not load delivery options.')
-    } finally {
-      endDeliveryBusy(merchantKey)
-    }
-  }
-
-  const selectDeliveryOption = async (
-    merchantKey: string,
-    merchant: string,
-    cartId: string | null | undefined,
-    group: CartDeliveryGroup,
-    option: CartDeliveryOption,
-  ) => {
-    if (agentBusy) return
-    if (!cartId) {
-      setDeliveryErrorForMerchant(merchantKey, 'Merchant cart is still syncing.')
-      return
-    }
-    beginDeliveryBusy(merchantKey)
-    setDeliveryErrorForMerchant(merchantKey, null)
-    try {
-      const ok = await onDeliveryOption({ cartId, merchantKey, merchant, group, option })
-      if (!ok) {
-        setDeliveryErrorForMerchant(merchantKey, 'Could not update delivery choice.')
-      }
-    } catch {
-      setDeliveryErrorForMerchant(merchantKey, 'Could not update delivery choice.')
-    } finally {
-      endDeliveryBusy(merchantKey)
-    }
-  }
-
   if (lines.length === 0) {
     return (
       <main className="mt-feed mt-view">
@@ -558,9 +267,6 @@ export function CartView({
               )
               const groupCurrency =
                 currency ?? group.items.find((item) => item.cartCurrency)?.cartCurrency
-              const groupDraft = addressDraft(merchantKey)
-              const groupDeliveryBusy = (deliveryBusyByMerchant[merchantKey] ?? 0) > 0
-              const groupDeliveryError = deliveryErrorsByMerchant[merchantKey] ?? null
               const deliverySummary = deliveryGroupSummary(
                 group.deliveryGroups,
                 group.delivery,
@@ -588,7 +294,7 @@ export function CartView({
               const deliveryDisplay = groupSyncing
                 ? 'Delivery pending'
                 : checkoutNeedsDelivery
-                  ? 'Choose delivery option'
+                  ? 'Calculated at checkout'
                   : deliverySummary
               const checkoutBlocked =
                 agentBusy ||
@@ -684,29 +390,6 @@ export function CartView({
                       </div>
                     </div>
                   ))}
-                  <MerchantDeliveryPanel
-                    merchantKey={merchantKey}
-                    merchantDisplay={merchantDisplay}
-                    cartId={cartId}
-                    deliveryGroups={group.deliveryGroups}
-                    currency={groupCurrency}
-                    draft={groupDraft}
-                    busy={agentBusy || groupDeliveryBusy}
-                    error={groupDeliveryError}
-                    onDraft={(patch) => updateAddressDraft(merchantKey, patch)}
-                    onSubmitAddress={() => {
-                      void submitDeliveryAddress(merchantKey, group.merchant, cartId, groupDraft)
-                    }}
-                    onSelectOption={(deliveryGroup, option) => {
-                      void selectDeliveryOption(
-                        merchantKey,
-                        group.merchant,
-                        cartId,
-                        deliveryGroup,
-                        option,
-                      )
-                    }}
-                  />
                   <div className="mt-mgroup-foot">
                     <div className="mt-code-panel">
                       <div className="mt-code-forms">

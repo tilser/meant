@@ -190,6 +190,7 @@ export function ProductModal({
   onCompare,
   onAddToCart,
   onAddOfferKey,
+  onAddedToCart,
   onRefreshProduct,
   researchQuery,
   onAskInChat,
@@ -214,6 +215,7 @@ export function ProductModal({
   onCompare: (product: Product) => void
   onAddToCart: (product: Product, offer: Offer) => Promise<boolean> | boolean
   onAddOfferKey?: (product: Product, offerKey: string) => Promise<boolean>
+  onAddedToCart?: () => void
   onRefreshProduct?: (product: Product) => void
   researchQuery?: string | null
   onAskInChat?: (product: Product, question: string) => void
@@ -650,6 +652,7 @@ export function ProductModal({
           return
         }
         setAdded(true)
+        onAddedToCart?.()
         if (addedTimeoutRef.current !== null) window.clearTimeout(addedTimeoutRef.current)
         addedTimeoutRef.current = window.setTimeout(() => {
           setAdded(false)
@@ -674,6 +677,7 @@ export function ProductModal({
         return
       }
       setAdded(true)
+      onAddedToCart?.()
       if (addedTimeoutRef.current !== null) {
         window.clearTimeout(addedTimeoutRef.current)
       }
