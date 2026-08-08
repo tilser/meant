@@ -1,4 +1,11 @@
-import { type TouchEvent as ReactTouchEvent, useCallback, useEffect, useRef, useState } from 'react'
+import {
+  type TouchEvent as ReactTouchEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 
 import {
   getMerchantProductDetails,
@@ -37,6 +44,11 @@ import { merchantProductDetailRequest } from './productDetailLoading'
 import { ProductReviewsPanel } from './ProductReviewsPanel'
 import { selectedOfferCartFailure } from './selectedOfferCartFailure'
 import { GroupedOfferSelector, type ProductPurchaseSelection } from './GroupedProductModal'
+import {
+  adjacentGalleryIndex,
+  type GalleryDirection,
+  horizontalSwipeDirection,
+} from './imageGalleryNavigation'
 import { containModalTabFocus } from './modalFocusTrap'
 import { findSelectedVariant } from './variantSelection'
 
@@ -249,9 +261,12 @@ export function ProductModal({
   const addedTimeoutRef = useRef<number | null>(null)
   const addSelectedOfferRef = useRef<(() => Promise<void>) | null>(null)
   const touchStartRef = useRef<{ x: number; y: number } | null>(null)
+  const zoomTouchStartRef = useRef<{ x: number; y: number } | null>(null)
   const modalDockRef = useRef<HTMLDivElement | null>(null)
   const dialogRef = useRef<HTMLDivElement | null>(null)
+  const zoomDialogRef = useRef<HTMLDivElement | null>(null)
   const returnFocusRef = useRef<HTMLElement | null>(null)
+  const zoomReturnFocusRef = useRef<HTMLElement | null>(null)
   const settledSelectionKeyRef = useRef<string | null>(null)
   const settledSelectionProductIdRef = useRef<string | null>(product?.id ?? null)
   const deliveryCountryCode = deliveryLocations[0]?.code ?? null
@@ -374,6 +389,95 @@ export function ProductModal({
     return () => returnFocusRef.current?.focus()
   }, [])
 
+  const activeMerchantDetails = purchaseSelection?.details ?? merchantDetails
+  const selectedPurchaseVariant = activeMerchantDetails
+    ? findSelectedVariant(
+        activeMerchantDetails.variants,
+        purchaseSelection?.selectedVariantId ?? activeMerchantDetails.selectedVariantId,
+        purchaseSelection?.selectedOptions ?? activeMerchantDetails.selectedOptions,
+      )
+    : null
+  const actionProductForMedia = purchaseSelection?.actionProduct ?? product
+  const modalMedia = useMemo(
+    () =>
+      actionProductForMedia ? mergeProductMedia(actionProductForMedia, activeMerchantDetails) : [],
+    [actionProductForMedia, activeMerchantDetails],
+  )
+  const thumbnailPageCount = Math.ceil(modalMedia.length / MODAL_THUMBNAIL_PAGE_SIZE)
+  const boundedThumbnailPage = Math.min(thumbnailPage, Math.max(thumbnailPageCount - 1, 0))
+  const thumbnailStart = boundedThumbnailPage * MODAL_THUMBNAIL_PAGE_SIZE
+  const visibleModalMedia = modalMedia.slice(
+    thumbnailStart,
+    thumbnailStart + MODAL_THUMBNAIL_PAGE_SIZE,
+  )
+  const hasMediaPages = thumbnailPageCount > 1
+  const selectedMedia = selectedMediaUrl
+    ? modalMedia.find((item) => item.url === selectedMediaUrl)
+    : null
+  const selectedImageUrl = selectedMedia?.type?.toLowerCase() === 'image' ? selectedMedia.url : null
+  const modalImageUrl =
+    selectedImageUrl ??
+    product?.imageUrl ??
+    selectedPurchaseVariant?.imageUrl ??
+    activeMerchantDetails?.selectedVariantImageUrl ??
+    activeMerchantDetails?.imageUrl ??
+    null
+  const galleryImages = useMemo(() => {
+    const seen = new Set<string>()
+    const productImage = product?.imageUrl
+      ? [{ type: 'image', url: product.imageUrl, altText: product.name }]
+      : []
+    return [...productImage, ...modalMedia].filter((item) => {
+      if (item.type?.toLowerCase() !== 'image' || seen.has(item.url)) {
+        return false
+      }
+      seen.add(item.url)
+      return true
+    })
+  }, [modalMedia, product?.imageUrl, product?.name])
+  const zoomImageIndex = zoomImageUrl
+    ? galleryImages.findIndex((item) => item.url === zoomImageUrl)
+    : -1
+  const activeZoomImage = zoomImageIndex >= 0 ? galleryImages[zoomImageIndex] : null
+  const zoomOpen = zoomImageUrl !== null
+
+  const closeZoomImage = useCallback(() => setZoomImageUrl(null), [])
+  const showAdjacentZoomImage = useCallback(
+    (direction: GalleryDirection) => {
+      const currentIndex = zoomImageUrl
+        ? galleryImages.findIndex((item) => item.url === zoomImageUrl)
+        : -1
+      const nextIndex = adjacentGalleryIndex(currentIndex, galleryImages.length, direction)
+      if (nextIndex === null) {
+        return
+      }
+      const nextImage = galleryImages[nextIndex]
+      if (!nextImage) {
+        return
+      }
+      setZoomImageUrl(nextImage.url)
+      setSelectedMediaUrl(nextImage.url)
+      const mediaIndex = modalMedia.findIndex((item) => item.url === nextImage.url)
+      if (mediaIndex >= 0) {
+        setThumbnailPage(Math.floor(mediaIndex / MODAL_THUMBNAIL_PAGE_SIZE))
+      }
+    },
+    [galleryImages, modalMedia, zoomImageUrl],
+  )
+
+  useEffect(() => {
+    if (!zoomOpen) {
+      return
+    }
+    zoomReturnFocusRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const focusTimer = window.setTimeout(() => zoomDialogRef.current?.focus(), 0)
+    return () => {
+      window.clearTimeout(focusTimer)
+      zoomReturnFocusRef.current?.focus()
+    }
+  }, [zoomOpen])
+
   useEffect(() => {
     if (!product) {
       return
@@ -388,7 +492,35 @@ export function ProductModal({
       if (zoomImageUrl) {
         if (event.key === 'Escape') {
           event.preventDefault()
-          setZoomImageUrl(null)
+          closeZoomImage()
+          return
+        }
+        if (event.key === 'ArrowRight') {
+          event.preventDefault()
+          showAdjacentZoomImage('next')
+          return
+        }
+        if (event.key === 'ArrowLeft') {
+          event.preventDefault()
+          showAdjacentZoomImage('previous')
+          return
+        }
+        if (event.key === 'Tab' && zoomDialogRef.current) {
+          const focusable = Array.from(
+            zoomDialogRef.current.querySelectorAll<HTMLElement>(
+              'button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+            ),
+          ).filter((element) => !element.hidden && element.getAttribute('aria-hidden') !== 'true')
+          if (
+            containModalTabFocus(
+              focusable,
+              document.activeElement instanceof HTMLElement ? document.activeElement : null,
+              event.shiftKey,
+              zoomDialogRef.current,
+            )
+          ) {
+            event.preventDefault()
+          }
         }
         return
       }
@@ -434,7 +566,17 @@ export function ProductModal({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose, product, canNext, canPrev, onNext, onPrev, zoomImageUrl])
+  }, [
+    onClose,
+    product,
+    canNext,
+    canPrev,
+    onNext,
+    onPrev,
+    zoomImageUrl,
+    closeZoomImage,
+    showAdjacentZoomImage,
+  ])
 
   if (!product) {
     return null
@@ -442,34 +584,7 @@ export function ProductModal({
 
   const offers = availableOffers(product, deliveryLocations)
   const visibleOffers = refreshingSavedOffers ? [] : offers.length > 0 ? offers : product.offers
-  const activeMerchantDetails = purchaseSelection?.details ?? merchantDetails
-  const selectedPurchaseVariant = activeMerchantDetails
-    ? findSelectedVariant(
-        activeMerchantDetails.variants,
-        purchaseSelection?.selectedVariantId ?? activeMerchantDetails.selectedVariantId,
-        purchaseSelection?.selectedOptions ?? activeMerchantDetails.selectedOptions,
-      )
-    : null
   const actionProduct = purchaseSelection?.actionProduct ?? product
-  const modalMedia = mergeProductMedia(actionProduct, activeMerchantDetails)
-  const thumbnailPageCount = Math.ceil(modalMedia.length / MODAL_THUMBNAIL_PAGE_SIZE)
-  const boundedThumbnailPage = Math.min(thumbnailPage, Math.max(thumbnailPageCount - 1, 0))
-  const thumbnailStart = boundedThumbnailPage * MODAL_THUMBNAIL_PAGE_SIZE
-  const visibleModalMedia = modalMedia.slice(
-    thumbnailStart,
-    thumbnailStart + MODAL_THUMBNAIL_PAGE_SIZE,
-  )
-  const hasMediaPages = thumbnailPageCount > 1
-  const selectedMedia = selectedMediaUrl
-    ? modalMedia.find((item) => item.url === selectedMediaUrl)
-    : null
-  const selectedImageUrl = selectedMedia?.type?.toLowerCase() === 'image' ? selectedMedia.url : null
-  const modalImageUrl =
-    selectedImageUrl ??
-    product.imageUrl ??
-    selectedPurchaseVariant?.imageUrl ??
-    activeMerchantDetails?.selectedVariantImageUrl ??
-    activeMerchantDetails?.imageUrl
   const curatorTake = productCuratedTake(product, preferences)
   const curatorAdvantages = productCuratedAdvantages(product, preferences)
   const curatorTradeoffs = productCuratedTradeoffs(product, preferences)
@@ -707,17 +822,27 @@ export function ProductModal({
     if (!touch) {
       return
     }
-    const dx = touch.clientX - start.x
-    const dy = touch.clientY - start.y
-    // Horizontal swipe only: needs enough travel and must dominate vertical movement,
-    // so vertical scrolls inside the modal don't trigger navigation.
-    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) {
+    const direction = horizontalSwipeDirection(start, { x: touch.clientX, y: touch.clientY })
+    if (direction === 'next' && canNext) {
+      onNext()
+    } else if (direction === 'previous' && canPrev) {
+      onPrev()
+    }
+  }
+  const onZoomTouchStart = (event: ReactTouchEvent) => {
+    const touch = event.touches[0]
+    zoomTouchStartRef.current = touch ? { x: touch.clientX, y: touch.clientY } : null
+  }
+  const onZoomTouchEnd = (event: ReactTouchEvent) => {
+    const start = zoomTouchStartRef.current
+    zoomTouchStartRef.current = null
+    const touch = event.changedTouches[0]
+    if (!start || !touch) {
       return
     }
-    if (dx < 0 && canNext) {
-      onNext()
-    } else if (dx > 0 && canPrev) {
-      onPrev()
+    const direction = horizontalSwipeDirection(start, { x: touch.clientX, y: touch.clientY })
+    if (direction) {
+      showAdjacentZoomImage(direction)
     }
   }
 
@@ -1154,24 +1279,67 @@ export function ProductModal({
           className="mt-image-zoom"
           role="dialog"
           aria-modal="true"
-          aria-label={`Larger photo of ${product.name}`}
+          aria-label={`Larger photo ${zoomImageIndex + 1} of ${galleryImages.length} for ${product.name}`}
+          tabIndex={-1}
+          ref={zoomDialogRef}
         >
           <button
             className="mt-image-zoom-scrim"
             type="button"
             aria-label="Close enlarged photo"
-            onClick={() => setZoomImageUrl(null)}
+            onClick={closeZoomImage}
           />
-          <div className="mt-image-zoom-panel">
-            <img className="mt-image-zoom-img" src={zoomImageUrl} alt={product.name} />
+          <div
+            className="mt-image-zoom-panel"
+            onTouchStart={onZoomTouchStart}
+            onTouchEnd={onZoomTouchEnd}
+          >
+            <img
+              className="mt-image-zoom-img"
+              src={zoomImageUrl}
+              alt={activeZoomImage?.altText || product.name}
+              draggable={false}
+            />
             <button
               className="mt-image-zoom-close"
               type="button"
               aria-label="Close enlarged photo"
-              onClick={() => setZoomImageUrl(null)}
+              onClick={closeZoomImage}
             >
               <CloseIcon />
             </button>
+            {galleryImages.length > 1 ? (
+              <>
+                <button
+                  className="mt-image-zoom-nav mt-image-zoom-nav-prev"
+                  type="button"
+                  disabled={zoomImageIndex <= 0}
+                  aria-label={`Previous photo of ${product.name}`}
+                  aria-keyshortcuts="ArrowLeft"
+                  onClick={() => showAdjacentZoomImage('previous')}
+                >
+                  <ChevronIcon direction="left" size={22} />
+                </button>
+                <button
+                  className="mt-image-zoom-nav mt-image-zoom-nav-next"
+                  type="button"
+                  disabled={zoomImageIndex >= galleryImages.length - 1}
+                  aria-label={`Next photo of ${product.name}`}
+                  aria-keyshortcuts="ArrowRight"
+                  onClick={() => showAdjacentZoomImage('next')}
+                >
+                  <ChevronIcon direction="right" size={22} />
+                </button>
+                <div className="mt-image-zoom-position mt-mono" aria-live="polite">
+                  <span>
+                    {zoomImageIndex + 1} / {galleryImages.length}
+                  </span>
+                  <span className="mt-image-zoom-key-hint" aria-hidden="true">
+                    Use ← → keys
+                  </span>
+                </div>
+              </>
+            ) : null}
           </div>
         </div>
       ) : null}
