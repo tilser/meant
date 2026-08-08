@@ -8164,7 +8164,6 @@ button:disabled {
   place-items: center;
   max-width: min(1080px, 94vw);
   max-height: 90vh;
-  touch-action: pan-y;
   user-select: none;
 }
 
@@ -8175,7 +8174,13 @@ button:disabled {
   border-radius: 16px;
   background: var(--surface);
   box-shadow: 0 32px 80px -26px rgba(0, 0, 0, 0.62);
+  cursor: grab;
   object-fit: contain;
+  touch-action: pan-y;
+}
+
+.mt-image-zoom-img:active {
+  cursor: grabbing;
 }
 
 .mt-image-zoom-close {
@@ -8212,10 +8217,11 @@ button:disabled {
   height: 44px;
   padding: 0;
   transform: translateY(-50%);
-  border: 1px solid rgba(255, 255, 255, 0.36);
+  border: 1px solid rgba(255, 255, 255, 0.56);
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.9);
-  color: #16181c;
+  background: rgba(18, 20, 24, 0.8);
+  color: #ffffff;
+  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.72);
   cursor: pointer;
   transition:
     opacity var(--motion-fast) var(--ease-out),
@@ -8225,7 +8231,7 @@ button:disabled {
 
 .mt-image-zoom-nav:hover:not(:disabled) {
   transform: translateY(-50%) scale(1.06);
-  background: #ffffff;
+  background: rgba(18, 20, 24, 0.96);
 }
 
 .mt-image-zoom-nav:active:not(:disabled) {
@@ -8233,7 +8239,7 @@ button:disabled {
 }
 
 .mt-image-zoom-nav:disabled {
-  opacity: 0.28;
+  opacity: 0.4;
   cursor: default;
 }
 

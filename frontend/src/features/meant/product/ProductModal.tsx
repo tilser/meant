@@ -1,4 +1,5 @@
 import {
+  type PointerEvent as ReactPointerEvent,
   type TouchEvent as ReactTouchEvent,
   useCallback,
   useEffect,
@@ -261,7 +262,7 @@ export function ProductModal({
   const addedTimeoutRef = useRef<number | null>(null)
   const addSelectedOfferRef = useRef<(() => Promise<void>) | null>(null)
   const touchStartRef = useRef<{ x: number; y: number } | null>(null)
-  const zoomTouchStartRef = useRef<{ x: number; y: number } | null>(null)
+  const zoomPointerStartRef = useRef<{ pointerId: number; x: number; y: number } | null>(null)
   const modalDockRef = useRef<HTMLDivElement | null>(null)
   const dialogRef = useRef<HTMLDivElement | null>(null)
   const zoomDialogRef = useRef<HTMLDivElement | null>(null)
@@ -829,20 +830,34 @@ export function ProductModal({
       onPrev()
     }
   }
-  const onZoomTouchStart = (event: ReactTouchEvent) => {
-    const touch = event.touches[0]
-    zoomTouchStartRef.current = touch ? { x: touch.clientX, y: touch.clientY } : null
-  }
-  const onZoomTouchEnd = (event: ReactTouchEvent) => {
-    const start = zoomTouchStartRef.current
-    zoomTouchStartRef.current = null
-    const touch = event.changedTouches[0]
-    if (!start || !touch) {
+  const onZoomPointerDown = (event: ReactPointerEvent<HTMLImageElement>) => {
+    if (!event.isPrimary || event.button !== 0) {
       return
     }
-    const direction = horizontalSwipeDirection(start, { x: touch.clientX, y: touch.clientY })
+    zoomPointerStartRef.current = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+    }
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+  const onZoomPointerUp = (event: ReactPointerEvent<HTMLImageElement>) => {
+    const start = zoomPointerStartRef.current
+    zoomPointerStartRef.current = null
+    if (!start || start.pointerId !== event.pointerId) {
+      return
+    }
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+    const direction = horizontalSwipeDirection(start, { x: event.clientX, y: event.clientY })
     if (direction) {
       showAdjacentZoomImage(direction)
+    }
+  }
+  const onZoomPointerCancel = (event: ReactPointerEvent<HTMLImageElement>) => {
+    if (zoomPointerStartRef.current?.pointerId === event.pointerId) {
+      zoomPointerStartRef.current = null
     }
   }
 
@@ -1289,16 +1304,15 @@ export function ProductModal({
             aria-label="Close enlarged photo"
             onClick={closeZoomImage}
           />
-          <div
-            className="mt-image-zoom-panel"
-            onTouchStart={onZoomTouchStart}
-            onTouchEnd={onZoomTouchEnd}
-          >
+          <div className="mt-image-zoom-panel">
             <img
               className="mt-image-zoom-img"
               src={zoomImageUrl}
               alt={activeZoomImage?.altText || product.name}
               draggable={false}
+              onPointerDown={onZoomPointerDown}
+              onPointerUp={onZoomPointerUp}
+              onPointerCancel={onZoomPointerCancel}
             />
             <button
               className="mt-image-zoom-close"
