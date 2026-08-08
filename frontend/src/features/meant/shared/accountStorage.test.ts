@@ -32,6 +32,9 @@ describe('account storage isolation', () => {
     expect(accountSessionStorageKey('meant.agentCartProvenance', 'user-a')).toBe(
       'meant.agentCartProvenance.buyerSafeV2.account.user-a',
     )
+    expect(accountSessionStorageKey('meant.agentCartMessages', 'user-a')).toBe(
+      'meant.agentCartMessages.buyerSafeV2.account.user-a',
+    )
     expect(accountSessionStorageKey('meant.activeAgentConversation', 'user-a')).toBe(
       'meant.activeAgentConversation.buyerSafeV2.account.user-a',
     )
@@ -55,10 +58,12 @@ describe('account storage isolation', () => {
       ['meant.cartSnapshots', 'cart facts'],
       ['meant.agentPendingCartRuns', 'pending cart run'],
       ['meant.agentCartProvenance', 'agent cart provenance'],
+      ['meant.agentCartMessages', 'cart message placements'],
       ['meant.shelf.account.user-a', 'scoped persistent products'],
       ['meant.cartSnapshots.account.user-b', 'scoped persistent cart facts'],
       ['meant.agentPendingCartRuns.account.user-b', 'scoped pending cart run'],
       ['meant.agentCartProvenance.account.user-b', 'scoped agent cart provenance'],
+      ['meant.agentCartMessages.account.user-b', 'scoped cart message placements'],
       ['meant.locations.account.user-a', 'valid scoped durable preference'],
       ['meant.theme', 'dark'],
     ])

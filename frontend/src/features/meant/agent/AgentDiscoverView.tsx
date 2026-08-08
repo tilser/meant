@@ -109,7 +109,11 @@ import {
 } from './autoDismissNotices'
 import { checkoutInChatBlock } from './checkoutPreparation'
 import { withProjectedAgentMessages } from './messageProjection'
-import { mergeAnchoredLocalMessages, type AnchoredLocalMessage } from './localMessageOrdering'
+import {
+  mergeAnchoredLocalMessages,
+  withPersistedCartMessage,
+  type AnchoredLocalMessage,
+} from './localMessageOrdering'
 import { AgentWorkingIndicator } from './AgentWorkingIndicator'
 import { agentWorkingStage } from './agentWorkingState'
 import { threadFromAgentConversationSummary } from './conversationHistory'
@@ -332,6 +336,9 @@ export function AgentDiscoverView({
   >({})
   const [inlineCheckoutMessageIdByConversationId, setInlineCheckoutMessageIdByConversationId] =
     useState<Record<string, string>>({})
+  const [cartMessageByConversationId, setCartMessageByConversationId] = useSessionStoredState<
+    Record<string, AnchoredLocalMessage>
+  >(accountSessionStorageKey('meant.agentCartMessages', expectedUserId), {})
   const [dismissedMessageIds, setDismissedMessageIds] = useStoredState<Record<string, string[]>>(
     accountStorageKey('meant.agentDismissedMessages', expectedUserId),
     {},
@@ -930,9 +937,16 @@ export function AgentDiscoverView({
   )
 
   const allMessages = useMemo(() => {
-    const localMessages = activeConversationId
+    const currentLocalMessages = activeConversationId
       ? (localMessagesByConversationId[activeConversationId] ?? [])
       : []
+    const localMessages = activeConversationId
+      ? withPersistedCartMessage(
+          currentLocalMessages,
+          cartMessageByConversationId[activeConversationId],
+          visibleCart.length > 0,
+        )
+      : currentLocalMessages
     if (!combinedConversation) return localMessages.map(({ message }) => message)
     const authoritative = discoverMessagesFromAgentConversation(
       combinedConversation,
@@ -962,9 +976,11 @@ export function AgentDiscoverView({
     activeConversationId,
     activeRunId,
     combinedConversation,
+    cartMessageByConversationId,
     deliveryLocations,
     eventState.runs,
     localMessagesByConversationId,
+    visibleCart.length,
   ])
   if (activeConversationId) {
     visibleMessageIdsByConversationRef.current.set(
@@ -1008,20 +1024,23 @@ export function AgentDiscoverView({
   )
 
   const appendLocalMessage = useCallback(
-    (message: DiscoverChatMessage, conversationId = activeConversationIdRef.current) => {
-      if (!conversationId) return
-      setLocalMessagesByConversationId((current) => {
-        const precedingMessageIds =
-          visibleMessageIdsByConversationRef.current.get(conversationId) ?? []
-        visibleMessageIdsByConversationRef.current.set(conversationId, [
-          ...precedingMessageIds,
-          message.id,
-        ])
-        return {
-          ...current,
-          [conversationId]: [...(current[conversationId] ?? []), { message, precedingMessageIds }],
-        }
-      })
+    (
+      message: DiscoverChatMessage,
+      conversationId = activeConversationIdRef.current,
+    ): AnchoredLocalMessage | null => {
+      if (!conversationId) return null
+      const precedingMessageIds =
+        visibleMessageIdsByConversationRef.current.get(conversationId) ?? []
+      const anchoredMessage = { message, precedingMessageIds }
+      visibleMessageIdsByConversationRef.current.set(conversationId, [
+        ...precedingMessageIds,
+        message.id,
+      ])
+      setLocalMessagesByConversationId((current) => ({
+        ...current,
+        [conversationId]: [...(current[conversationId] ?? []), anchoredMessage],
+      }))
+      return anchoredMessage
     },
     [],
   )
@@ -1033,10 +1052,16 @@ export function AgentDiscoverView({
 
       const messageId = uniqueRequestId('cart')
       liveCartMessageIdRef.current = messageId
-      appendLocalMessage(cartInChatMessage(messageId), conversationId)
+      const anchoredMessage = appendLocalMessage(cartInChatMessage(messageId), conversationId)
+      if (anchoredMessage) {
+        setCartMessageByConversationId((current) => ({
+          ...current,
+          [conversationId]: anchoredMessage,
+        }))
+      }
       return messageId
     },
-    [appendLocalMessage],
+    [appendLocalMessage, setCartMessageByConversationId],
   )
 
   const appendUnavailableFeatureMessage = useCallback(() => {
@@ -1871,6 +1896,12 @@ export function AgentDiscoverView({
         current.filter((item) => item.conversationId !== conversationId),
       )
       setDismissedMessageIds((current) => {
+        if (!(conversationId in current)) return current
+        const next = { ...current }
+        delete next[conversationId]
+        return next
+      })
+      setCartMessageByConversationId((current) => {
         if (!(conversationId in current)) return current
         const next = { ...current }
         delete next[conversationId]

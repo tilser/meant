@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 
 import type { DiscoverChatMessage } from '../chat/types'
-import { mergeAnchoredLocalMessages, type AnchoredLocalMessage } from './localMessageOrdering'
+import {
+  mergeAnchoredLocalMessages,
+  withPersistedCartMessage,
+  type AnchoredLocalMessage,
+} from './localMessageOrdering'
 
 function message(id: string): DiscoverChatMessage {
   return { id, role: 'ai', blocks: [{ type: 'text', text: id }] }
@@ -12,6 +16,19 @@ function placement(id: string, precedingMessageIds: readonly string[]): Anchored
 }
 
 describe('local agent message ordering', () => {
+  test('restores a persisted cart card only while the cart has items', () => {
+    const persistedCart = placement('cart-in-chat', ['assistant-message'])
+
+    expect(withPersistedCartMessage([], persistedCart, true)).toEqual([persistedCart])
+    expect(withPersistedCartMessage([], persistedCart, false)).toEqual([])
+  })
+
+  test('does not duplicate the persisted cart card during its original mount', () => {
+    const persistedCart = placement('cart-in-chat', ['assistant-message'])
+
+    expect(withPersistedCartMessage([persistedCart], persistedCart, true)).toEqual([persistedCart])
+  })
+
   test('keeps a coming-soon message ahead of later durable messages', () => {
     const result = mergeAnchoredLocalMessages(
       [message('checkout'), message('next-user'), message('next-assistant')],

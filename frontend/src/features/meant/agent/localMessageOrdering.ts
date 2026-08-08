@@ -6,6 +6,22 @@ export interface AnchoredLocalMessage {
   precedingMessageIds: readonly string[]
 }
 
+/** Restores the client-owned live cart card without duplicating it during the current mount. */
+export function withPersistedCartMessage(
+  localMessages: readonly AnchoredLocalMessage[],
+  persistedCartMessage: AnchoredLocalMessage | undefined,
+  cartHasItems: boolean,
+): AnchoredLocalMessage[] {
+  if (
+    !cartHasItems ||
+    !persistedCartMessage ||
+    localMessages.some(({ message }) => message.id === persistedCartMessage.message.id)
+  ) {
+    return [...localMessages]
+  }
+  return [...localMessages, persistedCartMessage]
+}
+
 /**
  * Keeps client-only messages at their original point in the transcript when newer durable
  * messages arrive from the agent ledger.
