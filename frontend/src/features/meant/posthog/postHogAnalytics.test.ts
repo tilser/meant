@@ -514,7 +514,7 @@ describe('PostHog privacy options', () => {
     })
     const sanitizer = options.session_recording?.maskCapturedNetworkRequestFn
     const sanitized = sanitizer?.({
-      name: 'https://user:private@api.usemeant.com/agent?token=private',
+      name: 'https://user:private@example.com/agent?token=private',
       entryType: 'resource',
       startTime: 0,
       duration: 1,
@@ -525,7 +525,7 @@ describe('PostHog privacy options', () => {
     } as CapturedNetworkRequest)
 
     expect(sanitized).toMatchObject({
-      name: 'https://api.usemeant.com/',
+      name: 'https://example.com/',
       requestHeaders: undefined,
       requestBody: undefined,
       responseHeaders: undefined,

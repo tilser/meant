@@ -84,9 +84,9 @@ class UserServiceTest {
         userService.ensureProfile(new EnsureUserProfileCommand(id, "ada@example.com", "Ada", "Lovelace"));
 
         User updated = userService.ensureProfile(
-                new EnsureUserProfileCommand(id, "ada@new.com", "ShouldBeIgnored", "Ignored"));
+                new EnsureUserProfileCommand(id, "ada.new@example.com", "ShouldBeIgnored", "Ignored"));
 
-        assertThat(updated.getEmail()).isEqualTo("ada@new.com");
+        assertThat(updated.getEmail()).isEqualTo("ada.new@example.com");
         assertThat(updated.getFirstName()).isEqualTo("Ada");
         assertThat(updated.getSurname()).isEqualTo("Lovelace");
         // First call inserts; second call mutates the existing row without inserting again.

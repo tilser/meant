@@ -87,8 +87,8 @@ class CheckoutAssistantServiceTest {
                 {
                   "reply": "Applying your details now.",
                   "readyToUpdate": true,
-                  "buyer": {"email": "tilseroz@gmail.com", "firstName": "David", "lastName": "Tilseroz",
-                    "phoneNumber": "+420731958653"},
+                  "buyer": {"email": "ada.lovelace@example.com", "firstName": "Ada", "lastName": "Lovelace",
+                    "phoneNumber": "+1 202 555 0147"},
                   "shippingAddress": {"streetAddress": "1531 Hyde St", "extendedAddress": "",
                     "addressLocality": "San Francisco", "addressRegion": "CA", "postalCode": "94109",
                     "addressCountry": "United States"}
@@ -97,20 +97,20 @@ class CheckoutAssistantServiceTest {
 
         CheckoutAssistResult result = service.assist(command(
                 "Ship to 1531 Hyde St, San Francisco, CA 94109, United States, "
-                        + "David Tilseroz, tilseroz@gmail.com, +420731958653"
+                        + "Ada Lovelace, ada.lovelace@example.com, +1 202 555 0147"
         ));
 
         assertThat(result.reply()).contains(
                 "I sent this to the merchant: 1531 Hyde St, San Francisco, CA, 94109, United States"
         );
-        assertThat(result.reply()).contains("with contact David Tilseroz, tilseroz@gmail.com, +420731958653");
+        assertThat(result.reply()).contains("with contact Ada Lovelace, ada.lovelace@example.com, +1 202 555 0147");
         assertThat(result.reply()).contains("Applying your details now.");
         assertThat(result.checkoutUpdated()).isTrue();
         assertThat(cartService.updateCommand).isNotNull();
-        assertThat(cartService.updateCommand.buyer().email()).isEqualTo("tilseroz@gmail.com");
-        assertThat(cartService.updateCommand.buyer().firstName()).isEqualTo("David");
-        assertThat(cartService.updateCommand.buyer().lastName()).isEqualTo("Tilseroz");
-        assertThat(cartService.updateCommand.buyer().phoneNumber()).isEqualTo("+420731958653");
+        assertThat(cartService.updateCommand.buyer().email()).isEqualTo("ada.lovelace@example.com");
+        assertThat(cartService.updateCommand.buyer().firstName()).isEqualTo("Ada");
+        assertThat(cartService.updateCommand.buyer().lastName()).isEqualTo("Lovelace");
+        assertThat(cartService.updateCommand.buyer().phoneNumber()).isEqualTo("+1 202 555 0147");
         assertThat(cartService.updateCommand.shippingAddress().streetAddress()).isEqualTo("1531 Hyde St");
         assertThat(cartService.updateCommand.shippingAddress().extendedAddress()).isNull();
         assertThat(cartService.updateCommand.shippingAddress().addressCountry()).isEqualTo("US");

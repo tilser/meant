@@ -36,9 +36,9 @@ class UserTest {
         User user = newUser("ada@example.com", "Ada", "Lovelace");
         Instant now = Instant.parse("2025-01-01T00:00:00Z");
 
-        user.updateEmail("ada@new.com", now);
+        user.updateEmail("ada.new@example.com", now);
 
-        assertThat(user.getEmail()).isEqualTo("ada@new.com");
+        assertThat(user.getEmail()).isEqualTo("ada.new@example.com");
         assertThat(user.getUpdatedAt()).isEqualTo(now);
     }
 

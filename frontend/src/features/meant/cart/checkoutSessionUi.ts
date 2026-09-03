@@ -195,7 +195,7 @@ export function checkoutAssistantPrompt(session: ActiveCheckoutSession): string 
     return [
       `We knew you two were Meant together. Now tell me where to send what’s Meant for you, along with your name, email and phone.`,
       coverage,
-      'You can send everything in one message, for example: “1531 Hyde St, San Francisco, CA 94109, US — John Novak, john.novak@gmail.com, +1 415 555 0137”.',
+      'You can send everything in one message, for example: “1531 Hyde St, San Francisco, CA 94109, US — John Novak, john.novak@example.com, +1 415 555 0137”.',
     ].join(' ')
   }
   if (session.profile.nextAction === 'OPEN_EMBEDDED_CHECKOUT') {

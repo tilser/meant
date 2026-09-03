@@ -124,7 +124,6 @@ This repository is a monorepo with a Java Spring Boot backend and a TanStack Sta
 ```text
 backend/   Spring Boot API
 frontend/  TanStack Start app
-plans/     Product and engineering implementation plans
 ```
 
 ## Local Development
@@ -208,11 +207,16 @@ npm run typecheck
 npm run build
 ```
 
-## Deployment
+## License
 
-Production uses Supabase for PostgreSQL, Auth, and Storage, Railway for the Spring Boot API, and
-Vercel for the TanStack Start frontend. Pushes to `main` run CI, apply Supabase migrations, and can
-then be deployed automatically by the Railway and Vercel GitHub integrations.
+Copyright (C) 2026 David Tilser.
 
-See [Production deployment](docs/deployment.md) for the required project settings, secrets, and
-environment variables.
+Meant is licensed under the [GNU Affero General Public License version 3
+only](LICENSE), with [additional attribution and origin terms permitted by
+section 7](ADDITIONAL_TERMS.md). Covered versions distributed to others, and
+modified versions made available for remote network interaction, are subject
+to the AGPL source-sharing requirements. They must also preserve the [project
+notice](NOTICE) and identify themselves as forks or modified versions of Meant.
+
+The Meant name, logo, and branding are not licensed for use as the identity of
+a fork or modified product. See the [Meant Trademark Policy](TRADEMARKS.md).

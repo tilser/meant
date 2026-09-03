@@ -449,7 +449,7 @@ public class CheckoutAssistantService {
 
                 The buyer is shown this template and often sends it in one message:
                 "Ship to 1531 Hyde St, San Francisco, CA 94109, US, John Novak, \
-                john.novak@gmail.com, +1 415 555 0137".
+                john.novak@example.com, +1 415 555 0137".
 
                 Parsing rules:
                 - The current buyer message is the highest priority source. Merchant messages \
